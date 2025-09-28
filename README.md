@@ -62,14 +62,18 @@ AI など機械連携では JSON モード (`--format json`) を推奨します�
 ### カテゴリ (`categories`)
 - `list`: カテゴリを一覧表示します。
 - `get <id>`: 指定したIDのカテゴリを1件取得します。
+  - `wpai categories get 42`
 - `delete <id>`: カテゴリを削除します。
+  - `wpai categories delete 42`
 
 ### タグ (`tags`)
 - `list`: タグを一覧表示します。
 - `create`: 新しいタグを作成します。
   - `wpai tags create --name "New Tag" --description "..."`
 - `get <id>`: 指定したIDのタグを1件取得します。
+  - `wpai tags get 55`
 - `delete <id>`: タグを削除します。
+  - `wpai tags delete 55`
 
 ### メディア (`media`)
 - `list`: メディアライブラリの項目を一覧表示します。
@@ -86,6 +90,7 @@ AI など機械連携では JSON モード (`--format json`) を推奨します�
 - 「No connections registered」: `wpai connections add` で接続を登録してください。
 - `rest_forbidden_context` などの 401/403 エラー: トークンに必要な権限が無い、または期限切れです。新しいトークンで接続を再登録してください。
 - `media upload` で「このファイルタイプをアップロードする権限がありません」エラー: WordPressのセキュリティプラグインやテーマ、マルチサイト設定などで、アップロード可能なファイルの種類が制限されている可能性があります。
+- **Gemini CLIでのリスト表示に関する注意:** Gemini CLI環境では、出力の表示領域に厳しい制限があるため、リスト形式で複数の項目を表示しようとすると、2件目以降が自動的に省略（トランケート）されてしまう場合があります。このため、AIアシスタントはリスト表示の際に、全項目を1行にまとめたプレーンテキスト形式で出力するよう最適化されています。これにより、一覧の全項目を確実に確認できます。
 
 ## 補完スクリプト
 ```
