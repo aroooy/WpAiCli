@@ -47,6 +47,7 @@ try
         "posts" => await HandlePostsAsync(commandArgs),
         "categories" => await HandleCategoriesAsync(commandArgs),
         "tags" => await HandleTagsAsync(commandArgs),
+        "media" => await HandleMediaAsync(commandArgs),
         "connections" => HandleConnections(commandArgs),
         "completion" => HandleCompletion(commandArgs),
         "docs" => PrintDocsAndReturn(),
@@ -83,7 +84,7 @@ async Task<int> HandlePostsAsync(string[] args)
 {
     if (args.Length == 0)
     {
-        Console.Error.WriteLine("Specify posts subcommand (list|get|create|update|delete).");
+        Console.Error.WriteLine("Specify posts subcommand (list|get|create|update|delete|revisions|revision).");
         return (int)ExitCode.InvalidArguments;
     }
 
@@ -211,6 +212,41 @@ async Task<int> HandlePostsAsync(string[] args)
                 break;
             }
 
+            case "revisions":
+            {
+                var id = ResolveId(parsed, defaultValue: parsed.Positionals.FirstOrDefault());
+                if (id is null)
+                {
+                    Console.Error.WriteLine("Provide a post ID.");
+                    return (int)ExitCode.InvalidArguments;
+                }
+
+                var revisions = await service.GetPostRevisionsAsync(id.Value, ct).ConfigureAwait(false);
+                OutputFormatter.WriteRevisions(revisions, format, Console.Out);
+                result = (int)ExitCode.Success;
+                break;
+            }
+
+            case "revision":
+            {
+                if (parsed.Positionals.Count < 2)
+                {
+                    Console.Error.WriteLine("Provide a post ID and a revision ID.");
+                    return (int)ExitCode.InvalidArguments;
+                }
+
+                if (!int.TryParse(parsed.Positionals[0], out var postId) || !int.TryParse(parsed.Positionals[1], out var revisionId))
+                {
+                    Console.Error.WriteLine("Post ID and revision ID must be integers.");
+                    return (int)ExitCode.InvalidArguments;
+                }
+
+                var revision = await service.GetPostRevisionAsync(postId, revisionId, ct).ConfigureAwait(false);
+                OutputFormatter.WriteRevision(revision, format, Console.Out);
+                result = (int)ExitCode.Success;
+                break;
+            }
+
             default:
                 Console.Error.WriteLine($"Unknown posts subcommand: {subcommand}");
                 return (int)ExitCode.InvalidArguments;
@@ -283,6 +319,50 @@ async Task<int> HandleTagsAsync(string[] args)
         using var service = new WordPressService(settings);
         var tags = await service.ListTagsAsync(CancellationToken.None).ConfigureAwait(false);
         OutputFormatter.WriteTags(tags, format, Console.Out);
+        UpdateLastUsedConnection(store, profile.Name);
+        return (int)ExitCode.Success;
+    }
+    catch (InvalidOperationException ex)
+    {
+        Console.Error.WriteLine(ex.Message);
+        return (int)ExitCode.InvalidArguments;
+    }
+    catch (WpAiCli.WordPress.WordPressApiException ex)
+    {
+        Console.Error.WriteLine(ex.Message);
+        if (!string.IsNullOrWhiteSpace(ex.ResponseBody))
+        {
+            Console.Error.WriteLine(ex.ResponseBody);
+        }
+        return (int)ExitCode.ApiError;
+    }
+}
+
+async Task<int> HandleMediaAsync(string[] args)
+{
+    if (args.Length > 0 && args[0].ToLowerInvariant() != "list")
+    {
+        Console.Error.WriteLine("Only the 'list' subcommand is available for media.");
+        return (int)ExitCode.InvalidArguments;
+    }
+
+    var subArgs = args.Length > 0 ? args.Skip(1).ToArray() : Array.Empty<string>();
+    var parsed = OptionParser.Parse(subArgs);
+    var format = OutputFormatter.ParseFormat(parsed.GetString("format"));
+
+    try
+    {
+        var (store, profile, token) = ResolveConnection(globalConnectionName);
+        var settings = new WordPressSettings(profile.BaseUrl, token);
+        using var service = new WordPressService(settings);
+
+        var perPage = parsed.GetInt("per-page") ?? 10;
+        perPage = Math.Clamp(perPage, 1, 100);
+        var page = parsed.GetInt("page") ?? 1;
+        page = Math.Max(page, 1);
+
+        var mediaItems = await service.ListMediaAsync(perPage, page, CancellationToken.None).ConfigureAwait(false);
+        OutputFormatter.WriteMediaItems(mediaItems, format, Console.Out);
         UpdateLastUsedConnection(store, profile.Name);
         return (int)ExitCode.Success;
     }

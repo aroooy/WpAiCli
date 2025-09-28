@@ -17,7 +17,13 @@ public sealed class WordPressRenderedContent
     public override string ToString() => Rendered ?? Raw ?? string.Empty;
 }
 
-public class WordPressPostBase
+public interface IHasTitle
+{
+    WordPressRenderedContent? Title { get; }
+    string? Slug { get; }
+}
+
+public class WordPressPostBase : IHasTitle
 {
     [JsonPropertyName("id")]
     public int Id { get; set; }
@@ -159,8 +165,32 @@ public sealed class WordPressUpdatePostRequest
     public string? Format { get; set; }
 }
 
-public sealed class WordPressRevision
+public sealed class WordPressRevision : IHasTitle
 {
+    [JsonPropertyName("id")]
+    public int Id { get; set; }
+
+    [JsonPropertyName("author")]
+    public int Author { get; set; }
+
+    [JsonPropertyName("date_gmt")]
+    public DateTime DateGmt { get; set; }
+
+    [JsonPropertyName("modified_gmt")]
+    public DateTime ModifiedGmt { get; set; }
+
+    [JsonPropertyName("parent")]
+    public int Parent { get; set; }
+
+    [JsonPropertyName("slug")]
+    public string? Slug { get; set; }
+
+    [JsonPropertyName("title")]
+    public WordPressRenderedContent? Title { get; set; }
+
+    [JsonPropertyName("content")]
+    public WordPressRenderedContent? Content { get; set; }
+
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? AdditionalData { get; set; }
 }
@@ -216,7 +246,7 @@ public sealed class WordPressCreateTagRequest
     public string? Description { get; set; }
 }
 
-public sealed class WordPressMediaItem
+public sealed class WordPressMediaItem : IHasTitle
 {
     [JsonPropertyName("id")]
     public int Id { get; set; }
@@ -226,6 +256,9 @@ public sealed class WordPressMediaItem
 
     [JsonPropertyName("title")]
     public WordPressRenderedContent? Title { get; set; }
+
+    [JsonIgnore]
+    public string? Slug => null;
 
     [JsonPropertyName("media_type")]
     public string? MediaType { get; set; }

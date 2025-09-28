@@ -184,6 +184,91 @@ public static class OutputFormatter
         }
     }
 
+    public static void WriteRevisions(IReadOnlyList<WordPressRevision> revisions, OutputFormat format, TextWriter writer)
+    {
+        switch (format)
+        {
+            case OutputFormat.Json:
+                writer.WriteLine(JsonSerializer.Serialize(revisions, SerializerOptions));
+                break;
+            case OutputFormat.Raw:
+                foreach (var revision in revisions)
+                {
+                    writer.WriteLine($"{revision.Id}\t{revision.Author}\t{GetTitleText(revision)}\t{revision.ModifiedGmt:u}");
+                }
+                break;
+            default:
+                WriteTable(writer,
+                    new[] { "ID", "Author", "Modified (GMT)", "Title" },
+                    revisions.Select(r => new[]
+                    {
+                        r.Id.ToString(),
+                        r.Author.ToString(),
+                        r.ModifiedGmt.ToString("u"),
+                        GetTitleText(r)
+                    }));
+                break;
+        }
+    }
+
+    public static void WriteRevision(WordPressRevision revision, OutputFormat format, TextWriter writer)
+    {
+        switch (format)
+        {
+            case OutputFormat.Json:
+                writer.WriteLine(JsonSerializer.Serialize(revision, SerializerOptions));
+                break;
+            case OutputFormat.Raw:
+                writer.WriteLine($"ID: {revision.Id}");
+                writer.WriteLine($"Author: {revision.Author}");
+                writer.WriteLine($"Title: {GetTitleText(revision)}");
+                writer.WriteLine("--- CONTENT ---");
+                writer.WriteLine(revision.Content?.Rendered ?? revision.Content?.Raw ?? string.Empty);
+                break;
+            default:
+                WriteTable(writer,
+                    new[] { "Field", "Value" },
+                    new[]
+                    {
+                        new[] { "ID", revision.Id.ToString() },
+                        new[] { "Author", revision.Author.ToString() },
+                        new[] { "Modified (GMT)", revision.ModifiedGmt.ToString("u") },
+                        new[] { "Title", GetTitleText(revision) },
+                    });
+                writer.WriteLine();
+                writer.WriteLine("--- Content (Raw) ---");
+                writer.WriteLine(revision.Content?.Raw ?? string.Empty);
+                break;
+        }
+    }
+
+    public static void WriteMediaItems(IReadOnlyList<WordPressMediaItem> mediaItems, OutputFormat format, TextWriter writer)
+    {
+        switch (format)
+        {
+            case OutputFormat.Json:
+                writer.WriteLine(JsonSerializer.Serialize(mediaItems, SerializerOptions));
+                break;
+            case OutputFormat.Raw:
+                foreach (var item in mediaItems)
+                {
+                    writer.WriteLine($"{item.Id}\t{item.MediaType}\t{GetTitleText(item)}\t{item.SourceUrl}");
+                }
+                break;
+            default:
+                WriteTable(writer,
+                    new[] { "ID", "Type", "Title", "URL" },
+                    mediaItems.Select(item => new[]
+                    {
+                        item.Id.ToString(),
+                        item.MediaType ?? string.Empty,
+                        Truncate(GetTitleText(item), 50),
+                        item.SourceUrl ?? string.Empty
+                    }));
+                break;
+        }
+    }
+
     private static void WriteTable(TextWriter writer, IReadOnlyList<string> headers, IEnumerable<IReadOnlyList<string>> rows)
     {
         var rowList = rows.Select(r => r.Select(c => c ?? string.Empty).ToArray()).ToList();
@@ -236,7 +321,7 @@ public static class OutputFormatter
         return value.Substring(0, maxLength - 1) + "…";
     }
 
-    private static string GetTitleText(WordPressPostBase post)
+    private static string GetTitleText(IHasTitle post)
     {
         var title = post.Title?.Rendered ?? post.Title?.Raw;
         if (string.IsNullOrWhiteSpace(title))
