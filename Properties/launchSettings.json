@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "WpAiCli": {
+      "commandName": "Project",
+      "commandLineArgs": "posts list --status draft --format table"
+    }
+  }
+}

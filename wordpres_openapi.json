@@ -1,0 +1,738 @@
+openapi: 3.1.0
+info:
+  title: WP Posts API
+  version: "1.0.0"
+  description: >
+    Use the WordPress REST API to retrieve the posts list (only id and title), post details, create new posts, retrieve the list of categories, retrieve the list of tags and retrieve the list of media items
+    JWT authentication is required for drafts
+    The posts list uses a fixed rest_route (/wp/v2/posts) on the global server and the post details are specified in each GET operation by rest_route (/wp/v2/posts/{id})
+servers:
+  - url: "https://aroooy.net/?rest_route=/wp/v2"
+paths:
+  /posts&context=edit&_fields=id,date,date_gmt,guid,modified,modified_gmt,slug,status,type,link,title:
+    get:
+      operationId: getPostsList
+      summary: Get Posts List
+      description: >
+        Retrieve the list of posts
+        The response returns only the id and title
+        The query parameter status allows retrieval of drafts (draft) or published posts (publish)
+      parameters:
+        - name: status
+          in: query
+          description: Specify the status of the post use draft for drafts and publish for published posts
+          required: false
+          schema:
+            type: string
+            enum:
+              - draft
+              - publish
+            default: publish
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Successfully retrieved the posts list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                      description: The ID of the post
+                    title:
+                      type: object
+                      description: The title information of the post
+                      properties:
+                        rendered:
+                          type: string
+                          description: The formatted title for display
+        '403':
+          description: Authentication error or insufficient access rights
+        '404':
+          description: Post not found
+
+    post:
+      summary: Create a new post
+      description: >
+        Create a new post in WordPress
+      operationId: createPost
+      tags:
+        - Posts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                  description: The title of the post
+                  example: "New Blog Post"
+                content:
+                  type: string
+                  description: The main content of the post
+                  example: "This is the content of the blog post"
+                status:
+                  type: string
+                  enum: [publish, draft, pending]
+                  description: The status of the post
+                  example: "publish"
+                categories:
+                  type: array
+                  items:
+                    type: integer
+                  description: Category IDs assigned to the post
+                tags:
+                  type: array
+                  items:
+                    type: integer
+                  description: Tag IDs assigned to the post
+                featured_media:
+                  type: integer
+                  description: The ID of the featured image
+              required:
+                - title
+                - content
+                - status
+      responses:
+        "201":
+          description: Post created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    example: 101
+                  link:
+                    type: string
+                    example: "https://example.com/new-blog-post"
+          security:
+            - bearerAuth: []
+        "400":
+          description: Invalid request parameters
+        "401":
+          description: Unauthorized authentication required
+        "403":
+          description: Permission denied
+
+  /posts/{id}&context=edit&_fields=id,date,date_gmt,guid.raw,modified,modified_gmt,password,slug,status,type,link,title.raw,content.raw,author,featured_media,comment_status,ping_status,sticky,template,format,categories,tags,permalink_template,generated_slug,class_list:
+    get:
+      servers:
+        - url: "https://aroooy.net/?rest_route=/wp/v2/posts/{id}"
+      operationId: getPostDetail
+      summary: Get Post Detail
+      description: >
+        Retrieve the details of a specified post by its ID
+        The rest_route in the server URL is fixed as /wp/v2/posts/{id}
+      parameters:
+        - name: id
+          in: path
+          description: The ID of the post to retrieve
+          required: true
+          schema:
+            type: integer
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Successfully retrieved the post details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    description: The ID of the post
+                  date:
+                    type: string
+                    format: date-time
+                    description: The publication date of the post
+                  title:
+                    type: object
+                    properties:
+                      rendered:
+                        type: string
+                        description: The display title
+                  content:
+                    type: object
+                    properties:
+                      rendered:
+                        type: string
+                        description: The HTML content of the post
+                  excerpt:
+                    type: object
+                    properties:
+                      rendered:
+                        type: string
+                        description: The post excerpt
+                  status:
+                    type: string
+                    description: The post status (publish, draft, etc)
+        '403':
+          description: Authentication error or insufficient access rights
+        '404':
+          description: Post not found
+
+    patch:
+      servers:
+        - url: "https://aroooy.net/?rest_route=/wp/v2/posts/{id}"
+      operationId: updatePost
+      summary: Update Post
+      description: >
+        Update the content of a specified post by its ID
+        You can update the title, content, status, categories, tags and the featured image
+      parameters:
+        - name: id
+          in: path
+          description: The ID of the post to update
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                  description: The new title of the post
+                content:
+                  type: string
+                  description: The new content of the post
+                status:
+                  type: string
+                  enum: [publish, draft, pending]
+                  description: The new status of the post
+                categories:
+                  type: array
+                  items:
+                    type: integer
+                  description: New category IDs to assign to the post
+                tags:
+                  type: array
+                  items:
+                    type: integer
+                  description: New tag IDs to assign to the post
+                featured_media:
+                  type: integer
+                  description: New ID of the featured image
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Post updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: {}
+                additionalProperties: true
+        '400':
+          description: Invalid request parameters
+        '401':
+          description: Unauthorized authentication required
+        '403':
+          description: Permission denied
+        '404':
+          description: Post not found
+
+    delete:
+      servers:
+        - url: "https://aroooy.net/?rest_route=/wp/v2/posts/{id}"
+      operationId: deletePost
+      summary: Delete Post
+      description: >
+        Delete the specified post by its ID
+        You can use the force query parameter to permanently delete the post if needed
+      parameters:
+        - name: id
+          in: path
+          description: The ID of the post to delete
+          required: true
+          schema:
+            type: integer
+        - name: force
+          in: query
+          description: Set to true to permanently delete the post instead of moving it to trash
+          required: false
+          schema:
+            type: boolean
+            default: false
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Post deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted:
+                    type: boolean
+                    description: Indicates if the post was deleted
+                  previous:
+                    type: object
+                    description: The post object before deletion
+                    additionalProperties: true
+        '403':
+          description: Authentication error or insufficient access rights
+        '404':
+          description: Post not found
+
+  /posts/{id}/revisions&per_page=5&context=edit:
+    get:
+      servers:
+        - url: "https://aroooy.net/?rest_route=/wp/v2/posts/{id}/revisions&_fields=author,date_gmt,id,modified_gmt,parent,title"
+      operationId: getPostRevisions
+      summary: Get Post Revisions
+      description: >
+        Retrieve the list of revisions for the specified post by its ID
+        The rest_route in the server URL is fixed as /wp/v2/posts/{id}/revisions
+      parameters:
+        - name: id
+          in: path
+          description: The ID of the post for which to retrieve revisions
+          required: true
+          schema:
+            type: integer
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Successfully retrieved the list of revisions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+        '403':
+          description: Authentication error or insufficient access rights
+        '404':
+          description: Post or revisions not found
+
+  /posts/{id}/revisions/{revision_id}&context=edit:
+    get:
+      servers:
+        - url: "https://aroooy.net/?rest_route=/wp/v2/posts/{id}/revisions/{revision_id}"
+      operationId: getSpecificPostRevision
+      summary: Get Specific Post Revision
+      description: >
+        Retrieve a specific revision for the specified post by its revision ID
+        The rest_route in the server URL is fixed as /wp/v2/posts/{id}/revisions/{revision_id}
+      parameters:
+        - name: id
+          in: path
+          description: The ID of the post for which to retrieve the revision
+          required: true
+          schema:
+            type: integer
+        - name: revision_id
+          in: path
+          description: The ID of the revision to retrieve
+          required: true
+          schema:
+            type: integer
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Successfully retrieved the specific post revision
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: {}
+                additionalProperties: true
+        '403':
+          description: Authentication error or insufficient access rights
+        '404':
+          description: Post or revision not found
+
+  /categories&_fields=id,count,description,link,name,slug,taxonomy,parent&per_page=100:
+    get:
+      operationId: getCategoriesList
+      summary: Get Categories List
+      description: >
+        Use the WordPress REST API to retrieve the list of categories
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Successfully retrieved the list of categories
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                      description: Category ID
+                    name:
+                      type: string
+                      description: Category name
+                    slug:
+                      type: string
+                      description: Category slug
+                    description:
+                      type: string
+                      description: Category description
+                    count:
+                      type: integer
+                      description: Number of posts in the category
+        '403':
+          description: Access is denied
+
+  /categories/{id}:
+    get:
+      servers:
+        - url: "https://aroooy.net/?rest_route=/wp/v2/categories/{id}"
+      operationId: getCategoryDetail
+      summary: Get Category Detail
+      description: >
+        Retrieve the detailed information of the specified category by its ID
+        The rest_route in the server URL is fixed as /wp/v2/categories/{id}
+      parameters:
+        - name: id
+          in: path
+          description: The ID of the category to retrieve
+          required: true
+          schema:
+            type: integer
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Successfully retrieved the category details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    description: The ID of the category
+                  name:
+                    type: string
+                    description: The name of the category
+                  slug:
+                    type: string
+                    description: The slug of the category
+                  description:
+                    type: string
+                    description: The description of the category
+                  count:
+                    type: integer
+                    description: The number of posts in the category
+        '403':
+          description: Authentication error or insufficient access rights
+        '404':
+          description: Category not found
+    delete:
+      servers:
+        - url: "https://aroooy.net/?rest_route=/wp/v2/categories/{id}"
+      operationId: deleteCategory
+      summary: Delete Category
+      description: >
+        Delete the specified category by its ID
+        You can use the force query parameter to permanently delete the category if needed
+      parameters:
+        - name: id
+          in: path
+          description: The ID of the category to delete
+          required: true
+          schema:
+            type: integer
+        - name: force
+          in: query
+          description: Set to true to permanently delete the category instead of moving it to trash
+          required: false
+          schema:
+            type: boolean
+            default: false
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Category deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted:
+                    type: boolean
+                    description: Indicates if the category was deleted
+                  previous:
+                    type: object
+                    description: The category object before deletion
+                    additionalProperties: true
+        '403':
+          description: Authentication error or insufficient access rights
+        '404':
+          description: Category not found
+
+  /tags&_fields=id,name,slug,description,count&per_page=100:
+    get:
+      operationId: getTagsList
+      summary: Get Tags List
+      description: >
+        Use the WordPress REST API to retrieve the list of tags
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Successfully retrieved the list of tags
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                      description: Tag ID
+                    name:
+                      type: string
+                      description: Tag name
+                    slug:
+                      type: string
+                      description: Tag slug
+                    description:
+                      type: string
+                      description: Tag description
+                    count:
+                      type: integer
+                      description: Number of posts in the tag
+        '403':
+          description: Access is denied
+
+  /tags:
+    post:
+      operationId: createTag
+      summary: Create Tag
+      description: >
+        Create a new tag in WordPress
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: The name of the tag
+                  example: "New Tag"
+                slug:
+                  type: string
+                  description: The slug for the tag
+                  example: "new-tag"
+                description:
+                  type: string
+                  description: The description of the tag
+                  example: "This is a new tag"
+              required:
+                - name
+      security:
+        - bearerAuth: []
+      responses:
+        '201':
+          description: Tag created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    example: 55
+                  name:
+                    type: string
+                    example: "New Tag"
+                  slug:
+                    type: string
+                    example: "new-tag"
+                  description:
+                    type: string
+                    example: "This is a new tag"
+                  count:
+                    type: integer
+                    example: 0
+        '400':
+          description: Invalid request parameters
+        '401':
+          description: Unauthorized authentication required
+        '403':
+          description: Permission denied
+
+  /tags/{id}:
+    get:
+      servers:
+        - url: "https://aroooy.net/?rest_route=/wp/v2/tags/{id}"
+      operationId: getTagDetail
+      summary: Get Tag Detail
+      description: >
+        Retrieve the detailed information of the specified tag by its ID
+        The rest_route in the server URL is fixed as /wp/v2/tags/{id}
+      parameters:
+        - name: id
+          in: path
+          description: The ID of the tag to retrieve
+          required: true
+          schema:
+            type: integer
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Successfully retrieved the tag details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    description: The ID of the tag
+                  name:
+                    type: string
+                    description: The name of the tag
+                  slug:
+                    type: string
+                    description: The slug of the tag
+                  description:
+                    type: string
+                    description: The description of the tag
+                  count:
+                    type: integer
+                    description: The number of posts in the tag
+        '403':
+          description: Authentication error or insufficient access rights
+        '404':
+          description: Tag not found
+    delete:
+      servers:
+        - url: "https://aroooy.net/?rest_route=/wp/v2/tags/{id}"
+      operationId: deleteTag
+      summary: Delete Tag
+      description: >
+        Delete the specified tag by its ID
+        You can use the force query parameter to permanently delete the tag if needed
+      parameters:
+        - name: id
+          in: path
+          description: The ID of the tag to delete
+          required: true
+          schema:
+            type: integer
+        - name: force
+          in: query
+          description: Set to true to permanently delete the tag instead of moving it to trash
+          required: false
+          schema:
+            type: boolean
+            default: false
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Tag deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted:
+                    type: boolean
+                    description: Indicates if the tag was deleted
+                  previous:
+                    type: object
+                    description: The tag object before deletion
+                    additionalProperties: true
+        '403':
+          description: Authentication error or insufficient access rights
+        '404':
+          description: Tag not found
+
+  /media&_fields=id,date,title,media_type,mime_type,source_url:
+    get:
+      operationId: getMediaList
+      summary: Get Media List
+      description: >
+        Use the WordPress REST API to retrieve the list of media items
+        Query parameters per_page and page can be used to control the number of items per page and the page number
+      parameters:
+        - name: per_page
+          in: query
+          description: Number of items per page Default is 10 adjust as needed
+          required: false
+          schema:
+            type: integer
+            default: 10
+        - name: page
+          in: query
+          description: Page number Default is 1
+          required: false
+          schema:
+            type: integer
+            default: 1
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Successfully retrieved the list of media items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                      description: Media ID
+                    date:
+                      type: string
+                      format: date-time
+                      description: Upload date of the media item
+                    title:
+                      type: object
+                      properties:
+                        rendered:
+                          type: string
+                          description: Media title
+                    media_type:
+                      type: string
+                      description: Type of media item (image, video etc)
+                    mime_type:
+                      type: string
+                      description: Media MIME type
+                    source_url:
+                      type: string
+                      description: URL of the media file
+        '403':
+          description: Access is denied
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas: {}
