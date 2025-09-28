@@ -278,7 +278,14 @@ async Task<int> HandlePostsAsync(string[] args)
 
 async Task<int> HandleCategoriesAsync(string[] args)
 {
-    var parsed = OptionParser.Parse(args);
+    if (args.Length == 0)
+    {
+        args = new[] { "list" };
+    }
+
+    var subcommand = args[0].ToLowerInvariant();
+    var subArgs = args.Skip(1).ToArray();
+    var parsed = OptionParser.Parse(subArgs);
     var format = OutputFormatter.ParseFormat(parsed.GetString("format"));
 
     try
@@ -286,10 +293,54 @@ async Task<int> HandleCategoriesAsync(string[] args)
         var (store, profile, token) = ResolveConnection(globalConnectionName);
         var settings = new WordPressSettings(profile.BaseUrl, token);
         using var service = new WordPressService(settings);
-        var categories = await service.ListCategoriesAsync(CancellationToken.None).ConfigureAwait(false);
-        OutputFormatter.WriteCategories(categories, format, Console.Out);
+        var ct = CancellationToken.None;
+        int result;
+
+        switch (subcommand)
+        {
+            case "list":
+            {
+                var categories = await service.ListCategoriesAsync(ct).ConfigureAwait(false);
+                OutputFormatter.WriteCategories(categories, format, Console.Out);
+                result = (int)ExitCode.Success;
+                break;
+            }
+            case "get":
+            {
+                var id = ResolveId(parsed, defaultValue: parsed.Positionals.FirstOrDefault());
+                if (id is null)
+                {
+                    Console.Error.WriteLine("Provide a category ID.");
+                    return (int)ExitCode.InvalidArguments;
+                }
+
+                var category = await service.GetCategoryAsync(id.Value, ct).ConfigureAwait(false);
+                OutputFormatter.WriteCategory(category, format, Console.Out);
+                result = (int)ExitCode.Success;
+                break;
+            }
+            case "delete":
+            {
+                var id = ResolveId(parsed, defaultValue: parsed.Positionals.FirstOrDefault());
+                if (id is null)
+                {
+                    Console.Error.WriteLine("Provide a category ID.");
+                    return (int)ExitCode.InvalidArguments;
+                }
+
+                var force = parsed.GetBool("force", defaultValue: true);
+                var response = await service.DeleteCategoryAsync(id.Value, force, ct).ConfigureAwait(false);
+                OutputFormatter.WriteDeleteResponse(response, format, Console.Out);
+                result = (int)ExitCode.Success;
+                break;
+            }
+            default:
+                Console.Error.WriteLine($"Unknown categories subcommand: {subcommand}");
+                return (int)ExitCode.InvalidArguments;
+        }
+
         UpdateLastUsedConnection(store, profile.Name);
-        return (int)ExitCode.Success;
+        return result;
     }
     catch (InvalidOperationException ex)
     {
@@ -309,7 +360,14 @@ async Task<int> HandleCategoriesAsync(string[] args)
 
 async Task<int> HandleTagsAsync(string[] args)
 {
-    var parsed = OptionParser.Parse(args);
+    if (args.Length == 0)
+    {
+        args = new[] { "list" };
+    }
+
+    var subcommand = args[0].ToLowerInvariant();
+    var subArgs = args.Skip(1).ToArray();
+    var parsed = OptionParser.Parse(subArgs);
     var format = OutputFormatter.ParseFormat(parsed.GetString("format"));
 
     try
@@ -317,10 +375,75 @@ async Task<int> HandleTagsAsync(string[] args)
         var (store, profile, token) = ResolveConnection(globalConnectionName);
         var settings = new WordPressSettings(profile.BaseUrl, token);
         using var service = new WordPressService(settings);
-        var tags = await service.ListTagsAsync(CancellationToken.None).ConfigureAwait(false);
-        OutputFormatter.WriteTags(tags, format, Console.Out);
+        var ct = CancellationToken.None;
+        int result;
+
+        switch (subcommand)
+        {
+            case "list":
+            {
+                var tags = await service.ListTagsAsync(ct).ConfigureAwait(false);
+                OutputFormatter.WriteTags(tags, format, Console.Out);
+                result = (int)ExitCode.Success;
+                break;
+            }
+            case "create":
+            {
+                var name = parsed.GetString("name");
+                if (string.IsNullOrWhiteSpace(name))
+                {
+                    Console.Error.WriteLine("Provide --name.");
+                    return (int)ExitCode.InvalidArguments;
+                }
+
+                var request = new WordPressCreateTagRequest
+                {
+                    Name = name,
+                    Slug = parsed.GetString("slug"),
+                    Description = parsed.GetString("description")
+                };
+
+                var tag = await service.CreateTagAsync(request, ct).ConfigureAwait(false);
+                OutputFormatter.WriteTag(tag, format, Console.Out);
+                result = (int)ExitCode.Success;
+                break;
+            }
+            case "get":
+            {
+                var id = ResolveId(parsed, defaultValue: parsed.Positionals.FirstOrDefault());
+                if (id is null)
+                {
+                    Console.Error.WriteLine("Provide a tag ID.");
+                    return (int)ExitCode.InvalidArguments;
+                }
+
+                var tag = await service.GetTagAsync(id.Value, ct).ConfigureAwait(false);
+                OutputFormatter.WriteTag(tag, format, Console.Out);
+                result = (int)ExitCode.Success;
+                break;
+            }
+            case "delete":
+            {
+                var id = ResolveId(parsed, defaultValue: parsed.Positionals.FirstOrDefault());
+                if (id is null)
+                {
+                    Console.Error.WriteLine("Provide a tag ID.");
+                    return (int)ExitCode.InvalidArguments;
+                }
+
+                var force = parsed.GetBool("force", defaultValue: true);
+                var response = await service.DeleteTagAsync(id.Value, force, ct).ConfigureAwait(false);
+                OutputFormatter.WriteDeleteResponse(response, format, Console.Out);
+                result = (int)ExitCode.Success;
+                break;
+            }
+            default:
+                Console.Error.WriteLine($"Unknown tags subcommand: {subcommand}");
+                return (int)ExitCode.InvalidArguments;
+        }
+
         UpdateLastUsedConnection(store, profile.Name);
-        return (int)ExitCode.Success;
+        return result;
     }
     catch (InvalidOperationException ex)
     {

@@ -128,6 +128,32 @@ public static class OutputFormatter
         }
     }
 
+    public static void WriteCategory(WordPressCategory category, OutputFormat format, TextWriter writer)
+    {
+        switch (format)
+        {
+            case OutputFormat.Json:
+                writer.WriteLine(JsonSerializer.Serialize(category, SerializerOptions));
+                break;
+            case OutputFormat.Raw:
+                writer.WriteLine($"{category.Id}\t{category.Name}\t{category.Slug}");
+                break;
+            default:
+                WriteTable(writer,
+                    new[] { "Field", "Value" },
+                    new[]
+                    {
+                        new[] { "ID", category.Id.ToString() },
+                        new[] { "Name", category.Name ?? string.Empty },
+                        new[] { "Slug", category.Slug ?? string.Empty },
+                        new[] { "Description", category.Description ?? string.Empty },
+                        new[] { "Count", category.Count?.ToString() ?? string.Empty },
+                        new[] { "Parent", category.Parent?.ToString() ?? string.Empty },
+                    });
+                break;
+        }
+    }
+
     public static void WriteTags(IEnumerable<WordPressTag> tags, OutputFormat format, TextWriter writer)
     {
         var list = tags.ToList();
@@ -152,6 +178,31 @@ public static class OutputFormatter
                         Truncate(tag.Slug, 40),
                         tag.Count?.ToString() ?? string.Empty
                     }));
+                break;
+        }
+    }
+
+    public static void WriteTag(WordPressTag tag, OutputFormat format, TextWriter writer)
+    {
+        switch (format)
+        {
+            case OutputFormat.Json:
+                writer.WriteLine(JsonSerializer.Serialize(tag, SerializerOptions));
+                break;
+            case OutputFormat.Raw:
+                writer.WriteLine($"{tag.Id}\t{tag.Name}\t{tag.Slug}");
+                break;
+            default:
+                WriteTable(writer,
+                    new[] { "Field", "Value" },
+                    new[]
+                    {
+                        new[] { "ID", tag.Id.ToString() },
+                        new[] { "Name", tag.Name ?? string.Empty },
+                        new[] { "Slug", tag.Slug ?? string.Empty },
+                        new[] { "Description", tag.Description ?? string.Empty },
+                        new[] { "Count", tag.Count?.ToString() ?? string.Empty },
+                    });
                 break;
         }
     }
