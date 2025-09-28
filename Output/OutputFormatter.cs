@@ -320,6 +320,31 @@ public static class OutputFormatter
         }
     }
 
+    public static void WriteMediaItem(WordPressMediaItem item, OutputFormat format, TextWriter writer)
+    {
+        switch (format)
+        {
+            case OutputFormat.Json:
+                writer.WriteLine(JsonSerializer.Serialize(item, SerializerOptions));
+                break;
+            case OutputFormat.Raw:
+                writer.WriteLine($"{item.Id}\t{item.MediaType}\t{GetTitleText(item)}\t{item.SourceUrl}");
+                break;
+            default:
+                WriteTable(writer,
+                    new[] { "Field", "Value" },
+                    new[]
+                    {
+                        new[] { "ID", item.Id.ToString() },
+                        new[] { "Type", item.MediaType ?? string.Empty },
+                        new[] { "Title", GetTitleText(item) },
+                        new[] { "Mime Type", item.MimeType ?? string.Empty },
+                        new[] { "Source URL", item.SourceUrl ?? string.Empty },
+                    });
+                break;
+        }
+    }
+
     private static void WriteTable(TextWriter writer, IReadOnlyList<string> headers, IEnumerable<IReadOnlyList<string>> rows)
     {
         var rowList = rows.Select(r => r.Select(c => c ?? string.Empty).ToArray()).ToList();

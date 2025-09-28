@@ -196,15 +196,68 @@ public sealed class WordPressApiClient
     {
         var url = BuildUrl(MediaPath);
         if (perPage.HasValue)
-        {
-            url = AppendQuery(url, "per_page", perPage.Value.ToString());
+        {            url = AppendQuery(url, "per_page", perPage.Value.ToString());
         }
         if (page.HasValue)
-        {
-            url = AppendQuery(url, "page", page.Value.ToString());
+        {            url = AppendQuery(url, "page", page.Value.ToString());
         }
 
         return await SendAsync<List<WordPressMediaItem>>(HttpMethod.Get, url, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<WordPressMediaItem> UploadMediaAsync(string filePath, string? title, string? description, CancellationToken cancellationToken)
+    {
+        EnsureAuthenticated(nameof(UploadMediaAsync));
+
+        if (!File.Exists(filePath))
+        {
+            throw new FileNotFoundException("The specified file for upload was not found.", filePath);
+        }
+
+        var url = BuildUrl("/media");
+        using var formData = new MultipartFormDataContent();
+
+        // Add file content
+        var fileStream = File.OpenRead(filePath);
+        var streamContent = new StreamContent(fileStream);
+        var fileName = Path.GetFileName(filePath);
+        streamContent.Headers.ContentType = new MediaTypeHeaderValue(MimeMapping.MimeUtility.GetMimeMapping(fileName));
+        formData.Add(streamContent, "file", fileName);
+
+        // Add metadata
+        if (!string.IsNullOrWhiteSpace(title))
+        {
+            formData.Add(new StringContent(title), "title");
+        }
+        if (!string.IsNullOrWhiteSpace(description))
+        {
+            formData.Add(new StringContent(description), "description");
+        }
+
+        // Custom send logic for multipart form data
+        using var request = new HttpRequestMessage(HttpMethod.Post, url);
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        if (!string.IsNullOrWhiteSpace(_bearerToken))
+        {
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _bearerToken);
+        }
+        request.Content = formData;
+
+        using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        var payload = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new WordPressApiException(response.StatusCode, payload);
+        }
+
+        var result = JsonSerializer.Deserialize<WordPressMediaItem>(payload, JsonOptions);
+        if (result is null)
+        {
+            throw new InvalidOperationException("Failed to deserialize WordPress API response for media upload.");
+        }
+
+        return result;
     }
 
     private async Task<T> SendAsync<T>(HttpMethod method, string requestUri, CancellationToken cancellationToken, object? body = null)
@@ -290,5 +343,37 @@ public sealed class WordPressApiClient
 
     private sealed class VoidResult
     {
+    }
+
+    private static class MimeMapping
+    {
+        public static class MimeUtility
+        {
+            private static readonly Dictionary<string, string> MimeTypes = new(StringComparer.OrdinalIgnoreCase)
+            {
+                {".png", "image/png"},
+                {".jpg", "image/jpeg"},
+                {".jpeg", "image/jpeg"},
+                {".gif", "image/gif"},
+                {".bmp", "image/bmp"},
+                {".webp", "image/webp"},
+                {".svg", "image/svg+xml"},
+                {".txt", "text/plain"},
+                {".pdf", "application/pdf"},
+                {".zip", "application/zip"},
+                {".mp4", "video/mp4"},
+                {".mov", "video/quicktime"},
+            };
+
+            public static string GetMimeMapping(string fileName)
+            {
+                var extension = Path.GetExtension(fileName);
+                if (extension != null && MimeTypes.TryGetValue(extension, out var mimeType))
+                {
+                    return mimeType;
+                }
+                return "application/octet-stream"; // Default MIME type
+            }
+        }
     }
 }

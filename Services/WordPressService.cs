@@ -62,6 +62,9 @@ public sealed class WordPressService : IDisposable
     public Task<IReadOnlyList<WordPressMediaItem>> ListMediaAsync(int? perPage, int? page, CancellationToken cancellationToken)
         => _apiClient.GetMediaAsync(perPage, page, cancellationToken);
 
+    public Task<WordPressMediaItem> UploadMediaAsync(string filePath, string? title, string? description, CancellationToken cancellationToken)
+        => _apiClient.UploadMediaAsync(filePath, title, description, cancellationToken);
+
     private HttpClient CreateHttpClient()
     {
         var handler = new SocketsHttpHandler

@@ -463,13 +463,13 @@ async Task<int> HandleTagsAsync(string[] args)
 
 async Task<int> HandleMediaAsync(string[] args)
 {
-    if (args.Length > 0 && args[0].ToLowerInvariant() != "list")
+    if (args.Length == 0)
     {
-        Console.Error.WriteLine("Only the 'list' subcommand is available for media.");
-        return (int)ExitCode.InvalidArguments;
+        args = new[] { "list" };
     }
 
-    var subArgs = args.Length > 0 ? args.Skip(1).ToArray() : Array.Empty<string>();
+    var subcommand = args[0].ToLowerInvariant();
+    var subArgs = args.Skip(1).ToArray();
     var parsed = OptionParser.Parse(subArgs);
     var format = OutputFormatter.ParseFormat(parsed.GetString("format"));
 
@@ -478,16 +478,47 @@ async Task<int> HandleMediaAsync(string[] args)
         var (store, profile, token) = ResolveConnection(globalConnectionName);
         var settings = new WordPressSettings(profile.BaseUrl, token);
         using var service = new WordPressService(settings);
+        var ct = CancellationToken.None;
+        int result;
 
-        var perPage = parsed.GetInt("per-page") ?? 10;
-        perPage = Math.Clamp(perPage, 1, 100);
-        var page = parsed.GetInt("page") ?? 1;
-        page = Math.Max(page, 1);
+        switch (subcommand)
+        {
+            case "list":
+            {
+                var perPage = parsed.GetInt("per-page") ?? 10;
+                perPage = Math.Clamp(perPage, 1, 100);
+                var page = parsed.GetInt("page") ?? 1;
+                page = Math.Max(page, 1);
 
-        var mediaItems = await service.ListMediaAsync(perPage, page, CancellationToken.None).ConfigureAwait(false);
-        OutputFormatter.WriteMediaItems(mediaItems, format, Console.Out);
+                var mediaItems = await service.ListMediaAsync(perPage, page, ct).ConfigureAwait(false);
+                OutputFormatter.WriteMediaItems(mediaItems, format, Console.Out);
+                result = (int)ExitCode.Success;
+                break;
+            }
+            case "upload":
+            {
+                var filePath = parsed.Positionals.FirstOrDefault();
+                if (string.IsNullOrWhiteSpace(filePath))
+                {
+                    Console.Error.WriteLine("Provide a file path to upload.");
+                    return (int)ExitCode.InvalidArguments;
+                }
+
+                var title = parsed.GetString("title");
+                var description = parsed.GetString("description");
+
+                var mediaItem = await service.UploadMediaAsync(filePath, title, description, ct).ConfigureAwait(false);
+                OutputFormatter.WriteMediaItem(mediaItem, format, Console.Out);
+                result = (int)ExitCode.Success;
+                break;
+            }
+            default:
+                Console.Error.WriteLine($"Unknown media subcommand: {subcommand}");
+                return (int)ExitCode.InvalidArguments;
+        }
+
         UpdateLastUsedConnection(store, profile.Name);
-        return (int)ExitCode.Success;
+        return result;
     }
     catch (InvalidOperationException ex)
     {
@@ -502,6 +533,11 @@ async Task<int> HandleMediaAsync(string[] args)
             Console.Error.WriteLine(ex.ResponseBody);
         }
         return (int)ExitCode.ApiError;
+    }
+    catch (FileNotFoundException ex)
+    {
+        Console.Error.WriteLine(ex.Message);
+        return (int)ExitCode.InvalidArguments;
     }
 }
 
