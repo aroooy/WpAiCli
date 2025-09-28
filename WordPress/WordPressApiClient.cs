@@ -13,13 +13,13 @@ public sealed class WordPressApiClient
     private const string PostsListPath = "/posts&context=edit&_fields=id,date,date_gmt,guid,modified,modified_gmt,slug,status,type,link,title";
     private const string PostDetailPath = "/posts/{0}&context=edit&_fields=id,date,date_gmt,guid.raw,modified,modified_gmt,password,slug,status,type,link,title.raw,content.raw,author,featured_media,comment_status,ping_status,sticky,template,format,categories,tags,permalink_template,generated_slug,class_list";
     private const string PostCreatePath = "/posts";
-    private const string PostRevisionsPath = "/posts/{0}/revisions&per_page=5&context=edit";
-    private const string PostRevisionDetailPath = "/posts/{0}/revisions/{1}&context=edit";
+    private const string PostRevisionsPath = "/posts/{0}/revisions&per_page=5&context=edit&_fields=author,date_gmt,id,modified_gmt,parent,title";
+    private const string PostRevisionDetailPath = "/posts/{0}/revisions/{1}&context=edit&_fields=author,date_gmt,id,modified_gmt,parent,title,content";
     private const string CategoriesPath = "/categories&_fields=id,count,description,link,name,slug,taxonomy,parent&per_page=100";
-    private const string CategoryDetailPath = "/categories/{0}";
+    private const string CategoryDetailPath = "/categories/{0}&_fields=id,count,description,link,name,slug,taxonomy,parent";
     private const string TagsPath = "/tags&_fields=id,name,slug,description,count&per_page=100";
     private const string TagCreatePath = "/tags";
-    private const string TagDetailPath = "/tags/{0}";
+    private const string TagDetailPath = "/tags/{0}&_fields=id,name,slug,description,count";
     private const string MediaPath = "/media&_fields=id,date,title,media_type,mime_type,source_url";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -104,7 +104,7 @@ public sealed class WordPressApiClient
         return SendAsync<WordPressPostDetail>(method, url, cancellationToken, request);
     }
 
-    public Task<WordPressDeleteResponse> DeletePostAsync(int id, bool force, CancellationToken cancellationToken)
+    public async Task<WordPressDeleteResponse> DeletePostAsync(int id, bool force, CancellationToken cancellationToken)
     {
         EnsureAuthenticated(nameof(DeletePostAsync));
 
@@ -115,7 +115,8 @@ public sealed class WordPressApiClient
             url = AppendQuery(url, "force", "true");
         }
 
-        return SendAsync<WordPressDeleteResponse>(HttpMethod.Delete, url, cancellationToken);
+        await SendAsync<JsonDocument>(HttpMethod.Delete, url, cancellationToken).ConfigureAwait(false);
+        return new WordPressDeleteResponse { Deleted = true };
     }
 
     public async Task<IReadOnlyList<WordPressCategory>> GetCategoriesAsync(CancellationToken cancellationToken)
@@ -131,7 +132,7 @@ public sealed class WordPressApiClient
         return SendAsync<WordPressCategory>(HttpMethod.Get, url, cancellationToken);
     }
 
-    public Task<WordPressDeleteResponse> DeleteCategoryAsync(int id, bool force, CancellationToken cancellationToken)
+    public async Task<WordPressDeleteResponse> DeleteCategoryAsync(int id, bool force, CancellationToken cancellationToken)
     {
         EnsureAuthenticated(nameof(DeleteCategoryAsync));
 
@@ -142,7 +143,8 @@ public sealed class WordPressApiClient
             url = AppendQuery(url, "force", "true");
         }
 
-        return SendAsync<WordPressDeleteResponse>(HttpMethod.Delete, url, cancellationToken);
+        await SendAsync<JsonDocument>(HttpMethod.Delete, url, cancellationToken).ConfigureAwait(false);
+        return new WordPressDeleteResponse { Deleted = true };
     }
 
     public async Task<IReadOnlyList<WordPressTag>> GetTagsAsync(CancellationToken cancellationToken)
@@ -172,7 +174,7 @@ public sealed class WordPressApiClient
         return SendAsync<WordPressTag>(HttpMethod.Get, url, cancellationToken);
     }
 
-    public Task<WordPressDeleteResponse> DeleteTagAsync(int id, bool force, CancellationToken cancellationToken)
+    public async Task<WordPressDeleteResponse> DeleteTagAsync(int id, bool force, CancellationToken cancellationToken)
     {
         EnsureAuthenticated(nameof(DeleteTagAsync));
 
@@ -183,7 +185,11 @@ public sealed class WordPressApiClient
             url = AppendQuery(url, "force", "true");
         }
 
-        return SendAsync<WordPressDeleteResponse>(HttpMethod.Delete, url, cancellationToken);
+        // The API returns an empty array `[]` for a successful tag deletion, which is not useful and causes deserialization errors.
+        // We can ignore the response body and consider a successful HTTP status as a successful deletion.
+        await SendAsync<JsonDocument>(HttpMethod.Delete, url, cancellationToken).ConfigureAwait(false);
+
+        return new WordPressDeleteResponse { Deleted = true };
     }
 
     public async Task<IReadOnlyList<WordPressMediaItem>> GetMediaAsync(int? perPage, int? page, CancellationToken cancellationToken)
