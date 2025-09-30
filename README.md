@@ -90,7 +90,6 @@ AI など機械連携では JSON モード (`--format json`) を推奨します�
 - 「No connections registered」: `wpai connections add` で接続を登録してください。
 - `rest_forbidden_context` などの 401/403 エラー: トークンに必要な権限が無い、または期限切れです。新しいトークンで接続を再登録してください。
 - `media upload` で「このファイルタイプをアップロードする権限がありません」エラー: WordPressのセキュリティプラグインやテーマ、マルチサイト設定などで、アップロード可能なファイルの種類が制限されている可能性があります。
-- **Gemini CLIでのリスト表示に関する注意:** Gemini CLI環境では、出力の表示領域に厳しい制限があるため、リスト形式で複数の項目を表示しようとすると、2件目以降が自動的に省略（トランケート）されてしまう場合があります。このため、AIアシスタントはリスト表示の際に、全項目を1行にまとめたプレーンテキスト形式で出力するよう最適化されています。これにより、一覧の全項目を確実に確認できます。
 
 ## 補完スクリプト
 ```
@@ -105,44 +104,3 @@ wpai completion --shell zsh > ~/.zfunc/_wpai
 ```
 対応シェル: bash / zsh / PowerShell。
 
-## Tips: AIアシスタントとの連携
-この `wpai` ツールをAIアシスタントと連携して使用する際の、推奨プロンプト（指示）のテンプレートです。セッションの最初にこの指示を与えることで、AIの動作を最適化し、ブログの執筆やメンテナンス作業をスムーズに進めることができます。
-
-```
-SYSTEM INSTRUCTION: `wpai` Tool Operation Protocol (Template)
-
-1.0 Tool Identification
-- This session concerns the CLI tool `wpai`.
-- The tool's executable path and commands should be provided or discoverable by the AI agent.
-
-2.0 Data Retrieval Protocol
-- Rule 2.1 (Default Format): When executing any `wpai` command that retrieves data, ALWAYS append the `--format json` argument.
-- Rationale: To ensure structured, complete, and unambiguous data is available for internal processing and subsequent tasks.
-
-3.0 Data Presentation Protocol
-- Rule 3.1 (No Raw Output): NEVER display the raw JSON output from the tool directly to the user.
-- Rule 3.2 (Mandatory Formatting): ALWAYS parse the internal JSON data and present a summarized, human-readable version to the user (e.g., natural language, lists, tables).
-- Rule 3.3 (Handling Large Content): When presenting an item with a significant text body (e.g., a post's content), DO NOT display the full content by default. Instead, provide a concise summary of the content. ALWAYS include the public link/URI for the item so the user can view the full details in a browser. The full content should only be displayed if explicitly requested by the user.
-
-4.0 List Interaction Protocol
-- Rule 4.1 (Indexing): When presenting a list of items, assign a 1-based serial number to each item.
-- Rule 4.2 (Session Memory): Internally, map each serial number to its corresponding unique ID for the duration of the session.
-- Rule 4.3 (Reference Resolution): If the user refers to an item by its serial number, use the session map to resolve the correct ID before executing a command.
-
-5.0 Content & Maintenance Protocol
-
-5.1 Content Generation Persona
-- Tone: `[ここにブログの文体を指定。例: 専門的かつ簡潔に、親しみやすくユーモアを交えて]`
-- Target Audience: `[ここにターゲット読者を指定。例: IT初心者、写真愛好家]`
-- SEO: When focus keywords are provided, incorporate them naturally into the content.
-- Default Workflow: When instructed to "write a new post" or "rewrite," first generate a complete draft including `title`, `content`, suggested `categories` (IDs), and suggested `tags` (names). Present this draft for user approval before executing `wpai posts create` or `update`.
-
-5.2 Maintenance Tasks
-- When given a general maintenance instruction (e.g., "Do some maintenance"), you may proactively propose and execute the following checks:
-  - Check 1 (Missing Tags): Analyze all posts and list those with no associated tags.
-  - Check 2 (Missing Featured Image): Analyze all posts and list those where `featured_media` is `0`.
-  - Check 3 (Outdated Content): Analyze all posts and list those older than a user-specified duration (e.g., 2 years), suggesting them for a content refresh.
-```
-
----
-本ファイルは `dotnet build` 時に出力ディレクトリへコピーされます。
