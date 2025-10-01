@@ -1,4 +1,7 @@
-﻿using System.Net;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -10,22 +13,20 @@ namespace WpAiCli.WordPress;
 public sealed class WordPressApiClient
 {
     private const string DefaultBaseUrl = "https://aroooy.net/?rest_route=/wp/v2";
-    private const string PostsListPath = "/posts&context=edit&_fields=id,date,date_gmt,guid,modified,modified_gmt,slug,status,type,link,title";
-    private const string PostDetailPath = "/posts/{0}&context=edit&_fields=id,date,date_gmt,guid.raw,modified,modified_gmt,password,slug,status,type,link,title.raw,content.raw,author,featured_media,comment_status,ping_status,sticky,template,format,categories,tags,permalink_template,generated_slug,class_list";
-    private const string PostCreatePath = "/posts";
-    private const string PostRevisionsPath = "/posts/{0}/revisions&per_page=5&context=edit&_fields=author,date_gmt,id,modified_gmt,parent,title";
-    private const string PostRevisionDetailPath = "/posts/{0}/revisions/{1}&context=edit&_fields=author,date_gmt,id,modified_gmt,parent,title,content";
-    private const string CategoriesPath = "/categories&_fields=id,count,description,link,name,slug,taxonomy,parent&per_page=100";
-    private const string CategoryDetailPath = "/categories/{0}&_fields=id,count,description,link,name,slug,taxonomy,parent";
-    private const string TagsPath = "/tags&_fields=id,name,slug,description,count&per_page=100";
-    private const string TagCreatePath = "/tags";
-    private const string TagDetailPath = "/tags/{0}&_fields=id,name,slug,description,count";
-    private const string MediaPath = "/media&_fields=id,date,title,media_type,mime_type,source_url";
+
+    // Fields constants for reuse
+    private const string PostSummaryFields = "id,date,date_gmt,guid,modified,modified_gmt,slug,status,type,link,title";
+    private const string PostDetailFields = "id,date,date_gmt,guid.raw,modified,modified_gmt,password,slug,status,type,link,title.raw,content.raw,author,featured_media,comment_status,ping_status,sticky,template,format,categories,tags,permalink_template,generated_slug,class_list";
+    private const string RevisionSummaryFields = "author,date_gmt,id,modified_gmt,parent,title";
+    private const string RevisionDetailFields = "author,date_gmt,id,modified_gmt,parent,title,content";
+    private const string CategoryFields = "id,count,description,link,name,slug,taxonomy,parent";
+    private const string TagFields = "id,name,slug,description,count";
+    private const string MediaFields = "id,date,title,media_type,mime_type,source_url";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
     };
 
     private readonly HttpClient _httpClient;
@@ -39,9 +40,12 @@ public sealed class WordPressApiClient
         _bearerToken = bearerToken;
     }
 
-    public async Task<IReadOnlyList<WordPressPostSummary>> GetPostsAsync(string? status, int? perPage, int? page, CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<WordPressPostDetail>> GetPostsAsync(string? status, int? perPage, int? page, CancellationToken cancellationToken)
     {
-        var url = BuildUrl(PostsListPath);
+        var url = BuildUrl("/posts");
+        url = AppendQuery(url, "context", "edit");
+        url = AppendQuery(url, "_fields", PostDetailFields);
+
         if (!string.IsNullOrWhiteSpace(status))
         {
             url = AppendQuery(url, "status", status);
@@ -55,27 +59,31 @@ public sealed class WordPressApiClient
             url = AppendQuery(url, "page", page.Value.ToString());
         }
 
-        return await SendAsync<List<WordPressPostSummary>>(HttpMethod.Get, url, cancellationToken).ConfigureAwait(false);
+        return await SendAsync<List<WordPressPostDetail>>(HttpMethod.Get, url, cancellationToken).ConfigureAwait(false);
     }
 
     public Task<WordPressPostDetail> GetPostAsync(int id, CancellationToken cancellationToken)
     {
-        var path = string.Format(PostDetailPath, id);
-        var url = BuildUrl(path);
+        var url = BuildUrl($"/posts/{id}");
+        url = AppendQuery(url, "context", "edit");
+        url = AppendQuery(url, "_fields", PostDetailFields);
         return SendAsync<WordPressPostDetail>(HttpMethod.Get, url, cancellationToken);
     }
 
     public async Task<IReadOnlyList<WordPressRevision>> GetPostRevisionsAsync(int id, CancellationToken cancellationToken)
     {
-        var path = string.Format(PostRevisionsPath, id);
-        var url = BuildUrl(path);
+        var url = BuildUrl($"/posts/{id}/revisions");
+        url = AppendQuery(url, "per_page", "5");
+        url = AppendQuery(url, "context", "edit");
+        url = AppendQuery(url, "_fields", RevisionSummaryFields);
         return await SendAsync<List<WordPressRevision>>(HttpMethod.Get, url, cancellationToken).ConfigureAwait(false);
     }
 
     public Task<WordPressRevision> GetPostRevisionAsync(int id, int revisionId, CancellationToken cancellationToken)
     {
-        var path = string.Format(PostRevisionDetailPath, id, revisionId);
-        var url = BuildUrl(path);
+        var url = BuildUrl($"/posts/{id}/revisions/{revisionId}");
+        url = AppendQuery(url, "context", "edit");
+        url = AppendQuery(url, "_fields", RevisionDetailFields);
         return SendAsync<WordPressRevision>(HttpMethod.Get, url, cancellationToken);
     }
 
@@ -89,7 +97,7 @@ public sealed class WordPressApiClient
             throw new ArgumentException("Title, content, and status are required to create a post.", nameof(request));
         }
 
-        var url = BuildUrl(PostCreatePath);
+        var url = BuildUrl("/posts");
         return SendAsync<WordPressPostDetail>(HttpMethod.Post, url, cancellationToken, request);
     }
 
@@ -98,8 +106,7 @@ public sealed class WordPressApiClient
         ArgumentNullException.ThrowIfNull(request);
         EnsureAuthenticated(nameof(UpdatePostAsync));
 
-        var path = string.Format(PostDetailPath, id);
-        var url = BuildUrl(path);
+        var url = BuildUrl($"/posts/{id}");
         var method = new HttpMethod("PATCH");
         return SendAsync<WordPressPostDetail>(method, url, cancellationToken, request);
     }
@@ -108,8 +115,7 @@ public sealed class WordPressApiClient
     {
         EnsureAuthenticated(nameof(DeletePostAsync));
 
-        var path = string.Format(PostDetailPath, id);
-        var url = BuildUrl(path);
+        var url = BuildUrl($"/posts/{id}");
         if (force)
         {
             url = AppendQuery(url, "force", "true");
@@ -121,14 +127,16 @@ public sealed class WordPressApiClient
 
     public async Task<IReadOnlyList<WordPressCategory>> GetCategoriesAsync(CancellationToken cancellationToken)
     {
-        var url = BuildUrl(CategoriesPath);
+        var url = BuildUrl("/categories");
+        url = AppendQuery(url, "_fields", CategoryFields);
+        url = AppendQuery(url, "per_page", "100");
         return await SendAsync<List<WordPressCategory>>(HttpMethod.Get, url, cancellationToken).ConfigureAwait(false);
     }
 
     public Task<WordPressCategory> GetCategoryAsync(int id, CancellationToken cancellationToken)
     {
-        var path = string.Format(CategoryDetailPath, id);
-        var url = BuildUrl(path);
+        var url = BuildUrl($"/categories/{id}");
+        url = AppendQuery(url, "_fields", CategoryFields);
         return SendAsync<WordPressCategory>(HttpMethod.Get, url, cancellationToken);
     }
 
@@ -136,8 +144,7 @@ public sealed class WordPressApiClient
     {
         EnsureAuthenticated(nameof(DeleteCategoryAsync));
 
-        var path = string.Format(CategoryDetailPath, id);
-        var url = BuildUrl(path);
+        var url = BuildUrl($"/categories/{id}");
         if (force)
         {
             url = AppendQuery(url, "force", "true");
@@ -149,7 +156,9 @@ public sealed class WordPressApiClient
 
     public async Task<IReadOnlyList<WordPressTag>> GetTagsAsync(CancellationToken cancellationToken)
     {
-        var url = BuildUrl(TagsPath);
+        var url = BuildUrl("/tags");
+        url = AppendQuery(url, "_fields", TagFields);
+        url = AppendQuery(url, "per_page", "100");
         return await SendAsync<List<WordPressTag>>(HttpMethod.Get, url, cancellationToken).ConfigureAwait(false);
     }
 
@@ -163,14 +172,14 @@ public sealed class WordPressApiClient
             throw new ArgumentException("Tag name is required.", nameof(request));
         }
 
-        var url = BuildUrl(TagCreatePath);
+        var url = BuildUrl("/tags");
         return SendAsync<WordPressTag>(HttpMethod.Post, url, cancellationToken, request);
     }
 
     public Task<WordPressTag> GetTagAsync(int id, CancellationToken cancellationToken)
     {
-        var path = string.Format(TagDetailPath, id);
-        var url = BuildUrl(path);
+        var url = BuildUrl($"/tags/{id}");
+        url = AppendQuery(url, "_fields", TagFields);
         return SendAsync<WordPressTag>(HttpMethod.Get, url, cancellationToken);
     }
 
@@ -178,28 +187,27 @@ public sealed class WordPressApiClient
     {
         EnsureAuthenticated(nameof(DeleteTagAsync));
 
-        var path = string.Format(TagDetailPath, id);
-        var url = BuildUrl(path);
+        var url = BuildUrl($"/tags/{id}");
         if (force)
         {
             url = AppendQuery(url, "force", "true");
         }
 
-        // The API returns an empty array `[]` for a successful tag deletion, which is not useful and causes deserialization errors.
-        // We can ignore the response body and consider a successful HTTP status as a successful deletion.
         await SendAsync<JsonDocument>(HttpMethod.Delete, url, cancellationToken).ConfigureAwait(false);
-
         return new WordPressDeleteResponse { Deleted = true };
     }
 
     public async Task<IReadOnlyList<WordPressMediaItem>> GetMediaAsync(int? perPage, int? page, CancellationToken cancellationToken)
     {
-        var url = BuildUrl(MediaPath);
+        var url = BuildUrl("/media");
+        url = AppendQuery(url, "_fields", MediaFields);
         if (perPage.HasValue)
-        {            url = AppendQuery(url, "per_page", perPage.Value.ToString());
+        {
+            url = AppendQuery(url, "per_page", perPage.Value.ToString());
         }
         if (page.HasValue)
-        {            url = AppendQuery(url, "page", page.Value.ToString());
+        {
+            url = AppendQuery(url, "page", page.Value.ToString());
         }
 
         return await SendAsync<List<WordPressMediaItem>>(HttpMethod.Get, url, cancellationToken).ConfigureAwait(false);
@@ -217,14 +225,12 @@ public sealed class WordPressApiClient
         var url = BuildUrl("/media");
         using var formData = new MultipartFormDataContent();
 
-        // Add file content
         var fileStream = File.OpenRead(filePath);
         var streamContent = new StreamContent(fileStream);
         var fileName = Path.GetFileName(filePath);
         streamContent.Headers.ContentType = new MediaTypeHeaderValue(MimeMapping.MimeUtility.GetMimeMapping(fileName));
         formData.Add(streamContent, "file", fileName);
 
-        // Add metadata
         if (!string.IsNullOrWhiteSpace(title))
         {
             formData.Add(new StringContent(title), "title");
@@ -234,7 +240,6 @@ public sealed class WordPressApiClient
             formData.Add(new StringContent(description), "description");
         }
 
-        // Custom send logic for multipart form data
         using var request = new HttpRequestMessage(HttpMethod.Post, url);
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         if (!string.IsNullOrWhiteSpace(_bearerToken))
@@ -341,9 +346,7 @@ public sealed class WordPressApiClient
         }
     }
 
-    private sealed class VoidResult
-    {
-    }
+    private sealed class VoidResult { }
 
     private static class MimeMapping
     {
@@ -372,7 +375,7 @@ public sealed class WordPressApiClient
                 {
                     return mimeType;
                 }
-                return "application/octet-stream"; // Default MIME type
+                return "application/octet-stream";
             }
         }
     }

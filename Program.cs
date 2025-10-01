@@ -104,6 +104,9 @@ async Task<int> HandlePostsAsync(string[] args)
 
         switch (subcommand)
         {
+            case "sync":
+                return await HandlePostsSyncAsync();
+
             case "list":
             {
                 var status = parsed.GetString("status");
@@ -114,6 +117,23 @@ async Task<int> HandlePostsAsync(string[] args)
 
                 var posts = await service.ListPostsAsync(status, perPage, page, ct).ConfigureAwait(false);
                 OutputFormatter.WritePosts(posts, format, Console.Out);
+
+                // Cache the results if a path is configured
+                if (!string.IsNullOrWhiteSpace(profile.CachePath))
+                {
+                    var cacheService = new CacheService();
+                    int cachedCount = 0;
+                    foreach (var post in posts)
+                    {
+                        cacheService.SavePostToCache(post, profile.CachePath);
+                        cachedCount++;
+                    }
+                    if (cachedCount > 0)
+                    {
+                        Console.WriteLine($"\n{cachedCount} post(s) cached to {profile.CachePath}");
+                    }
+                }
+
                 result = (int)ExitCode.Success;
                 break;
             }
@@ -274,6 +294,44 @@ async Task<int> HandlePostsAsync(string[] args)
         Console.Error.WriteLine(ex.Message);
         return (int)ExitCode.InvalidArguments;
     }
+}
+
+async Task<int> HandlePostsSyncAsync()
+{
+    var (store, profile, token) = ResolveConnection(globalConnectionName);
+    if (string.IsNullOrWhiteSpace(profile.CachePath))
+    {
+        Console.Error.WriteLine("Cache path is not configured for this connection. Use `wpai connections update` to set it.");
+        return (int)ExitCode.InvalidArguments;
+    }
+
+    var settings = new WordPressSettings(profile.BaseUrl, token);
+    using var wpService = new WordPressService(settings);
+    var cacheService = new CacheService();
+    var syncService = new SyncService(wpService, cacheService);
+
+    Console.WriteLine("Starting synchronization...");
+    var syncLimit = profile.SyncItemsLimit ?? 30;
+    var report = await syncService.SynchronizePostsAsync(profile.CachePath, syncLimit, CancellationToken.None);
+    PrintSyncReport(report);
+
+    UpdateLastUsedConnection(store, profile.Name);
+    return (int)ExitCode.Success;
+}
+
+void PrintSyncReport(SyncReport report)
+{
+    Console.WriteLine("\n--- Sync Report ---");
+    Console.WriteLine($"Pushed to server: {report.PushedToServer.Count} post(s)");
+    Console.WriteLine($"Pulled from server: {report.PulledFromServer.Count} post(s)");
+    Console.WriteLine($"Newly cached: {report.NewlyCached.Count} post(s)");
+    Console.WriteLine($"Deleted from local: {report.DeletedFromLocal.Count} post(s)");
+    Console.WriteLine($"Conflicts detected (skipped): {report.ConflictDetected.Count} post(s)");
+    if (report.ConflictDetected.Count > 0)
+    {
+        Console.WriteLine($"Conflict IDs: {string.Join(", ", report.ConflictDetected)}");
+    }
+    Console.WriteLine("-------------------");
 }
 
 async Task<int> HandleCategoriesAsync(string[] args)
@@ -545,7 +603,7 @@ int HandleConnections(string[] args)
 {
     if (args.Length == 0)
     {
-        Console.Error.WriteLine("Specify connections subcommand (list|add|remove).");
+        Console.Error.WriteLine("Specify connections subcommand (list|add|update|remove).");
         return (int)ExitCode.InvalidArguments;
     }
 
@@ -557,6 +615,7 @@ int HandleConnections(string[] args)
     {
         "list" => HandleConnectionsList(),
         "add" => HandleConnectionsAdd(parsed),
+        "update" => HandleConnectionsUpdate(parsed),
         "remove" => HandleConnectionsRemove(),
         _ => UnknownConnectionsCommand(subcommand)
     };
@@ -599,6 +658,8 @@ int HandleConnectionsAdd(ParsedOptions parsed)
     var name = parsed.GetString("name");
     var baseUrl = parsed.GetString("base-url");
     var token = parsed.GetString("token");
+    var cachePath = parsed.GetString("cache-path");
+    var syncLimitStr = parsed.GetString("sync-limit");
 
     if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(baseUrl) || string.IsNullOrWhiteSpace(token))
     {
@@ -613,11 +674,16 @@ int HandleConnectionsAdd(ParsedOptions parsed)
         return (int)ExitCode.InvalidArguments;
     }
 
+    var absoluteCachePath = !string.IsNullOrWhiteSpace(cachePath) ? Path.GetFullPath(cachePath) : null;
+    int? syncLimit = int.TryParse(syncLimitStr, out var parsedLimit) ? parsedLimit : null;
+
     var profile = new ConnectionProfile
     {
         Name = name,
         BaseUrl = baseUrl.Trim(),
-        CredentialKey = $"WpAiCli/{name}"
+        CredentialKey = $"WpAiCli/{name}",
+        CachePath = absoluteCachePath,
+        SyncItemsLimit = syncLimit
     };
 
     CredentialManager.Save(profile.CredentialKey, token);
@@ -626,6 +692,81 @@ int HandleConnectionsAdd(ParsedOptions parsed)
     store.Save();
 
     Console.WriteLine($"Connection '{profile.Name}' registered.");
+    if (profile.CachePath is not null)
+    {
+        Console.WriteLine($"Cache location: {profile.CachePath}");
+    }
+    if (profile.SyncItemsLimit is not null)
+    {
+        Console.WriteLine($"Sync limit: {profile.SyncItemsLimit}");
+    }
+    return (int)ExitCode.Success;
+}
+
+int HandleConnectionsUpdate(ParsedOptions parsed)
+{
+    var name = parsed.Positionals.FirstOrDefault();
+    if (string.IsNullOrWhiteSpace(name))
+    {
+        Console.Error.WriteLine("Specify the name of the connection to update.");
+        return (int)ExitCode.InvalidArguments;
+    }
+
+    var cachePath = parsed.GetString("cache-path");
+    var syncLimitStr = parsed.GetString("sync-limit");
+
+    if (cachePath is null && syncLimitStr is null)
+    {
+        Console.Error.WriteLine("Specify the setting to update. Supported options: --cache-path, --sync-limit");
+        return (int)ExitCode.InvalidArguments;
+    }
+
+    var store = ConnectionStore.Load();
+    var profile = store.Profiles.FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase));
+
+    if (profile is null)
+    {
+        Console.Error.WriteLine($"Connection '{name}' not found.");
+        return (int)ExitCode.InvalidArguments;
+    }
+
+    var updated = false;
+
+    if (cachePath is not null)
+    {
+        profile.CachePath = !string.IsNullOrWhiteSpace(cachePath) ? Path.GetFullPath(cachePath) : null;
+        updated = true;
+        Console.WriteLine(profile.CachePath is not null
+            ? $"Cache location set to: {profile.CachePath}"
+            : "Cache location has been removed.");
+    }
+
+    if (syncLimitStr is not null)
+    {
+        if (int.TryParse(syncLimitStr, out var parsedLimit) && parsedLimit > 0)
+        {
+            profile.SyncItemsLimit = parsedLimit;
+            Console.WriteLine($"Sync limit set to: {profile.SyncItemsLimit}");
+        }
+        else if (string.IsNullOrEmpty(syncLimitStr))
+        {
+            profile.SyncItemsLimit = null;
+            Console.WriteLine("Sync limit has been reset to default (30).");
+        }
+        else
+        {
+            Console.Error.WriteLine($"Invalid value for --sync-limit: '{syncLimitStr}'. Must be a positive integer.");
+            return (int)ExitCode.InvalidArguments;
+        }
+        updated = true;
+    }
+
+    if (updated)
+    {
+        store.Save();
+        Console.WriteLine($"\nConnection '{name}' updated.");
+    }
+
     return (int)ExitCode.Success;
 }
 

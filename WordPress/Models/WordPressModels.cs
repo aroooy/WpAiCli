@@ -140,6 +140,9 @@ public sealed class WordPressUpdatePostRequest
     [JsonPropertyName("status")]
     public string? Status { get; set; }
 
+    [JsonPropertyName("slug")]
+    public string? Slug { get; set; }
+
     [JsonPropertyName("categories")]
     public IList<int>? Categories { get; set; }
 

@@ -17,7 +17,7 @@ public sealed class WordPressService : IDisposable
         _apiClient = new WordPressApiClient(_httpClient, settings.BaseUrl, settings.BearerToken);
     }
 
-    public Task<IReadOnlyList<WordPressPostSummary>> ListPostsAsync(string? status, int? perPage, int? page, CancellationToken cancellationToken)
+    public Task<IReadOnlyList<WordPressPostDetail>> ListPostsAsync(string? status, int? perPage, int? page, CancellationToken cancellationToken)
         => _apiClient.GetPostsAsync(NormalizeEmpty(status), perPage, page, cancellationToken);
 
     public Task<WordPressPostDetail> GetPostAsync(int id, CancellationToken cancellationToken)

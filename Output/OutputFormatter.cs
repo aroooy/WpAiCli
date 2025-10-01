@@ -35,7 +35,7 @@ public static class OutputFormatter
         };
     }
 
-    public static void WritePosts(IEnumerable<WordPressPostSummary> posts, OutputFormat format, TextWriter writer)
+    public static void WritePosts(IEnumerable<WordPressPostBase> posts, OutputFormat format, TextWriter writer)
     {
         var postList = posts.ToList();
         switch (format)

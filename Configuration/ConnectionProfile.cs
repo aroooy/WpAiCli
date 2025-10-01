@@ -12,4 +12,8 @@ public sealed class ConnectionProfile
 
     [JsonPropertyName("credentialKey")]
     public string CredentialKey { get; set; } = string.Empty;
+
+    public string? CachePath { get; set; }
+
+    public int? SyncItemsLimit { get; set; } = 30;
 }
