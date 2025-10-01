@@ -22,6 +22,11 @@ public class EditablePostMetadata
     public string? Title { get; set; }
     public string? Slug { get; set; }
     public string? Status { get; set; }
+    public DateTime? Date { get; set; }
+    public string? Excerpt { get; set; }
+    public int? FeaturedMedia { get; set; }
+    public string? CommentStatus { get; set; }
+    public string? PingStatus { get; set; }
 }
 
 public class CacheService
@@ -69,7 +74,12 @@ public class CacheService
         {
             Title = post.Title?.Raw,
             Slug = post.Slug,
-            Status = post.Status
+            Status = post.Status,
+            Date = post.Date,
+            Excerpt = post.Excerpt?.Raw,
+            FeaturedMedia = post.FeaturedMedia,
+            CommentStatus = post.CommentStatus,
+            PingStatus = post.PingStatus
         };
         var yamlContent = SerializeToYaml(editableMeta);
         var editableMetaFilePath = Path.Combine(postsDir, $"{fileBaseName}_editable.yaml");
@@ -171,22 +181,27 @@ public class CacheService
         }
     }
     
-    private string? FindFileByPattern(string cachePath, string pattern)
+    public string? FindFileByPattern(string cachePath, string pattern)
     {
         var postsDir = Path.Combine(cachePath, "posts");
         return Directory.Exists(postsDir) ? Directory.GetFiles(postsDir, pattern).FirstOrDefault() : null;
     }
 
-    private string SerializeToYaml(EditablePostMetadata data)
+    public string SerializeToYaml(EditablePostMetadata data)
     {
         var sb = new StringBuilder();
         sb.AppendLine($"title: '{(data.Title?.Replace("'", "''"))}'");
         sb.AppendLine($"slug: '{(data.Slug?.Replace("'", "''"))}'");
         sb.AppendLine($"status: '{(data.Status?.Replace("'", "''"))}'");
+        sb.AppendLine($"date: '{(data.Date?.ToString("o"))}'"); // ISO 8601 format
+        sb.AppendLine($"excerpt: '{(data.Excerpt?.Replace("'", "''"))}'");
+        sb.AppendLine($"featured_media: {data.FeaturedMedia}");
+        sb.AppendLine($"comment_status: '{(data.CommentStatus?.Replace("'", "''"))}'");
+        sb.AppendLine($"ping_status: '{(data.PingStatus?.Replace("'", "''"))}'");
         return sb.ToString();
     }
 
-    private EditablePostMetadata DeserializeFromYaml(string yaml)
+    public EditablePostMetadata DeserializeFromYaml(string yaml)
     {
         var data = new EditablePostMetadata();
         var lines = yaml.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
@@ -213,6 +228,23 @@ public class CacheService
                     break;
                 case "status":
                     data.Status = value.Replace("''", "'");
+                    break;
+                case "date":
+                    if (DateTime.TryParse(value, out var dateValue))
+                        data.Date = dateValue;
+                    break;
+                case "excerpt":
+                    data.Excerpt = value.Replace("''", "'");
+                    break;
+                case "featured_media":
+                    if (int.TryParse(value, out var intValue))
+                        data.FeaturedMedia = intValue;
+                    break;
+                case "comment_status":
+                    data.CommentStatus = value.Replace("''", "'");
+                    break;
+                case "ping_status":
+                    data.PingStatus = value.Replace("''", "'");
                     break;
             }
         }

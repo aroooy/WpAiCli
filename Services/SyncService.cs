@@ -80,7 +80,7 @@ public class SyncService
                 var localContentHash = _cacheService.ComputeSha256Hash(localContent);
                 
                 var localEditableMeta = _cacheService.ReadEditableMetadata(id, cachePath);
-                var localEditableMetaYaml = SerializeToYaml(localEditableMeta ?? new EditablePostMetadata());
+                var localEditableMetaYaml = _cacheService.SerializeToYaml(localEditableMeta ?? new EditablePostMetadata());
                 var localEditableMetaHash = _cacheService.ComputeSha256Hash(localEditableMetaYaml);
 
                 if (localContentHash != localMeta.ContentHash || localEditableMetaHash != localMeta.EditableMetaHash)
@@ -113,11 +113,21 @@ public class SyncService
 
         // Compare editable meta hashes
         var localEditableMeta = _cacheService.ReadEditableMetadata(id, cachePath);
-        var localEditableMetaYaml = SerializeToYaml(localEditableMeta ?? new EditablePostMetadata());
+        var localEditableMetaYaml = _cacheService.SerializeToYaml(localEditableMeta ?? new EditablePostMetadata());
         var localEditableMetaHash = _cacheService.ComputeSha256Hash(localEditableMetaYaml);
         
-        var serverEditableMeta = new EditablePostMetadata { Title = remotePost.Title?.Raw, Slug = remotePost.Slug, Status = remotePost.Status };
-        var serverEditableMetaYaml = SerializeToYaml(serverEditableMeta);
+        var serverEditableMeta = new EditablePostMetadata 
+        { 
+            Title = remotePost.Title?.Raw, 
+            Slug = remotePost.Slug, 
+            Status = remotePost.Status,
+            Date = remotePost.Date,
+            Excerpt = remotePost.Excerpt?.Raw,
+            FeaturedMedia = remotePost.FeaturedMedia,
+            CommentStatus = remotePost.CommentStatus,
+            PingStatus = remotePost.PingStatus
+        };
+        var serverEditableMetaYaml = _cacheService.SerializeToYaml(serverEditableMeta);
         var serverEditableMetaHash = _cacheService.ComputeSha256Hash(serverEditableMetaYaml);
         
         var isLocalMetaChanged = localEditableMetaHash != localMeta.EditableMetaHash;
@@ -136,6 +146,11 @@ public class SyncService
                 request.Title = localEditableMeta.Title;
                 request.Slug = localEditableMeta.Slug;
                 request.Status = localEditableMeta.Status;
+                request.Date = localEditableMeta.Date;
+                request.Excerpt = localEditableMeta.Excerpt;
+                request.FeaturedMedia = localEditableMeta.FeaturedMedia;
+                request.CommentStatus = localEditableMeta.CommentStatus;
+                request.PingStatus = localEditableMeta.PingStatus;
             }
             
             var updatedPost = await _wpService.UpdatePostAsync(id, request, cancellationToken);
@@ -147,22 +162,5 @@ public class SyncService
             _cacheService.SavePostToCache(remotePost, cachePath);
             report.PulledFromServer.Add(id);
         }
-    }
-    
-    private string SerializeToYaml(EditablePostMetadata data)
-    {
-        var sb = new StringBuilder();
-        sb.Append("title: '");
-        sb.Append(data.Title?.Replace("'", "''"));
-        sb.AppendLine("'");
-
-        sb.Append("slug: '");
-        sb.Append(data.Slug?.Replace("'", "''"));
-        sb.AppendLine("'");
-
-        sb.Append("status: '");
-        sb.Append(data.Status?.Replace("'", "''"));
-        sb.AppendLine("'");
-        return sb.ToString();
     }
 }

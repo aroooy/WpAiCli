@@ -106,6 +106,9 @@ public sealed class WordPressPostDetail : WordPressPostBase
 
     [JsonPropertyName("class_list")]
     public IReadOnlyList<string>? ClassList { get; set; }
+
+    [JsonPropertyName("excerpt")]
+    public WordPressRenderedContent? Excerpt { get; set; }
 }
 
 public sealed class WordPressCreatePostRequest
@@ -166,6 +169,12 @@ public sealed class WordPressUpdatePostRequest
 
     [JsonPropertyName("format")]
     public string? Format { get; set; }
+
+    [JsonPropertyName("date")]
+    public DateTime? Date { get; set; }
+
+    [JsonPropertyName("excerpt")]
+    public string? Excerpt { get; set; }
 }
 
 public sealed class WordPressRevision : IHasTitle

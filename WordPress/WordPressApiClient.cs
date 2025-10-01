@@ -16,7 +16,7 @@ public sealed class WordPressApiClient
 
     // Fields constants for reuse
     private const string PostSummaryFields = "id,date,date_gmt,guid,modified,modified_gmt,slug,status,type,link,title";
-    private const string PostDetailFields = "id,date,date_gmt,guid.raw,modified,modified_gmt,password,slug,status,type,link,title.raw,content.raw,author,featured_media,comment_status,ping_status,sticky,template,format,categories,tags,permalink_template,generated_slug,class_list";
+    private const string PostDetailFields = "id,date,date_gmt,guid.raw,modified,modified_gmt,password,slug,status,type,link,title.raw,content.raw,excerpt,author,featured_media,comment_status,ping_status,sticky,template,format,categories,tags,permalink_template,generated_slug,class_list";
     private const string RevisionSummaryFields = "author,date_gmt,id,modified_gmt,parent,title";
     private const string RevisionDetailFields = "author,date_gmt,id,modified_gmt,parent,title,content";
     private const string CategoryFields = "id,count,description,link,name,slug,taxonomy,parent";
