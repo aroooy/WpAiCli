@@ -6,6 +6,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using WpAiCli.Services.Data;
 using WpAiCli.WordPress.Models;
 
 namespace WpAiCli.Services;
@@ -31,12 +32,20 @@ public class EditablePostMetadata
 
 public class CacheService
 {
+    private readonly CacheDbContext _db;
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
         WriteIndented = true,
         DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
+
+    public CacheService(string cachePath)
+    {
+        var dbPath = Path.Combine(cachePath, "cache.db");
+        _db = new CacheDbContext(dbPath);
+        _db.Database.EnsureCreated();
+    }
 
     private static string SanitizeTitleForFilename(string title)
     {
@@ -92,45 +101,70 @@ public class CacheService
         File.WriteAllText(contentFilePath, content);
         var contentHash = ComputeSha256Hash(content);
 
-        // 3. Handle meta.json (source of truth + hashes)
-        var metadata = new CachePostMetadata
+        // 3. Save metadata to database
+        var existingPost = _db.Posts.FirstOrDefault(p => p.PostId == post.Id);
+
+        if (existingPost != null)
         {
-            Post = post,
-            ContentHash = contentHash,
-            EditableMetaHash = editableMetaHash
-        };
-        var metaFilePath = Path.Combine(postsDir, $"{fileBaseName}_meta.json");
-        var metaJson = JsonSerializer.Serialize(metadata, SerializerOptions);
-        File.WriteAllText(metaFilePath, metaJson);
+            existingPost.Title = post.Title?.Raw ?? string.Empty;
+            existingPost.Slug = post.Slug ?? string.Empty;
+            existingPost.Status = post.Status ?? string.Empty;
+            existingPost.Date = post.Date.GetValueOrDefault();
+            existingPost.ContentHash = contentHash;
+            existingPost.EditableMetaHash = editableMetaHash;
+            existingPost.RawPostJson = JsonSerializer.Serialize(post, SerializerOptions);
+            existingPost.LastModified = DateTime.UtcNow;
+            _db.Posts.Update(existingPost);
+        }
+        else
+        {
+            var cachedPost = new CachedPost
+            {
+                PostId = post.Id,
+                Title = post.Title?.Raw ?? string.Empty,
+                Slug = post.Slug ?? string.Empty,
+                Status = post.Status ?? string.Empty,
+                Date = post.Date.GetValueOrDefault(),
+                ContentHash = contentHash,
+                EditableMetaHash = editableMetaHash,
+                RawPostJson = JsonSerializer.Serialize(post, SerializerOptions),
+                LastModified = DateTime.UtcNow
+            };
+            _db.Posts.Add(cachedPost);
+        }
+
+        _db.SaveChanges();
     }
 
     public List<CachePostMetadata> ListLocalPostMetadata(string cachePath)
     {
         var postsDir = Path.Combine(cachePath, "posts");
-        if (!Directory.Exists(postsDir))
-        {
-            return new List<CachePostMetadata>();
-        }
+        if (!Directory.Exists(postsDir)) return new List<CachePostMetadata>();
 
+        var cachedPosts = _db.Posts.ToList();
         var metadataList = new List<CachePostMetadata>();
-        var metaFiles = Directory.GetFiles(postsDir, "*_meta.json");
 
-        foreach (var metaFile in metaFiles)
+        foreach (var cachedPost in cachedPosts)
         {
             try
             {
-                var json = File.ReadAllText(metaFile);
-                var metadata = JsonSerializer.Deserialize<CachePostMetadata>(json, SerializerOptions);
-                if (metadata != null)
+                var post = JsonSerializer.Deserialize<WordPressPostDetail>(cachedPost.RawPostJson, SerializerOptions);
+                if (post != null)
                 {
-                    metadataList.Add(metadata);
+                    metadataList.Add(new CachePostMetadata
+                    {
+                        Post = post,
+                        ContentHash = cachedPost.ContentHash,
+                        EditableMetaHash = cachedPost.EditableMetaHash
+                    });
                 }
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"Skipping malformed metadata file: {Path.GetFileName(metaFile)}. Error: {ex.Message}");
+                Console.Error.WriteLine($"Skipping malformed post data in DB for ID {cachedPost.PostId}. Error: {ex.Message}");
             }
         }
+
         return metadataList;
     }
 
@@ -154,16 +188,39 @@ public class CacheService
         return null;
     }
 
+    public bool AreCacheFilesPresent(int postId, string cachePath)
+    {
+        var contentFile = FindFileByPattern(cachePath, $"{postId}-*_content.md");
+        var editableFile = FindFileByPattern(cachePath, $"{postId}-*_editable.yaml");
+        return File.Exists(contentFile) && File.Exists(editableFile);
+    }
+
+    public (bool contentFileExists, bool editableFileExists) CheckCacheFileExistence(int postId, string cachePath)
+    {
+        var contentFile = FindFileByPattern(cachePath, $"{postId}-*_content.md");
+        var editableFile = FindFileByPattern(cachePath, $"{postId}-*_editable.yaml");
+        return (File.Exists(contentFile), File.Exists(editableFile));
+    }
+
     public void DeletePostFromCache(int postId, string cachePath)
     {
+        // 1. Delete files from filesystem
         var postsDir = Path.Combine(cachePath, "posts");
-        if (!Directory.Exists(postsDir)) return;
-
-        var filesToDelete = Directory.GetFiles(postsDir, $"{postId}-*");
-
-        foreach (var file in filesToDelete)
+        if (Directory.Exists(postsDir))
         {
-            File.Delete(file);
+            var filesToDelete = Directory.GetFiles(postsDir, $"{postId}-*");
+            foreach (var file in filesToDelete)
+            {
+                File.Delete(file);
+            }
+        }
+
+        // 2. Delete record from database
+        var postInDb = _db.Posts.FirstOrDefault(p => p.PostId == postId);
+        if (postInDb != null)
+        {
+            _db.Posts.Remove(postInDb);
+            _db.SaveChanges();
         }
     }
 

@@ -121,7 +121,7 @@ async Task<int> HandlePostsAsync(string[] args)
                 // Cache the results if a path is configured
                 if (!string.IsNullOrWhiteSpace(profile.CachePath))
                 {
-                    var cacheService = new CacheService();
+                    var cacheService = new CacheService(profile.CachePath);
                     int cachedCount = 0;
                     foreach (var post in posts)
                     {
@@ -307,7 +307,7 @@ async Task<int> HandlePostsSyncAsync()
 
     var settings = new WordPressSettings(profile.BaseUrl, token);
     using var wpService = new WordPressService(settings);
-    var cacheService = new CacheService();
+    var cacheService = new CacheService(profile.CachePath);
     var syncService = new SyncService(wpService, cacheService);
 
     Console.WriteLine("Starting synchronization...");

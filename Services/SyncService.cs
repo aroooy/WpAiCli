@@ -104,63 +104,102 @@ public class SyncService
 
     private async Task CompareAndSyncAsync(int id, CachePostMetadata localMeta, WordPressPostDetail remotePost, string cachePath, SyncReport report, CancellationToken cancellationToken)
     {
-        // Compare content hashes
-        var localContent = _cacheService.ReadLocalContent(id, cachePath);
-        var localContentHash = _cacheService.ComputeSha256Hash(localContent);
-        var serverContentHash = _cacheService.ComputeSha256Hash(remotePost.Content?.Raw ?? string.Empty);
-        var isLocalContentChanged = localContentHash != localMeta.ContentHash;
-        var isServerContentChanged = serverContentHash != localMeta.ContentHash;
+        var (contentFileExists, editableFileExists) = _cacheService.CheckCacheFileExistence(id, cachePath);
 
-        // Compare editable meta hashes
-        var localEditableMeta = _cacheService.ReadEditableMetadata(id, cachePath);
-        var localEditableMetaYaml = _cacheService.SerializeToYaml(localEditableMeta ?? new EditablePostMetadata());
-        var localEditableMetaHash = _cacheService.ComputeSha256Hash(localEditableMetaYaml);
-        
-        var serverEditableMeta = new EditablePostMetadata 
-        { 
-            Title = remotePost.Title?.Raw, 
-            Slug = remotePost.Slug, 
-            Status = remotePost.Status,
-            Date = remotePost.Date,
-            Excerpt = remotePost.Excerpt?.Raw,
-            FeaturedMedia = remotePost.FeaturedMedia,
-            CommentStatus = remotePost.CommentStatus,
-            PingStatus = remotePost.PingStatus
-        };
-        var serverEditableMetaYaml = _cacheService.SerializeToYaml(serverEditableMeta);
-        var serverEditableMetaHash = _cacheService.ComputeSha256Hash(serverEditableMetaYaml);
-        
-        var isLocalMetaChanged = localEditableMetaHash != localMeta.EditableMetaHash;
-        var isServerMetaChanged = serverEditableMetaHash != localMeta.EditableMetaHash;
-
-        if ((isLocalContentChanged && isServerContentChanged) || (isLocalMetaChanged && isServerMetaChanged))
+        if (!contentFileExists || !editableFileExists)
         {
-            report.ConflictDetected.Add(id);
-        }
-        else if (isLocalContentChanged || isLocalMetaChanged)
-        {
-            var request = new WordPressUpdatePostRequest();
-            if (isLocalContentChanged) request.Content = localContent;
-            if (isLocalMetaChanged && localEditableMeta != null)
+            // Handle incomplete cache files
+            var isLocalContentChanged = false;
+            if (contentFileExists)
             {
-                request.Title = localEditableMeta.Title;
-                request.Slug = localEditableMeta.Slug;
-                request.Status = localEditableMeta.Status;
-                request.Date = localEditableMeta.Date;
-                request.Excerpt = localEditableMeta.Excerpt;
-                request.FeaturedMedia = localEditableMeta.FeaturedMedia;
-                request.CommentStatus = localEditableMeta.CommentStatus;
-                request.PingStatus = localEditableMeta.PingStatus;
+                var localContent = _cacheService.ReadLocalContent(id, cachePath);
+                var localContentHash = _cacheService.ComputeSha256Hash(localContent);
+                isLocalContentChanged = localContentHash != localMeta.ContentHash;
             }
-            
-            var updatedPost = await _wpService.UpdatePostAsync(id, request, cancellationToken);
-            _cacheService.SavePostToCache(updatedPost, cachePath);
-            report.PushedToServer.Add(id);
+
+            var isLocalMetaChanged = false;
+            if (editableFileExists)
+            {
+                var localEditableMeta = _cacheService.ReadEditableMetadata(id, cachePath);
+                var localEditableMetaYaml = _cacheService.SerializeToYaml(localEditableMeta ?? new EditablePostMetadata());
+                var localEditableMetaHash = _cacheService.ComputeSha256Hash(localEditableMetaYaml);
+                isLocalMetaChanged = localEditableMetaHash != localMeta.EditableMetaHash;
+            }
+
+            if (isLocalContentChanged || isLocalMetaChanged)
+            {
+                // Incomplete cache with local modifications is a conflict
+                report.ConflictDetected.Add(id);
+            }
+            else
+            {
+                // Incomplete cache but no local modifications, restore from server
+                _cacheService.SavePostToCache(remotePost, cachePath);
+                report.PulledFromServer.Add(id);
+            }
         }
-        else if (isServerContentChanged || isServerMetaChanged)
+        else
         {
-            _cacheService.SavePostToCache(remotePost, cachePath);
-            report.PulledFromServer.Add(id);
+            // --- Both files exist, proceed with full comparison ---
+
+            // Compare content hashes
+            var localContent = _cacheService.ReadLocalContent(id, cachePath);
+            var localContentHash = _cacheService.ComputeSha256Hash(localContent);
+            var serverContentHash = _cacheService.ComputeSha256Hash(remotePost.Content?.Raw ?? string.Empty);
+            var isLocalContentChanged = localContentHash != localMeta.ContentHash;
+            var isServerContentChanged = serverContentHash != localMeta.ContentHash;
+
+            // Compare editable meta hashes
+            var localEditableMeta = _cacheService.ReadEditableMetadata(id, cachePath);
+            var localEditableMetaYaml = _cacheService.SerializeToYaml(localEditableMeta ?? new EditablePostMetadata());
+            var localEditableMetaHash = _cacheService.ComputeSha256Hash(localEditableMetaYaml);
+
+            var serverEditableMeta = new EditablePostMetadata
+            {
+                Title = remotePost.Title?.Raw,
+                Slug = remotePost.Slug,
+                Status = remotePost.Status,
+                Date = remotePost.Date,
+                Excerpt = remotePost.Excerpt?.Raw,
+                FeaturedMedia = remotePost.FeaturedMedia,
+                CommentStatus = remotePost.CommentStatus,
+                PingStatus = remotePost.PingStatus
+            };
+            var serverEditableMetaYaml = _cacheService.SerializeToYaml(serverEditableMeta);
+            var serverEditableMetaHash = _cacheService.ComputeSha256Hash(serverEditableMetaYaml);
+
+            var isLocalMetaChanged = localEditableMetaHash != localMeta.EditableMetaHash;
+            var isServerMetaChanged = serverEditableMetaHash != localMeta.EditableMetaHash;
+
+            if ((isLocalContentChanged && isServerContentChanged) || (isLocalMetaChanged && isServerMetaChanged))
+            {
+                report.ConflictDetected.Add(id);
+            }
+            else if (isLocalContentChanged || isLocalMetaChanged)
+            {
+                var request = new WordPressUpdatePostRequest();
+                if (isLocalContentChanged) request.Content = localContent;
+                if (isLocalMetaChanged && localEditableMeta != null)
+                {
+                    request.Title = localEditableMeta.Title;
+                    request.Slug = localEditableMeta.Slug;
+                    request.Status = localEditableMeta.Status;
+                    request.Date = localEditableMeta.Date;
+                    request.Excerpt = localEditableMeta.Excerpt;
+                    request.FeaturedMedia = localEditableMeta.FeaturedMedia;
+                    request.CommentStatus = localEditableMeta.CommentStatus;
+                    request.PingStatus = localEditableMeta.PingStatus;
+                }
+
+                var updatedPost = await _wpService.UpdatePostAsync(id, request, cancellationToken);
+                _cacheService.SavePostToCache(updatedPost, cachePath);
+                report.PushedToServer.Add(id);
+            }
+            else if (isServerContentChanged || isServerMetaChanged)
+            {
+                _cacheService.SavePostToCache(remotePost, cachePath);
+                report.PulledFromServer.Add(id);
+            }
         }
     }
 }
