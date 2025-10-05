@@ -47,6 +47,9 @@ public sealed class WordPressService : IDisposable
     public Task<WordPressDeleteResponse> DeleteCategoryAsync(int id, bool force, CancellationToken cancellationToken)
         => _apiClient.DeleteCategoryAsync(id, force, cancellationToken);
 
+    public Task<WordPressCategory> UpdateCategoryAsync(int id, WordPressUpdateCategoryRequest request, CancellationToken cancellationToken)
+        => _apiClient.UpdateCategoryAsync(id, request, cancellationToken);
+
     public Task<IReadOnlyList<WordPressTag>> ListTagsAsync(CancellationToken cancellationToken)
         => _apiClient.GetTagsAsync(cancellationToken);
 
@@ -58,6 +61,9 @@ public sealed class WordPressService : IDisposable
 
     public Task<WordPressDeleteResponse> DeleteTagAsync(int id, bool force, CancellationToken cancellationToken)
         => _apiClient.DeleteTagAsync(id, force, cancellationToken);
+
+    public Task<WordPressTag> UpdateTagAsync(int id, WordPressUpdateTagRequest request, CancellationToken cancellationToken)
+        => _apiClient.UpdateTagAsync(id, request, cancellationToken);
 
     public Task<IReadOnlyList<WordPressMediaItem>> ListMediaAsync(int? perPage, int? page, CancellationToken cancellationToken)
         => _apiClient.GetMediaAsync(perPage, page, cancellationToken);

@@ -1,4 +1,3 @@
-
 using Microsoft.EntityFrameworkCore;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
@@ -21,15 +20,44 @@ public class CachedPost
     public DateTime LastModified { get; set; }
 }
 
+public class CachedCategory
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.None)]
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string Slug { get; set; } = string.Empty;
+}
+
+public class CachedTag
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.None)]
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string Slug { get; set; } = string.Empty;
+}
+
+public class CacheState
+{
+    [Key]
+    public string Key { get; set; } = string.Empty;
+    public string Value { get; set; } = string.Empty;
+}
+
 public class CacheDbContext : DbContext
 {
     private readonly string _dbPath;
 
     public DbSet<CachedPost> Posts { get; set; }
+    public DbSet<CachedCategory> Categories { get; set; }
+    public DbSet<CachedTag> Tags { get; set; }
+    public DbSet<CacheState> States { get; set; }
 
     public CacheDbContext(string dbPath)
     {
         _dbPath = dbPath;
+        Database.EnsureCreated();
     }
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)

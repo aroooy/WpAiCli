@@ -6,8 +6,11 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Microsoft.EntityFrameworkCore;
 using WpAiCli.Services.Data;
 using WpAiCli.WordPress.Models;
+using YamlDotNet.Serialization;
+using YamlDotNet.Serialization.NamingConventions;
 
 namespace WpAiCli.Services;
 
@@ -20,14 +23,40 @@ public class CachePostMetadata
 
 public class EditablePostMetadata
 {
+    [YamlMember(Alias = "title")]
     public string? Title { get; set; }
+    [YamlMember(Alias = "slug")]
     public string? Slug { get; set; }
+    [YamlMember(Alias = "status")]
     public string? Status { get; set; }
+    [YamlMember(Alias = "date")]
     public DateTime? Date { get; set; }
+    [YamlMember(Alias = "excerpt")]
     public string? Excerpt { get; set; }
+    [YamlMember(Alias = "featured_media")]
     public int? FeaturedMedia { get; set; }
+    [YamlMember(Alias = "comment_status")]
     public string? CommentStatus { get; set; }
+    [YamlMember(Alias = "ping_status")]
     public string? PingStatus { get; set; }
+    [YamlMember(Alias = "categories")]
+    public List<string>? Categories { get; set; }
+    [YamlMember(Alias = "tags")]
+    public List<string>? Tags { get; set; }
+}
+
+public class EditableCategory
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string Slug { get; set; } = string.Empty;
+}
+
+public class EditableTag
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string Slug { get; set; } = string.Empty;
 }
 
 public class CacheService
@@ -39,12 +68,21 @@ public class CacheService
         DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
+    
+    private static readonly ISerializer YamlSerializer = new SerializerBuilder()
+        .WithNamingConvention(CamelCaseNamingConvention.Instance)
+        .ConfigureDefaultValuesHandling(DefaultValuesHandling.OmitNull)
+        .Build();
+
+    private static readonly IDeserializer YamlDeserializer = new DeserializerBuilder()
+        .WithNamingConvention(CamelCaseNamingConvention.Instance)
+        .IgnoreUnmatchedProperties()
+        .Build();
 
     public CacheService(string cachePath)
     {
         var dbPath = Path.Combine(cachePath, "cache.db");
         _db = new CacheDbContext(dbPath);
-        _db.Database.EnsureCreated();
     }
 
     private static string SanitizeTitleForFilename(string title)
@@ -88,7 +126,9 @@ public class CacheService
             Excerpt = post.Excerpt?.Raw,
             FeaturedMedia = post.FeaturedMedia,
             CommentStatus = post.CommentStatus,
-            PingStatus = post.PingStatus
+            PingStatus = post.PingStatus,
+            Categories = post.Categories?.Select(c => c.ToString()).ToList(),
+            Tags = post.Tags?.Select(t => t.ToString()).ToList()
         };
         var yamlContent = SerializeToYaml(editableMeta);
         var editableMetaFilePath = Path.Combine(postsDir, $"{fileBaseName}_editable.yaml");
@@ -134,6 +174,32 @@ public class CacheService
         }
 
         _db.SaveChanges();
+    }
+
+    public async Task UpdateTaxonomiesCacheAsync(string cachePath, IEnumerable<WordPressCategory> categories, IEnumerable<WordPressTag> tags)
+    {
+        // Update database
+        await _db.Database.ExecuteSqlRawAsync("DELETE FROM Categories");
+        await _db.Database.ExecuteSqlRawAsync("DELETE FROM Tags");
+
+        var newCategories = categories.Select(c => new CachedCategory { Id = c.Id, Name = c.Name ?? string.Empty, Slug = c.Slug ?? string.Empty });
+        await _db.Categories.AddRangeAsync(newCategories);
+
+        var newTags = tags.Select(t => new CachedTag { Id = t.Id, Name = t.Name ?? string.Empty, Slug = t.Slug ?? string.Empty });
+        await _db.Tags.AddRangeAsync(newTags);
+
+        await _db.SaveChangesAsync();
+
+        // Write YAML files
+        var editableCategories = categories.Select(c => new EditableCategory { Id = c.Id, Name = c.Name ?? string.Empty, Slug = c.Slug ?? string.Empty });
+        var categoriesYaml = YamlSerializer.Serialize(editableCategories);
+        await File.WriteAllTextAsync(Path.Combine(cachePath, "categories.yaml"), categoriesYaml);
+        SetState("categories_yaml_hash", ComputeSha256Hash(categoriesYaml));
+
+        var editableTags = tags.Select(t => new EditableTag { Id = t.Id, Name = t.Name ?? string.Empty, Slug = t.Slug ?? string.Empty });
+        var tagsYaml = YamlSerializer.Serialize(editableTags);
+        await File.WriteAllTextAsync(Path.Combine(cachePath, "tags.yaml"), tagsYaml);
+        SetState("tags_yaml_hash", ComputeSha256Hash(tagsYaml));
     }
 
     public List<CachePostMetadata> ListLocalPostMetadata(string cachePath)
@@ -183,9 +249,14 @@ public class CacheService
         var editableFile = FindFileByPattern(cachePath, $"{postId}-*_editable.yaml");
         if (File.Exists(editableFile))
         {
-            return DeserializeFromYaml(File.ReadAllText(editableFile));
+            return DeserializeFromYaml<EditablePostMetadata>(File.ReadAllText(editableFile));
         }
         return null;
+    }
+
+    public (List<CachedCategory> Categories, List<CachedTag> Tags) GetTaxonomies()
+    {
+        return (_db.Categories.ToList(), _db.Tags.ToList());
     }
 
     public bool AreCacheFilesPresent(int postId, string cachePath)
@@ -244,67 +315,65 @@ public class CacheService
         return Directory.Exists(postsDir) ? Directory.GetFiles(postsDir, pattern).FirstOrDefault() : null;
     }
 
-    public string SerializeToYaml(EditablePostMetadata data)
+    public int? FindCategoryId(string nameOrSlug)
     {
-        var sb = new StringBuilder();
-        sb.AppendLine($"title: '{(data.Title?.Replace("'", "''"))}'");
-        sb.AppendLine($"slug: '{(data.Slug?.Replace("'", "''"))}'");
-        sb.AppendLine($"status: '{(data.Status?.Replace("'", "''"))}'");
-        sb.AppendLine($"date: '{(data.Date?.ToString("o"))}'"); // ISO 8601 format
-        sb.AppendLine($"excerpt: '{(data.Excerpt?.Replace("'", "''"))}'");
-        sb.AppendLine($"featured_media: {data.FeaturedMedia}");
-        sb.AppendLine($"comment_status: '{(data.CommentStatus?.Replace("'", "''"))}'");
-        sb.AppendLine($"ping_status: '{(data.PingStatus?.Replace("'", "''"))}'");
-        return sb.ToString();
+        var normalized = nameOrSlug.Trim();
+        var allCategories = _db.Categories.ToList();
+
+        // --- Start Debugging Output ---
+        Console.Error.WriteLine($"--- DEBUG: FindCategoryId ---");
+        Console.Error.WriteLine($"Searching for term: '{normalized}'");
+        Console.Error.WriteLine($"Total categories in cache: {allCategories.Count}");
+        foreach (var cat in allCategories)
+        {
+            bool isMatch = string.Equals(cat.Name, normalized, StringComparison.InvariantCultureIgnoreCase);
+            Console.Error.WriteLine($"  - Comparing with: '{cat.Name}' (Slug: {cat.Slug}) | Match: {isMatch}");
+        }
+        Console.Error.WriteLine($"--- END DEBUG ---");
+        // --- End Debugging Output ---
+
+        var category = allCategories.FirstOrDefault(c => 
+            string.Equals(c.Name, normalized, StringComparison.InvariantCultureIgnoreCase) || 
+            string.Equals(c.Slug, normalized, StringComparison.InvariantCultureIgnoreCase));
+        return category?.Id;
     }
 
-    public EditablePostMetadata DeserializeFromYaml(string yaml)
+    public int? FindTagId(string nameOrSlug)
     {
-        var data = new EditablePostMetadata();
-        var lines = yaml.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-        foreach (var line in lines)
+        var normalized = nameOrSlug.Trim();
+        var tag = _db.Tags.ToList().FirstOrDefault(t => 
+            string.Equals(t.Name, normalized, StringComparison.InvariantCultureIgnoreCase) || 
+            string.Equals(t.Slug, normalized, StringComparison.InvariantCultureIgnoreCase));
+        return tag?.Id;
+    }
+
+    public string? GetState(string key)
+    {
+        return _db.States.FirstOrDefault(s => s.Key == key)?.Value;
+    }
+
+    public void SetState(string key, string value)
+    {
+        var state = _db.States.FirstOrDefault(s => s.Key == key);
+        if (state != null)
         {
-            var parts = line.Split(new[] { ':' }, 2);
-            if (parts.Length != 2) continue;
-
-            var key = parts[0].Trim();
-            var value = parts[1].Trim();
-
-            if (value.StartsWith("'") && value.EndsWith("'"))
-            {
-                value = value.Substring(1, value.Length - 2);
-            }
-
-            switch (key)
-            {
-                case "title":
-                    data.Title = value.Replace("''", "'");
-                    break;
-                case "slug":
-                    data.Slug = value.Replace("''", "'");
-                    break;
-                case "status":
-                    data.Status = value.Replace("''", "'");
-                    break;
-                case "date":
-                    if (DateTime.TryParse(value, out var dateValue))
-                        data.Date = dateValue;
-                    break;
-                case "excerpt":
-                    data.Excerpt = value.Replace("''", "'");
-                    break;
-                case "featured_media":
-                    if (int.TryParse(value, out var intValue))
-                        data.FeaturedMedia = intValue;
-                    break;
-                case "comment_status":
-                    data.CommentStatus = value.Replace("''", "'");
-                    break;
-                case "ping_status":
-                    data.PingStatus = value.Replace("''", "'");
-                    break;
-            }
+            state.Value = value;
+            _db.States.Update(state);
         }
-        return data;
+        else
+        {
+            _db.States.Add(new CacheState { Key = key, Value = value });
+        }
+        _db.SaveChanges();
+    }
+
+    public string SerializeToYaml(EditablePostMetadata data)
+    {
+        return YamlSerializer.Serialize(data);
+    }
+
+    public T DeserializeFromYaml<T>(string yaml) where T : class, new()
+    {
+        return YamlDeserializer.Deserialize<T>(yaml) ?? new T();
     }
 }

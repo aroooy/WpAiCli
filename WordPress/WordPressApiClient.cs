@@ -154,6 +154,15 @@ public sealed class WordPressApiClient
         return new WordPressDeleteResponse { Deleted = true };
     }
 
+    public Task<WordPressCategory> UpdateCategoryAsync(int id, WordPressUpdateCategoryRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        EnsureAuthenticated(nameof(UpdateCategoryAsync));
+
+        var url = BuildUrl($"/categories/{id}");
+        return SendAsync<WordPressCategory>(HttpMethod.Post, url, cancellationToken, request);
+    }
+
     public async Task<IReadOnlyList<WordPressTag>> GetTagsAsync(CancellationToken cancellationToken)
     {
         var url = BuildUrl("/tags");
@@ -195,6 +204,15 @@ public sealed class WordPressApiClient
 
         await SendAsync<JsonDocument>(HttpMethod.Delete, url, cancellationToken).ConfigureAwait(false);
         return new WordPressDeleteResponse { Deleted = true };
+    }
+
+    public Task<WordPressTag> UpdateTagAsync(int id, WordPressUpdateTagRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        EnsureAuthenticated(nameof(UpdateTagAsync));
+
+        var url = BuildUrl($"/tags/{id}");
+        return SendAsync<WordPressTag>(HttpMethod.Post, url, cancellationToken, request);
     }
 
     public async Task<IReadOnlyList<WordPressMediaItem>> GetMediaAsync(int? perPage, int? page, CancellationToken cancellationToken)
