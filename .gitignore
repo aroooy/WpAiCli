@@ -360,4 +360,5 @@ MigrationBackup/
 .ionide/
 
 # Fody - auto-generated XML schema
-FodyWeavers.xsdwp-cache/ 
+FodyWeavers.xsd
+wp-cache/ 

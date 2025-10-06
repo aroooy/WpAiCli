@@ -319,6 +319,29 @@ async Task<int> HandlePostsSyncAsync()
     return (int)ExitCode.Success;
 }
 
+async Task<int> HandleMediaSyncAsync()
+{
+    var (store, profile, token) = ResolveConnection(globalConnectionName);
+    if (string.IsNullOrWhiteSpace(profile.CachePath))
+    {
+        Console.Error.WriteLine("Cache path is not configured for this connection. Use `wpai connections update` to set it.");
+        return (int)ExitCode.InvalidArguments;
+    }
+
+    var settings = new WordPressSettings(profile.BaseUrl, token);
+    using var wpService = new WordPressService(settings);
+    var cacheService = new CacheService(profile.CachePath);
+    var syncService = new SyncService(wpService, cacheService);
+
+    Console.WriteLine("Starting media synchronization...");
+    var syncLimit = profile.SyncItemsLimit ?? 30;
+    var report = await syncService.SynchronizeMediaAsync(profile.CachePath, syncLimit, CancellationToken.None);
+    PrintSyncReport(report);
+
+    UpdateLastUsedConnection(store, profile.Name);
+    return (int)ExitCode.Success;
+}
+
 void PrintSyncReport(SyncReport report)
 {
     Console.WriteLine("\n--- Sync Report ---");
@@ -327,9 +350,20 @@ void PrintSyncReport(SyncReport report)
     Console.WriteLine($"Newly cached: {report.NewlyCached.Count} post(s)");
     Console.WriteLine($"Deleted from local: {report.DeletedFromLocal.Count} post(s)");
     Console.WriteLine($"Conflicts detected (skipped): {report.ConflictDetected.Count} post(s)");
+    if (report.PushedTaxonomies.Count > 0)
+    {
+        Console.WriteLine($"Pushed taxonomies: {report.PushedTaxonomies.Count}");
+    }
+    if (report.PushedMediaToServer.Count > 0 || report.NewlyCachedMedia.Count > 0 || report.MediaConflicts.Count > 0)
+    {
+        Console.WriteLine("--- Media ---");
+        Console.WriteLine($"Pushed metadata to server: {report.PushedMediaToServer.Count} item(s)");
+        Console.WriteLine($"Newly cached from server: {report.NewlyCachedMedia.Count} item(s)");
+        Console.WriteLine($"Conflicts/Errors: {report.MediaConflicts.Count} item(s)");
+    }
     if (report.ConflictDetected.Count > 0)
     {
-        Console.WriteLine($"Conflict IDs: {string.Join(", ", report.ConflictDetected)}");
+        Console.WriteLine($"Conflict Post IDs: {string.Join(", ", report.ConflictDetected)}");
     }
     Console.WriteLine("-------------------");
 }
@@ -541,6 +575,8 @@ async Task<int> HandleMediaAsync(string[] args)
 
         switch (subcommand)
         {
+            case "sync":
+                return await HandleMediaSyncAsync();
             case "list":
             {
                 var perPage = parsed.GetInt("per-page") ?? 10;

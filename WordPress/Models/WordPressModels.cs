@@ -280,7 +280,22 @@ public sealed class WordPressUpdateTagRequest
     public string? Slug { get; set; }
 }
 
-public sealed class WordPressMediaItem : IHasTitle
+public sealed class WordPressUpdateMediaRequest
+{
+    [JsonPropertyName("title")]
+    public string? Title { get; set; }
+
+    [JsonPropertyName("description")]
+    public string? Description { get; set; }
+
+    [JsonPropertyName("caption")]
+    public string? Caption { get; set; }
+
+    [JsonPropertyName("alt_text")]
+    public string? AltText { get; set; }
+}
+
+public sealed class WordPressMedia : IHasTitle
 {
     [JsonPropertyName("id")]
     public int Id { get; set; }
@@ -288,11 +303,20 @@ public sealed class WordPressMediaItem : IHasTitle
     [JsonPropertyName("date")]
     public DateTime? Date { get; set; }
 
+    [JsonPropertyName("slug")]
+    public string? Slug { get; set; }
+
     [JsonPropertyName("title")]
     public WordPressRenderedContent? Title { get; set; }
 
-    [JsonIgnore]
-    public string? Slug => null;
+    [JsonPropertyName("description")]
+    public WordPressRenderedContent? Description { get; set; }
+
+    [JsonPropertyName("caption")]
+    public WordPressRenderedContent? Caption { get; set; }
+
+    [JsonPropertyName("alt_text")]
+    public string? AltText { get; set; }
 
     [JsonPropertyName("media_type")]
     public string? MediaType { get; set; }

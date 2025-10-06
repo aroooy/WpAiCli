@@ -45,6 +45,18 @@ public class CacheState
     public string Value { get; set; } = string.Empty;
 }
 
+public class CachedMedia
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.None)]
+    public int MediaId { get; set; }
+    public string FileName { get; set; } = string.Empty;
+    public string FileHash { get; set; } = string.Empty;
+    public string MetadataHash { get; set; } = string.Empty;
+    public DateTime LastModified { get; set; }
+    public string RawMediaJson { get; set; } = string.Empty;
+}
+
 public class CacheDbContext : DbContext
 {
     private readonly string _dbPath;
@@ -53,6 +65,7 @@ public class CacheDbContext : DbContext
     public DbSet<CachedCategory> Categories { get; set; }
     public DbSet<CachedTag> Tags { get; set; }
     public DbSet<CacheState> States { get; set; }
+    public DbSet<CachedMedia> Media { get; set; }
 
     public CacheDbContext(string dbPath)
     {

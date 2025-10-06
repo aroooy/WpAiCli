@@ -21,7 +21,7 @@ public sealed class WordPressApiClient
     private const string RevisionDetailFields = "author,date_gmt,id,modified_gmt,parent,title,content";
     private const string CategoryFields = "id,count,description,link,name,slug,taxonomy,parent";
     private const string TagFields = "id,name,slug,description,count";
-    private const string MediaFields = "id,date,title,media_type,mime_type,source_url";
+    private const string MediaDetailFields = "id,date,slug,link,title.raw,description.raw,caption.raw,alt_text,media_type,mime_type,source_url";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -215,10 +215,10 @@ public sealed class WordPressApiClient
         return SendAsync<WordPressTag>(HttpMethod.Post, url, cancellationToken, request);
     }
 
-    public async Task<IReadOnlyList<WordPressMediaItem>> GetMediaAsync(int? perPage, int? page, CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<WordPressMedia>> GetMediaAsync(int? perPage, int? page, CancellationToken cancellationToken)
     {
         var url = BuildUrl("/media");
-        url = AppendQuery(url, "_fields", MediaFields);
+        url = AppendQuery(url, "_fields", MediaDetailFields);
         if (perPage.HasValue)
         {
             url = AppendQuery(url, "per_page", perPage.Value.ToString());
@@ -228,10 +228,32 @@ public sealed class WordPressApiClient
             url = AppendQuery(url, "page", page.Value.ToString());
         }
 
-        return await SendAsync<List<WordPressMediaItem>>(HttpMethod.Get, url, cancellationToken).ConfigureAwait(false);
+        return await SendAsync<List<WordPressMedia>>(HttpMethod.Get, url, cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<WordPressMediaItem> UploadMediaAsync(string filePath, string? title, string? description, CancellationToken cancellationToken)
+    public Task<WordPressMedia> GetMediaAsync(int id, CancellationToken cancellationToken)
+    {
+        var url = BuildUrl($"/media/{id}");
+        url = AppendQuery(url, "context", "edit");
+        url = AppendQuery(url, "_fields", MediaDetailFields);
+        return SendAsync<WordPressMedia>(HttpMethod.Get, url, cancellationToken);
+    }
+
+    public Task<WordPressMedia> UpdateMediaAsync(int id, WordPressUpdateMediaRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        EnsureAuthenticated(nameof(UpdateMediaAsync));
+
+        var url = BuildUrl($"/media/{id}");
+        return SendAsync<WordPressMedia>(HttpMethod.Post, url, cancellationToken, request);
+    }
+
+    public async Task<byte[]> DownloadFileAsync(string url, CancellationToken cancellationToken)
+    {
+        return await _httpClient.GetByteArrayAsync(url, cancellationToken);
+    }
+
+    public async Task<WordPressMedia> UploadMediaAsync(string filePath, string? title, string? description, CancellationToken cancellationToken)
     {
         EnsureAuthenticated(nameof(UploadMediaAsync));
 
@@ -274,7 +296,7 @@ public sealed class WordPressApiClient
             throw new WordPressApiException(response.StatusCode, payload);
         }
 
-        var result = JsonSerializer.Deserialize<WordPressMediaItem>(payload, JsonOptions);
+        var result = JsonSerializer.Deserialize<WordPressMedia>(payload, JsonOptions);
         if (result is null)
         {
             throw new InvalidOperationException("Failed to deserialize WordPress API response for media upload.");

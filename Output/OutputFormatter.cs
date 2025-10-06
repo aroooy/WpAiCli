@@ -293,7 +293,7 @@ public static class OutputFormatter
         }
     }
 
-    public static void WriteMediaItems(IReadOnlyList<WordPressMediaItem> mediaItems, OutputFormat format, TextWriter writer)
+    public static void WriteMediaItems(IReadOnlyList<WordPressMedia> mediaItems, OutputFormat format, TextWriter writer)
     {
         switch (format)
         {
@@ -320,7 +320,7 @@ public static class OutputFormatter
         }
     }
 
-    public static void WriteMediaItem(WordPressMediaItem item, OutputFormat format, TextWriter writer)
+    public static void WriteMediaItem(WordPressMedia item, OutputFormat format, TextWriter writer)
     {
         switch (format)
         {

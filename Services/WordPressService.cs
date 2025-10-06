@@ -65,11 +65,20 @@ public sealed class WordPressService : IDisposable
     public Task<WordPressTag> UpdateTagAsync(int id, WordPressUpdateTagRequest request, CancellationToken cancellationToken)
         => _apiClient.UpdateTagAsync(id, request, cancellationToken);
 
-    public Task<IReadOnlyList<WordPressMediaItem>> ListMediaAsync(int? perPage, int? page, CancellationToken cancellationToken)
+    public Task<IReadOnlyList<WordPressMedia>> ListMediaAsync(int? perPage, int? page, CancellationToken cancellationToken)
         => _apiClient.GetMediaAsync(perPage, page, cancellationToken);
 
-    public Task<WordPressMediaItem> UploadMediaAsync(string filePath, string? title, string? description, CancellationToken cancellationToken)
+    public Task<WordPressMedia> GetMediaAsync(int id, CancellationToken cancellationToken)
+        => _apiClient.GetMediaAsync(id, cancellationToken);
+
+    public Task<WordPressMedia> UpdateMediaAsync(int id, WordPressUpdateMediaRequest request, CancellationToken cancellationToken)
+        => _apiClient.UpdateMediaAsync(id, request, cancellationToken);
+
+    public Task<WordPressMedia> UploadMediaAsync(string filePath, string? title, string? description, CancellationToken cancellationToken)
         => _apiClient.UploadMediaAsync(filePath, title, description, cancellationToken);
+
+    public Task<byte[]> DownloadMediaFileAsync(string url, CancellationToken cancellationToken)
+        => _apiClient.DownloadFileAsync(url, cancellationToken);
 
     private HttpClient CreateHttpClient()
     {

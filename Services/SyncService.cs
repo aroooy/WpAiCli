@@ -21,6 +21,13 @@ public class SyncReport
     public List<int> ConflictDetected { get; } = new();
     public List<int> NewlyCached { get; } = new();
     public List<string> PushedTaxonomies { get; } = new();
+
+    // Media Sync Properties
+    public List<int> PushedMediaToServer { get; } = new();
+    public List<int> PulledMediaFromServer { get; } = new();
+    public List<int> NewlyCachedMedia { get; } = new();
+    public List<int> DeletedMediaFromLocal { get; } = new();
+    public List<int> MediaConflicts { get; } = new();
 }
 
 public class SyncService
@@ -117,6 +124,59 @@ public class SyncService
         }
 
         return report;
+    }
+
+    public async Task<SyncReport> SynchronizeMediaAsync(string cachePath, int syncLimit, CancellationToken cancellationToken)
+    {
+        var report = new SyncReport();
+
+        // 1. Push local metadata changes
+        var localMediaItems = _cacheService.ReadLocalMediaMetadata(cachePath);
+        foreach (var (mediaId, metadata) in localMediaItems)
+        {
+            var yamlContent = SerializeToYaml(metadata);
+            var currentHash = _cacheService.ComputeSha256Hash(yamlContent);
+            var previousHash = _cacheService.GetMediaMetadataHash(mediaId);
+
+            if (previousHash != null && currentHash != previousHash)
+            {
+                var request = new WordPressUpdateMediaRequest
+                {
+                    Title = metadata.Title,
+                    Description = metadata.Description,
+                    Caption = metadata.Caption,
+                    AltText = metadata.AltText
+                };
+                await _wpService.UpdateMediaAsync(mediaId, request, cancellationToken);
+                report.PushedMediaToServer.Add(mediaId);
+            }
+        }
+
+        // 2. Pull all media from server
+        var allMedia = await _wpService.ListMediaAsync(perPage: syncLimit, page: 1, cancellationToken);
+        foreach (var media in allMedia)
+        {
+            if (string.IsNullOrEmpty(media.SourceUrl)) continue;
+
+            try
+            {
+                var fileContent = await _wpService.DownloadMediaFileAsync(media.SourceUrl, cancellationToken);
+                _cacheService.SaveMediaToCache(media, fileContent, cachePath);
+                report.NewlyCachedMedia.Add(media.Id);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"Failed to sync media item {media.Id}: {ex.Message}");
+                report.MediaConflicts.Add(media.Id);
+            }
+        }
+
+        return report;
+    }
+
+    private string SerializeToYaml(EditableMediaMetadata data)
+    {
+        return YamlSerializer.Serialize(data);
     }
 
     private async Task SynchronizeLocalTaxonomyChangesAsync(string cachePath, SyncReport report, CancellationToken cancellationToken)

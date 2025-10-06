@@ -59,6 +59,18 @@ public class EditableTag
     public string Slug { get; set; } = string.Empty;
 }
 
+public class EditableMediaMetadata
+{
+    [YamlMember(Alias = "title")]
+    public string? Title { get; set; }
+    [YamlMember(Alias = "alt_text")]
+    public string? AltText { get; set; }
+    [YamlMember(Alias = "caption")]
+    public string? Caption { get; set; }
+    [YamlMember(Alias = "description")]
+    public string? Description { get; set; }
+}
+
 public class CacheService
 {
     private readonly CacheDbContext _db;
@@ -347,6 +359,40 @@ public class CacheService
         return (categories, tags);
     }
 
+    public string? GetMediaMetadataHash(int mediaId)
+    {
+        return _db.Media.FirstOrDefault(m => m.MediaId == mediaId)?.MetadataHash;
+    }
+
+    public List<(int MediaId, EditableMediaMetadata Metadata)> ReadLocalMediaMetadata(string cachePath)
+    {
+        var mediaMetadataList = new List<(int MediaId, EditableMediaMetadata Metadata)>();
+        var mediaDir = Path.Combine(cachePath, "media");
+
+        if (!Directory.Exists(mediaDir)) return mediaMetadataList;
+
+        foreach (var file in Directory.GetFiles(mediaDir, "*.yaml"))
+        {
+            try
+            {
+                var fileName = Path.GetFileNameWithoutExtension(file);
+                var idString = fileName.Split('-').FirstOrDefault();
+                if (int.TryParse(idString, out var mediaId))
+                {
+                    var yamlContent = File.ReadAllText(file);
+                    var metadata = DeserializeFromYaml<EditableMediaMetadata>(yamlContent);
+                    mediaMetadataList.Add((mediaId, metadata));
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"Skipping malformed media metadata file: {Path.GetFileName(file)}. Error: {ex.Message}");
+            }
+        }
+
+        return mediaMetadataList;
+    }
+
     public bool AreCacheFilesPresent(int postId, string cachePath)
     {
         var contentFile = FindFileByPattern(cachePath, $"{postId}-*_content.md");
@@ -383,11 +429,91 @@ public class CacheService
         }
     }
 
+    public void DeleteMediaFromCache(int mediaId, string cachePath)
+    {
+        // 1. Delete files from filesystem
+        var mediaDir = Path.Combine(cachePath, "media");
+        if (Directory.Exists(mediaDir))
+        {
+            // Find files like {mediaId}-*.* and {mediaId}-*.yaml
+            var filesToDelete = Directory.GetFiles(mediaDir, $"{mediaId}-*");
+            foreach (var file in filesToDelete)
+            {
+                File.Delete(file);
+            }
+        }
+
+        // 2. Delete record from database
+        var mediaInDb = _db.Media.FirstOrDefault(m => m.MediaId == mediaId);
+        if (mediaInDb != null)
+        {
+            _db.Media.Remove(mediaInDb);
+            _db.SaveChanges();
+        }
+    }
+
+    public void SaveMediaToCache(WordPressMedia media, byte[] fileContent, string cachePath)
+    {
+        var mediaDir = Path.Combine(cachePath, "media");
+        Directory.CreateDirectory(mediaDir);
+
+        var fileName = Path.GetFileName(new Uri(media.SourceUrl).LocalPath);
+        var fileBaseName = $"{media.Id}-{fileName}";
+        var yamlFileName = $"{media.Id}-{Path.GetFileNameWithoutExtension(fileName)}.yaml";
+
+        DeleteMediaFromCache(media.Id, cachePath);
+
+        // 1. Handle editable.yaml
+        var editableMeta = new EditableMediaMetadata
+        {
+            Title = media.Title?.Raw,
+            AltText = media.AltText,
+            Caption = media.Caption?.Raw,
+            Description = media.Description?.Raw
+        };
+        var yamlContent = SerializeToYaml(editableMeta);
+        var editableMetaFilePath = Path.Combine(mediaDir, yamlFileName);
+        File.WriteAllText(editableMetaFilePath, yamlContent);
+        var editableMetaHash = ComputeSha256Hash(yamlContent);
+
+        // 2. Handle binary file
+        var mediaFilePath = Path.Combine(mediaDir, fileBaseName);
+        File.WriteAllBytes(mediaFilePath, fileContent);
+        var fileHash = ComputeSha256Hash(fileContent);
+
+        // 3. Save metadata to database
+        var cachedMedia = new CachedMedia
+        {
+            MediaId = media.Id,
+            FileName = fileBaseName,
+            FileHash = fileHash,
+            MetadataHash = editableMetaHash,
+            RawMediaJson = JsonSerializer.Serialize(media, SerializerOptions),
+            LastModified = DateTime.UtcNow
+        };
+        _db.Media.Add(cachedMedia);
+        _db.SaveChanges();
+    }
+
     public string ComputeSha256Hash(string rawData)
     {
         using (SHA256 sha256Hash = SHA256.Create())
         {
             byte[] bytes = sha256Hash.ComputeHash(Encoding.UTF8.GetBytes(rawData));
+            var builder = new StringBuilder();
+            for (int i = 0; i < bytes.Length; i++)
+            {
+                builder.Append(bytes[i].ToString("x2"));
+            }
+            return builder.ToString();
+        }
+    }
+
+    public string ComputeSha256Hash(byte[] rawData)
+    {
+        using (SHA256 sha256Hash = SHA256.Create())
+        {
+            byte[] bytes = sha256Hash.ComputeHash(rawData);
             var builder = new StringBuilder();
             for (int i = 0; i < bytes.Length; i++)
             {
@@ -456,6 +582,11 @@ public class CacheService
     }
 
     public string SerializeToYaml(EditablePostMetadata data)
+    {
+        return YamlSerializer.Serialize(data);
+    }
+
+    public string SerializeToYaml(EditableMediaMetadata data)
     {
         return YamlSerializer.Serialize(data);
     }
