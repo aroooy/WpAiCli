@@ -109,15 +109,15 @@ wpai connections update "MyBlog" --cache-path ./my-blog-cache
 設定後、`posts sync` を実行すると同期が開始されます。キャッシュディレクトリ内には、以下のファイルが生成されます。
 
 -   `cache.db`: コンテンツのメタ情報を管理するSQLiteデータベースファイルです。このファイルはアプリケーションが内部的に使用します。**ユーザーが直接編集しないでください。**
--   `categories.yaml`: **編集可能な**サイト全体のカテゴリ一覧です。
--   `tags.yaml`: **編集可能な**サイト全体のタグ一覧です。
+-   `categories/` ディレクトリ: **編集可能な**カテゴリのYAMLファイルが個別に保存されます (`[ID]-[名前].yaml`)。
+-   `tags/` ディレクトリ: **編集可能な**タグのYAMLファイルが個別に保存されます (`[ID]-[名前].yaml`)。
 -   `posts/` ディレクトリ:
     -   `[ID]-[slug]_content.md`: 編集可能な投稿の本文です。
     -   `[ID]-[slug]_editable.yaml`: 編集可能な投稿のメタデータです。
 
 ### 同期のルール
 
-- `posts sync` を実行すると、まずローカルの `categories.yaml` と `tags.yaml` の変更（名前やスラッグの編集）がサーバーにプッシュされます。
+- `posts sync` を実行すると、まずローカルの `categories/` と `tags/` ディレクトリ内にあるYAMLファイルの変更（名前やスラッグの編集）がサーバーにプッシュされます。
 - その後、サーバーから最新の投稿とタクソノミーの情報が取得され、ローカルのファイル (`.md`, `.yaml`) とデータベース (`cache.db`) が更新されます。
 - ローカルで `posts/` ディレクトリ内の投稿ファイルを編集してから `posts sync` を実行すると、変更がサーバーにプッシュされます。
 - サーバー側で投稿が変更された場合、`posts sync` を実行するとローカルのファイルが更新されます。
@@ -127,12 +127,12 @@ wpai connections update "MyBlog" --cache-path ./my-blog-cache
 
 ユーザーが直接編集するのは以下のファイルです。
 
-- `categories.yaml`: カテゴリの `name` や `slug` を変更できます。
-- `tags.yaml`: タグの `name` や `slug` を変更できます。
+- `categories/[ID]-[名前].yaml`: カテゴリの `name` や `slug` を変更できます。
+- `tags/[ID]-[名前].yaml`: タグの `name` や `slug` を変更できます。
 - `posts/[ID]-[slug]_content.md`: 投稿の本文。
 - `posts/[ID]-[slug]_editable.yaml`: 投稿のメタデータ。このファイルを編集することで、以下の項目を変更できます。
     - `title`, `slug`, `status`, `date`, `excerpt` など。
-    - `categories` や `tags` には、IDだけでなく、`categories.yaml` や `tags.yaml` に存在する名前やスラッグで指定できます。
+    - `categories` や `tags` には、IDだけでなく、`categories/` や `tags/` ディレクトリ内に存在する名前やスラッグで指定できます。
 
 **注意:** `_editable.yaml` から項目（例: `slug:` の行）を削除した場合、その項目は**更新対象から外れる**だけで、サーバー上の値が空になるわけではありません。値を空にしたい場合は `slug: ''` のように明示的に空の値を設定してください。
 
