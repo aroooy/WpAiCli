@@ -178,6 +178,7 @@ public class CacheService
 
     public async Task UpdateTaxonomiesCacheAsync(string cachePath, IEnumerable<WordPressCategory> categories, IEnumerable<WordPressTag> tags)
     {
+        _db.ChangeTracker.Clear();
         // Update database
         await _db.Database.ExecuteSqlRawAsync("DELETE FROM Categories");
         await _db.Database.ExecuteSqlRawAsync("DELETE FROM Tags");
