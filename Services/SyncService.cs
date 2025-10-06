@@ -8,6 +8,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using WpAiCli.WordPress;
 using WpAiCli.WordPress.Models;
+using YamlDotNet.Serialization;
+using YamlDotNet.Serialization.NamingConventions;
 
 namespace WpAiCli.Services;
 
@@ -25,6 +27,11 @@ public class SyncService
 {
     private readonly WordPressService _wpService;
     private readonly CacheService _cacheService;
+    
+    private static readonly ISerializer YamlSerializer = new SerializerBuilder()
+        .WithNamingConvention(CamelCaseNamingConvention.Instance)
+        .ConfigureDefaultValuesHandling(DefaultValuesHandling.OmitNull)
+        .Build();
 
     public SyncService(WordPressService wpService, CacheService cacheService)
     {
@@ -114,54 +121,48 @@ public class SyncService
 
     private async Task SynchronizeLocalTaxonomyChangesAsync(string cachePath, SyncReport report, CancellationToken cancellationToken)
     {
-        // Categories
-        var categoriesPath = Path.Combine(cachePath, "categories.yaml");
-        if (File.Exists(categoriesPath))
+        // 1. Read local taxonomy files
+        var (localCategories, localTags) = _cacheService.ReadLocalTaxonomies(cachePath);
+
+        // 2. Synchronize Categories
+        var (cachedCategories, cachedTags) = _cacheService.GetTaxonomies();
+        var cachedCategoriesDict = cachedCategories.ToDictionary(c => c.Id);
+
+        foreach (var localCat in localCategories)
         {
-            var yamlContent = await File.ReadAllTextAsync(categoriesPath, cancellationToken);
+            // Re-serialize to get the exact YAML content for hashing
+            var editableCategoryForHash = new EditableCategory { Id = localCat.Id, Name = localCat.Name, Slug = localCat.Slug };
+            var yamlContent = YamlSerializer.Serialize(editableCategoryForHash);
             var currentHash = _cacheService.ComputeSha256Hash(yamlContent);
-            var previousHash = _cacheService.GetState("categories_yaml_hash");
+            var previousHash = _cacheService.GetState($"category_{localCat.Id}_hash");
 
             if (currentHash != previousHash)
             {
-                var localCategories = _cacheService.DeserializeFromYaml<List<EditableCategory>>(yamlContent);
-                var (cachedCategories, _) = _cacheService.GetTaxonomies();
-                var cachedCategoriesDict = cachedCategories.ToDictionary(c => c.Id);
-
-                foreach (var localCat in localCategories)
+                if (cachedCategoriesDict.TryGetValue(localCat.Id, out var cachedCat) &&
+                    (localCat.Name != cachedCat.Name || localCat.Slug != cachedCat.Slug))
                 {
-                    if (cachedCategoriesDict.TryGetValue(localCat.Id, out var cachedCat) && 
-                        (localCat.Name != cachedCat.Name || localCat.Slug != cachedCat.Slug))
-                    {
-                        await _wpService.UpdateCategoryAsync(localCat.Id, new WordPressUpdateCategoryRequest { Name = localCat.Name, Slug = localCat.Slug }, cancellationToken);
-                        report.PushedTaxonomies.Add($"Category: {localCat.Name}");
-                    }
+                    await _wpService.UpdateCategoryAsync(localCat.Id, new WordPressUpdateCategoryRequest { Name = localCat.Name, Slug = localCat.Slug }, cancellationToken);
+                    report.PushedTaxonomies.Add($"Category: {localCat.Name}");
                 }
             }
         }
 
-        // Tags
-        var tagsPath = Path.Combine(cachePath, "tags.yaml");
-        if (File.Exists(tagsPath))
+        // 3. Synchronize Tags
+        var cachedTagsDict = cachedTags.ToDictionary(t => t.Id);
+        foreach (var localTag in localTags)
         {
-            var yamlContent = await File.ReadAllTextAsync(tagsPath, cancellationToken);
+            var editableTagForHash = new EditableTag { Id = localTag.Id, Name = localTag.Name, Slug = localTag.Slug };
+            var yamlContent = YamlSerializer.Serialize(editableTagForHash);
             var currentHash = _cacheService.ComputeSha256Hash(yamlContent);
-            var previousHash = _cacheService.GetState("tags_yaml_hash");
+            var previousHash = _cacheService.GetState($"tag_{localTag.Id}_hash");
 
             if (currentHash != previousHash)
             {
-                var localTags = _cacheService.DeserializeFromYaml<List<EditableTag>>(yamlContent);
-                var (_, cachedTags) = _cacheService.GetTaxonomies();
-                var cachedTagsDict = cachedTags.ToDictionary(t => t.Id);
-
-                foreach (var localTag in localTags)
+                if (cachedTagsDict.TryGetValue(localTag.Id, out var cachedTag) &&
+                    (localTag.Name != cachedTag.Name || localTag.Slug != cachedTag.Slug))
                 {
-                    if (cachedTagsDict.TryGetValue(localTag.Id, out var cachedTag) && 
-                        (localTag.Name != cachedTag.Name || localTag.Slug != cachedTag.Slug))
-                    {
-                        await _wpService.UpdateTagAsync(localTag.Id, new WordPressUpdateTagRequest { Name = localTag.Name, Slug = localTag.Slug }, cancellationToken);
-                        report.PushedTaxonomies.Add($"Tag: {localTag.Name}");
-                    }
+                    await _wpService.UpdateTagAsync(localTag.Id, new WordPressUpdateTagRequest { Name = localTag.Name, Slug = localTag.Slug }, cancellationToken);
+                    report.PushedTaxonomies.Add($"Tag: {localTag.Name}");
                 }
             }
         }

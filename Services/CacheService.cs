@@ -191,16 +191,60 @@ public class CacheService
 
         await _db.SaveChangesAsync();
 
-        // Write YAML files
-        var editableCategories = categories.Select(c => new EditableCategory { Id = c.Id, Name = c.Name ?? string.Empty, Slug = c.Slug ?? string.Empty });
-        var categoriesYaml = YamlSerializer.Serialize(editableCategories);
-        await File.WriteAllTextAsync(Path.Combine(cachePath, "categories.yaml"), categoriesYaml);
-        SetState("categories_yaml_hash", ComputeSha256Hash(categoriesYaml));
+        // --- Start Refactoring: Individual YAML files ---
 
-        var editableTags = tags.Select(t => new EditableTag { Id = t.Id, Name = t.Name ?? string.Empty, Slug = t.Slug ?? string.Empty });
-        var tagsYaml = YamlSerializer.Serialize(editableTags);
-        await File.WriteAllTextAsync(Path.Combine(cachePath, "tags.yaml"), tagsYaml);
-        SetState("tags_yaml_hash", ComputeSha256Hash(tagsYaml));
+        // 1. Define and clean up directories
+        var categoriesDir = Path.Combine(cachePath, "categories");
+        var tagsDir = Path.Combine(cachePath, "tags");
+
+        if (Directory.Exists(categoriesDir))
+        {
+            Directory.Delete(categoriesDir, recursive: true);
+        }
+        Directory.CreateDirectory(categoriesDir);
+
+        if (Directory.Exists(tagsDir))
+        {
+            Directory.Delete(tagsDir, recursive: true);
+        }
+        Directory.CreateDirectory(tagsDir);
+
+        // Delete old single files if they exist
+        File.Delete(Path.Combine(cachePath, "categories.yaml"));
+        File.Delete(Path.Combine(cachePath, "tags.yaml"));
+        await _db.States.Where(s => s.Key == "categories_yaml_hash" || s.Key == "tags_yaml_hash").ExecuteDeleteAsync();
+
+
+        // 2. Write individual category files
+        foreach (var category in categories)
+        {
+            var editableCategory = new EditableCategory { Id = category.Id, Name = category.Name ?? string.Empty, Slug = category.Slug ?? string.Empty };
+            var yamlContent = YamlSerializer.Serialize(editableCategory);
+            var sanitizedName = SanitizeTitleForFilename(category.Name ?? string.Empty);
+            var filePath = Path.Combine(categoriesDir, $"{category.Id}-{sanitizedName}.yaml");
+            await File.WriteAllTextAsync(filePath, yamlContent);
+            
+            // Store hash for individual file
+            var hash = ComputeSha256Hash(yamlContent);
+            SetState($"category_{category.Id}_hash", hash);
+        }
+
+        // 3. Write individual tag files
+        foreach (var tag in tags)
+        {
+            var editableTag = new EditableTag { Id = tag.Id, Name = tag.Name ?? string.Empty, Slug = tag.Slug ?? string.Empty };
+            var yamlContent = YamlSerializer.Serialize(editableTag);
+            var sanitizedName = SanitizeTitleForFilename(tag.Name ?? string.Empty);
+            var filePath = Path.Combine(tagsDir, $"{tag.Id}-{sanitizedName}.yaml");
+            await File.WriteAllTextAsync(filePath, yamlContent);
+
+            // Store hash for individual file
+            var hash = ComputeSha256Hash(yamlContent);
+            SetState($"tag_{tag.Id}_hash", hash);
+        }
+        
+        await _db.SaveChangesAsync();
+        // --- End Refactoring ---
     }
 
     public List<CachePostMetadata> ListLocalPostMetadata(string cachePath)
@@ -258,6 +302,49 @@ public class CacheService
     public (List<CachedCategory> Categories, List<CachedTag> Tags) GetTaxonomies()
     {
         return (_db.Categories.ToList(), _db.Tags.ToList());
+    }
+
+    public (List<EditableCategory> Categories, List<EditableTag> Tags) ReadLocalTaxonomies(string cachePath)
+    {
+        var categories = new List<EditableCategory>();
+        var categoriesDir = Path.Combine(cachePath, "categories");
+        if (Directory.Exists(categoriesDir))
+        {
+            foreach (var file in Directory.GetFiles(categoriesDir, "*.yaml"))
+            {
+                try
+                {
+                    var yamlContent = File.ReadAllText(file);
+                    var category = DeserializeFromYaml<EditableCategory>(yamlContent);
+                    categories.Add(category);
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"Skipping malformed category file: {Path.GetFileName(file)}. Error: {ex.Message}");
+                }
+            }
+        }
+
+        var tags = new List<EditableTag>();
+        var tagsDir = Path.Combine(cachePath, "tags");
+        if (Directory.Exists(tagsDir))
+        {
+            foreach (var file in Directory.GetFiles(tagsDir, "*.yaml"))
+            {
+                try
+                {
+                    var yamlContent = File.ReadAllText(file);
+                    var tag = DeserializeFromYaml<EditableTag>(yamlContent);
+                    tags.Add(tag);
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"Skipping malformed tag file: {Path.GetFileName(file)}. Error: {ex.Message}");
+                }
+            }
+        }
+
+        return (categories, tags);
     }
 
     public bool AreCacheFilesPresent(int postId, string cachePath)
