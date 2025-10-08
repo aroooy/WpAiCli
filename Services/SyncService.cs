@@ -190,19 +190,24 @@ public class SyncService
 
         foreach (var localCat in localCategories)
         {
-            // Re-serialize to get the exact YAML content for hashing
-            var editableCategoryForHash = new EditableCategory { Id = localCat.Id, Name = localCat.Name, Slug = localCat.Slug };
-            var yamlContent = YamlSerializer.Serialize(editableCategoryForHash);
-            var currentHash = _cacheService.ComputeSha256Hash(yamlContent);
-            var previousHash = _cacheService.GetState($"category_{localCat.Id}_hash");
-
-            if (currentHash != previousHash)
+            if (localCat.Id == 0)
             {
-                if (cachedCategoriesDict.TryGetValue(localCat.Id, out var cachedCat) &&
-                    (localCat.Name != cachedCat.Name || localCat.Slug != cachedCat.Slug))
+                // Create new category
+                var newCat = await _wpService.CreateCategoryAsync(new WordPressCreateCategoryRequest { Name = localCat.Name, Slug = localCat.Slug, Description = localCat.Description }, cancellationToken);
+                report.PushedTaxonomies.Add($"Created Category: {newCat.Name}");
+            }
+            else if (cachedCategoriesDict.TryGetValue(localCat.Id, out var cachedCat))
+            {
+                // Update existing category
+                var editableCategoryForHash = new EditableCategory { Id = localCat.Id, Name = localCat.Name, Slug = localCat.Slug, Description = localCat.Description };
+                var yamlContent = YamlSerializer.Serialize(editableCategoryForHash);
+                var currentHash = _cacheService.ComputeSha256Hash(yamlContent);
+                var previousHash = _cacheService.GetState($"category_{localCat.Id}_hash");
+
+                if (currentHash != previousHash)
                 {
-                    await _wpService.UpdateCategoryAsync(localCat.Id, new WordPressUpdateCategoryRequest { Name = localCat.Name, Slug = localCat.Slug }, cancellationToken);
-                    report.PushedTaxonomies.Add($"Category: {localCat.Name}");
+                    await _wpService.UpdateCategoryAsync(localCat.Id, new WordPressUpdateCategoryRequest { Name = localCat.Name, Slug = localCat.Slug, Description = localCat.Description }, cancellationToken);
+                    report.PushedTaxonomies.Add($"Updated Category: {localCat.Name}");
                 }
             }
         }
@@ -211,18 +216,24 @@ public class SyncService
         var cachedTagsDict = cachedTags.ToDictionary(t => t.Id);
         foreach (var localTag in localTags)
         {
-            var editableTagForHash = new EditableTag { Id = localTag.Id, Name = localTag.Name, Slug = localTag.Slug };
-            var yamlContent = YamlSerializer.Serialize(editableTagForHash);
-            var currentHash = _cacheService.ComputeSha256Hash(yamlContent);
-            var previousHash = _cacheService.GetState($"tag_{localTag.Id}_hash");
-
-            if (currentHash != previousHash)
+            if (localTag.Id == 0)
             {
-                if (cachedTagsDict.TryGetValue(localTag.Id, out var cachedTag) &&
-                    (localTag.Name != cachedTag.Name || localTag.Slug != cachedTag.Slug))
+                // Create new tag
+                var newTag = await _wpService.CreateTagAsync(new WordPressCreateTagRequest { Name = localTag.Name, Slug = localTag.Slug, Description = localTag.Description }, cancellationToken);
+                report.PushedTaxonomies.Add($"Created Tag: {newTag.Name}");
+            }
+            else if (cachedTagsDict.TryGetValue(localTag.Id, out var cachedTag))
+            {
+                // Update existing tag
+                var editableTagForHash = new EditableTag { Id = localTag.Id, Name = localTag.Name, Slug = localTag.Slug, Description = localTag.Description };
+                var yamlContent = YamlSerializer.Serialize(editableTagForHash);
+                var currentHash = _cacheService.ComputeSha256Hash(yamlContent);
+                var previousHash = _cacheService.GetState($"tag_{localTag.Id}_hash");
+
+                if (currentHash != previousHash)
                 {
-                    await _wpService.UpdateTagAsync(localTag.Id, new WordPressUpdateTagRequest { Name = localTag.Name, Slug = localTag.Slug }, cancellationToken);
-                    report.PushedTaxonomies.Add($"Tag: {localTag.Name}");
+                    await _wpService.UpdateTagAsync(localTag.Id, new WordPressUpdateTagRequest { Name = localTag.Name, Slug = localTag.Slug, Description = localTag.Description }, cancellationToken);
+                    report.PushedTaxonomies.Add($"Updated Tag: {localTag.Name}");
                 }
             }
         }

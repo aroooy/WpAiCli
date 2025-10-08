@@ -258,6 +258,18 @@ public sealed class WordPressCreateTagRequest
     public string? Description { get; set; }
 }
 
+public sealed class WordPressCreateCategoryRequest
+{
+    [JsonPropertyName("name")]
+    public string? Name { get; set; }
+
+    [JsonPropertyName("slug")]
+    public string? Slug { get; set; }
+
+    [JsonPropertyName("description")]
+    public string? Description { get; set; }
+}
+
 public sealed class WordPressUpdateCategoryRequest
 {
     [JsonPropertyName("name")]
@@ -267,6 +279,10 @@ public sealed class WordPressUpdateCategoryRequest
     [JsonPropertyName("slug")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Slug { get; set; }
+
+    [JsonPropertyName("description")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Description { get; set; }
 }
 
 public sealed class WordPressUpdateTagRequest
@@ -278,6 +294,10 @@ public sealed class WordPressUpdateTagRequest
     [JsonPropertyName("slug")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Slug { get; set; }
+
+    [JsonPropertyName("description")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Description { get; set; }
 }
 
 public sealed class WordPressUpdateMediaRequest

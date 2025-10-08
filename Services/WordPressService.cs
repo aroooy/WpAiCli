@@ -50,6 +50,9 @@ public sealed class WordPressService : IDisposable
     public Task<WordPressCategory> UpdateCategoryAsync(int id, WordPressUpdateCategoryRequest request, CancellationToken cancellationToken)
         => _apiClient.UpdateCategoryAsync(id, request, cancellationToken);
 
+    public Task<WordPressCategory> CreateCategoryAsync(WordPressCreateCategoryRequest request, CancellationToken cancellationToken)
+        => _apiClient.CreateCategoryAsync(request, cancellationToken);
+
     public Task<IReadOnlyList<WordPressTag>> ListTagsAsync(CancellationToken cancellationToken)
         => _apiClient.GetTagsAsync(cancellationToken);
 

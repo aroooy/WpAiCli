@@ -181,6 +181,14 @@ async Task<int> HandlePostsAsync(string[] args)
 
                 var post = await service.CreatePostAsync(request, ct).ConfigureAwait(false);
                 OutputFormatter.WritePost(post, format, Console.Out);
+
+                if (!string.IsNullOrWhiteSpace(profile.CachePath))
+                {
+                    var cacheService = new CacheService(profile.CachePath);
+                    cacheService.SavePostToCache(post, profile.CachePath);
+                    Console.WriteLine($"\nPost {post.Id} saved to local cache.");
+                }
+
                 result = (int)ExitCode.Success;
                 break;
             }
@@ -212,6 +220,14 @@ async Task<int> HandlePostsAsync(string[] args)
 
                 var post = await service.UpdatePostAsync(id.Value, request, ct).ConfigureAwait(false);
                 OutputFormatter.WritePost(post, format, Console.Out);
+
+                if (!string.IsNullOrWhiteSpace(profile.CachePath))
+                {
+                    var cacheService = new CacheService(profile.CachePath);
+                    cacheService.SavePostToCache(post, profile.CachePath);
+                    Console.WriteLine($"\nPost {post.Id} updated in local cache.");
+                }
+
                 result = (int)ExitCode.Success;
                 break;
             }
@@ -228,6 +244,14 @@ async Task<int> HandlePostsAsync(string[] args)
                 var force = parsed.GetBool("force", defaultValue: true);
                 var response = await service.DeletePostAsync(id.Value, force, ct).ConfigureAwait(false);
                 OutputFormatter.WriteDeleteResponse(response, format, Console.Out);
+
+                if (response.Deleted && !string.IsNullOrWhiteSpace(profile.CachePath))
+                {
+                    var cacheService = new CacheService(profile.CachePath);
+                    cacheService.DeletePostFromCache(id.Value, profile.CachePath);
+                    Console.WriteLine($"\nPost {id.Value} deleted from local cache.");
+                }
+                
                 result = (int)ExitCode.Success;
                 break;
             }
@@ -423,6 +447,14 @@ async Task<int> HandleCategoriesAsync(string[] args)
                 var force = parsed.GetBool("force", defaultValue: true);
                 var response = await service.DeleteCategoryAsync(id.Value, force, ct).ConfigureAwait(false);
                 OutputFormatter.WriteDeleteResponse(response, format, Console.Out);
+
+                if (response.Deleted && !string.IsNullOrWhiteSpace(profile.CachePath))
+                {
+                    var cacheService = new CacheService(profile.CachePath);
+                    cacheService.DeleteCategoryFromCache(id.Value, profile.CachePath);
+                    Console.WriteLine($"\nCategory {id.Value} deleted from local cache.");
+                }
+
                 result = (int)ExitCode.Success;
                 break;
             }
@@ -497,6 +529,14 @@ async Task<int> HandleTagsAsync(string[] args)
 
                 var tag = await service.CreateTagAsync(request, ct).ConfigureAwait(false);
                 OutputFormatter.WriteTag(tag, format, Console.Out);
+
+                if (!string.IsNullOrWhiteSpace(profile.CachePath))
+                {
+                    var cacheService = new CacheService(profile.CachePath);
+                    cacheService.SaveTagToCache(tag, profile.CachePath);
+                    Console.WriteLine($"\nTag {tag.Id} saved to local cache.");
+                }
+
                 result = (int)ExitCode.Success;
                 break;
             }
@@ -526,6 +566,14 @@ async Task<int> HandleTagsAsync(string[] args)
                 var force = parsed.GetBool("force", defaultValue: true);
                 var response = await service.DeleteTagAsync(id.Value, force, ct).ConfigureAwait(false);
                 OutputFormatter.WriteDeleteResponse(response, format, Console.Out);
+
+                if (response.Deleted && !string.IsNullOrWhiteSpace(profile.CachePath))
+                {
+                    var cacheService = new CacheService(profile.CachePath);
+                    cacheService.DeleteTagFromCache(id.Value, profile.CachePath);
+                    Console.WriteLine($"\nTag {id.Value} deleted from local cache.");
+                }
+
                 result = (int)ExitCode.Success;
                 break;
             }

@@ -131,17 +131,20 @@ wpai connections update "MyBlog" --cache-path ./my-blog-cache
 
 ユーザーが直接編集するのは以下のファイルです。
 
-- `categories/[ID]-[名前].yaml`: カテゴリの `name` や `slug` を変更できます。
-- `tags/[ID]-[名前].yaml`: タグの `name` や `slug` を変更できます。
+- `categories/[ID]-[名前].yaml`: カテゴリの `name`, `slug`, `description` を変更できます。
+  - **新規作成:** このディレクトリに新しいYAMLファイルを追加し（`id`は`0`か未指定）、`posts sync`を実行すると、サーバーに新しいカテゴリが作成されます。
+  - **削除:** このファイルを削除しても、サーバー上のカテゴリは削除されません。削除は `categories delete <id>` コマンドを使用してください。
+- `tags/[ID]-[名前].yaml`: タグの `name`, `slug`, `description` を変更できます。
+  - **新規作成:** `categories` と同様の手順で新しいタグを作成できます。
+  - **削除:** このファイルを削除しても、サーバー上のタグは削除されません。削除は `tags delete <id>` コマンドを使用してください。
 - `media/[ID]-[ファイル名].yaml`: メディアの `title`, `alt_text`, `caption`, `description` を変更できます。
 - `posts/[ID]-[slug]_content.md`: 投稿の本文。
 - `posts/[ID]-[slug]_editable.yaml`: 投稿のメタデータ。このファイルを編集することで、以下の項目を変更できます。
     - `title`, `slug`, `status`, `date`, `excerpt` など。
     - `categories` や `tags` には、IDだけでなく、`categories/` や `tags/` ディレクトリ内に存在する名前やスラッグで指定できます。
+    - **注意:** ローカルで新しい投稿ファイルセットを作成して `posts sync` を実行しても、サーバーに新規投稿として作成することはできません。新規投稿は `posts create` コマンドを使用してください。
 
 **注意:** `_editable.yaml` から項目（例: `slug:` の行）を削除した場合、その項目は**更新対象から外れる**だけで、サーバー上の値が空になるわけではありません。値を空にしたい場合は `slug: ''` のように明示的に空の値を設定してください。
-
-**注意:** 現在のバージョンでは、ローカルで新しいファイルを作成して `posts sync` を実行しても、サーバーに新規投稿として作成することはできません。新規投稿は `posts create` コマンドを使用してください。
 
 ## 出力形式
 `--format table|json|raw` で切り替え可能です。省略時は `table`。

@@ -163,6 +163,20 @@ public sealed class WordPressApiClient
         return SendAsync<WordPressCategory>(HttpMethod.Post, url, cancellationToken, request);
     }
 
+    public Task<WordPressCategory> CreateCategoryAsync(WordPressCreateCategoryRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        EnsureAuthenticated(nameof(CreateCategoryAsync));
+
+        if (string.IsNullOrWhiteSpace(request.Name))
+        {
+            throw new ArgumentException("Category name is required.", nameof(request));
+        }
+
+        var url = BuildUrl("/categories");
+        return SendAsync<WordPressCategory>(HttpMethod.Post, url, cancellationToken, request);
+    }
+
     public async Task<IReadOnlyList<WordPressTag>> GetTagsAsync(CancellationToken cancellationToken)
     {
         var url = BuildUrl("/tags");

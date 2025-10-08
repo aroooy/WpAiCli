@@ -50,6 +50,8 @@ public class EditableCategory
     public int Id { get; set; }
     public string Name { get; set; } = string.Empty;
     public string Slug { get; set; } = string.Empty;
+    [YamlMember(Alias = "description")]
+    public string Description { get; set; } = string.Empty;
 }
 
 public class EditableTag
@@ -57,6 +59,8 @@ public class EditableTag
     public int Id { get; set; }
     public string Name { get; set; } = string.Empty;
     public string Slug { get; set; } = string.Empty;
+    [YamlMember(Alias = "description")]
+    public string Description { get; set; } = string.Empty;
 }
 
 public class EditableMediaMetadata
@@ -230,7 +234,7 @@ public class CacheService
         // 2. Write individual category files
         foreach (var category in categories)
         {
-            var editableCategory = new EditableCategory { Id = category.Id, Name = category.Name ?? string.Empty, Slug = category.Slug ?? string.Empty };
+            var editableCategory = new EditableCategory { Id = category.Id, Name = category.Name ?? string.Empty, Slug = category.Slug ?? string.Empty, Description = category.Description ?? string.Empty };
             var yamlContent = YamlSerializer.Serialize(editableCategory);
             var sanitizedName = SanitizeTitleForFilename(category.Name ?? string.Empty);
             var filePath = Path.Combine(categoriesDir, $"{category.Id}-{sanitizedName}.yaml");
@@ -244,7 +248,7 @@ public class CacheService
         // 3. Write individual tag files
         foreach (var tag in tags)
         {
-            var editableTag = new EditableTag { Id = tag.Id, Name = tag.Name ?? string.Empty, Slug = tag.Slug ?? string.Empty };
+            var editableTag = new EditableTag { Id = tag.Id, Name = tag.Name ?? string.Empty, Slug = tag.Slug ?? string.Empty, Description = tag.Description ?? string.Empty };
             var yamlContent = YamlSerializer.Serialize(editableTag);
             var sanitizedName = SanitizeTitleForFilename(tag.Name ?? string.Empty);
             var filePath = Path.Combine(tagsDir, $"{tag.Id}-{sanitizedName}.yaml");
@@ -427,6 +431,121 @@ public class CacheService
             _db.Posts.Remove(postInDb);
             _db.SaveChanges();
         }
+    }
+
+    public void SaveCategoryToCache(WordPressCategory category, string cachePath)
+    {
+        var categoriesDir = Path.Combine(cachePath, "categories");
+        Directory.CreateDirectory(categoriesDir);
+
+        // Clean up old files for this category ID first, to handle renames
+        var oldFiles = Directory.GetFiles(categoriesDir, $"{category.Id}-*.yaml");
+        foreach(var oldFile in oldFiles) File.Delete(oldFile);
+
+        // Save to DB
+        var cachedCategory = _db.Categories.FirstOrDefault(c => c.Id == category.Id);
+        if (cachedCategory == null)
+        {
+            cachedCategory = new CachedCategory { Id = category.Id };
+            _db.Categories.Add(cachedCategory);
+        }
+        cachedCategory.Name = category.Name ?? string.Empty;
+        cachedCategory.Slug = category.Slug ?? string.Empty;
+        _db.SaveChanges();
+
+        // Save YAML file
+        var editableCategory = new EditableCategory { Id = category.Id, Name = category.Name ?? string.Empty, Slug = category.Slug ?? string.Empty, Description = category.Description ?? string.Empty };
+        var yamlContent = YamlSerializer.Serialize(editableCategory);
+        var sanitizedName = SanitizeTitleForFilename(category.Name ?? string.Empty);
+        var filePath = Path.Combine(categoriesDir, $"{category.Id}-{sanitizedName}.yaml");
+        File.WriteAllText(filePath, yamlContent);
+        
+        // Store hash for individual file
+        var hash = ComputeSha256Hash(yamlContent);
+        SetState($"category_{category.Id}_hash", hash);
+    }
+
+    public void DeleteCategoryFromCache(int categoryId, string cachePath)
+    {
+        // Delete file
+        var categoriesDir = Path.Combine(cachePath, "categories");
+        if (Directory.Exists(categoriesDir))
+        {
+            var filesToDelete = Directory.GetFiles(categoriesDir, $"{categoryId}-*.yaml");
+            foreach (var file in filesToDelete)
+            {
+                File.Delete(file);
+            }
+        }
+
+        // Delete from DB
+        var categoryInDb = _db.Categories.FirstOrDefault(c => c.Id == categoryId);
+        if (categoryInDb != null)
+        {
+            _db.Categories.Remove(categoryInDb);
+        }
+        
+        // Delete hash state
+        var state = _db.States.FirstOrDefault(s => s.Key == $"category_{categoryId}_hash");
+        if (state != null)
+        {
+            _db.States.Remove(state);
+        }
+        _db.SaveChanges();
+    }
+
+    public void SaveTagToCache(WordPressTag tag, string cachePath)
+    {
+        var tagsDir = Path.Combine(cachePath, "tags");
+        Directory.CreateDirectory(tagsDir);
+
+        var oldFiles = Directory.GetFiles(tagsDir, $"{tag.Id}-*.yaml");
+        foreach(var oldFile in oldFiles) File.Delete(oldFile);
+
+        var cachedTag = _db.Tags.FirstOrDefault(t => t.Id == tag.Id);
+        if (cachedTag == null)
+        {
+            cachedTag = new CachedTag { Id = tag.Id };
+            _db.Tags.Add(cachedTag);
+        }
+        cachedTag.Name = tag.Name ?? string.Empty;
+        cachedTag.Slug = tag.Slug ?? string.Empty;
+        _db.SaveChanges();
+
+        var editableTag = new EditableTag { Id = tag.Id, Name = tag.Name ?? string.Empty, Slug = tag.Slug ?? string.Empty, Description = tag.Description ?? string.Empty };
+        var yamlContent = YamlSerializer.Serialize(editableTag);
+        var sanitizedName = SanitizeTitleForFilename(tag.Name ?? string.Empty);
+        var filePath = Path.Combine(tagsDir, $"{tag.Id}-{sanitizedName}.yaml");
+        File.WriteAllText(filePath, yamlContent);
+
+        var hash = ComputeSha256Hash(yamlContent);
+        SetState($"tag_{tag.Id}_hash", hash);
+    }
+
+    public void DeleteTagFromCache(int tagId, string cachePath)
+    {
+        var tagsDir = Path.Combine(cachePath, "tags");
+        if (Directory.Exists(tagsDir))
+        {
+            var filesToDelete = Directory.GetFiles(tagsDir, $"{tagId}-*.yaml");
+            foreach (var file in filesToDelete)
+            {
+                File.Delete(file);
+            }
+        }
+
+        var tagInDb = _db.Tags.FirstOrDefault(t => t.Id == tagId);
+        if (tagInDb != null)
+        {
+            _db.Tags.Remove(tagInDb);
+        }
+        
+        var state = _db.States.FirstOrDefault(s => s.Key == $"tag_{tagId}_hash");
+        if (state != null)
+        {
+            _db.States.Remove(state);
+        }
+        _db.SaveChanges();
     }
 
     public void DeleteMediaFromCache(int mediaId, string cachePath)
