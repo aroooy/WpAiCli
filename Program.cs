@@ -149,6 +149,14 @@ async Task<int> HandlePostsAsync(string[] args)
 
                 var post = await service.GetPostAsync(id.Value, ct).ConfigureAwait(false);
                 OutputFormatter.WritePost(post, format, Console.Out);
+
+                if (!string.IsNullOrWhiteSpace(profile.CachePath))
+                {
+                    var cacheService = new CacheService(profile.CachePath);
+                    cacheService.SavePostToCache(post, profile.CachePath);
+                    Console.WriteLine($"\nPost {post.Id} saved to local cache.");
+                }
+
                 result = (int)ExitCode.Success;
                 break;
             }
@@ -432,6 +440,14 @@ async Task<int> HandleCategoriesAsync(string[] args)
 
                 var category = await service.GetCategoryAsync(id.Value, ct).ConfigureAwait(false);
                 OutputFormatter.WriteCategory(category, format, Console.Out);
+
+                if (!string.IsNullOrWhiteSpace(profile.CachePath))
+                {
+                    var cacheService = new CacheService(profile.CachePath);
+                    cacheService.SaveCategoryToCache(category, profile.CachePath);
+                    Console.WriteLine($"\nCategory {category.Id} saved to local cache.");
+                }
+
                 result = (int)ExitCode.Success;
                 break;
             }
@@ -551,6 +567,14 @@ async Task<int> HandleTagsAsync(string[] args)
 
                 var tag = await service.GetTagAsync(id.Value, ct).ConfigureAwait(false);
                 OutputFormatter.WriteTag(tag, format, Console.Out);
+
+                if (!string.IsNullOrWhiteSpace(profile.CachePath))
+                {
+                    var cacheService = new CacheService(profile.CachePath);
+                    cacheService.SaveTagToCache(tag, profile.CachePath);
+                    Console.WriteLine($"\nTag {tag.Id} saved to local cache.");
+                }
+
                 result = (int)ExitCode.Success;
                 break;
             }
@@ -651,6 +675,39 @@ async Task<int> HandleMediaAsync(string[] args)
 
                 var mediaItem = await service.UploadMediaAsync(filePath, title, description, ct).ConfigureAwait(false);
                 OutputFormatter.WriteMediaItem(mediaItem, format, Console.Out);
+
+                if (!string.IsNullOrWhiteSpace(profile.CachePath) && !string.IsNullOrWhiteSpace(mediaItem.SourceUrl))
+                {
+                    Console.WriteLine("\nDownloading uploaded media to local cache...");
+                    var fileContent = await service.DownloadMediaFileAsync(mediaItem.SourceUrl, ct).ConfigureAwait(false);
+                    var cacheService = new CacheService(profile.CachePath);
+                    cacheService.SaveMediaToCache(mediaItem, fileContent, profile.CachePath);
+                    Console.WriteLine($"Media {mediaItem.Id} saved to local cache.");
+                }
+
+                result = (int)ExitCode.Success;
+                break;
+            }
+            case "delete":
+            {
+                var id = ResolveId(parsed, defaultValue: parsed.Positionals.FirstOrDefault());
+                if (id is null)
+                {
+                    Console.Error.WriteLine("Provide a media ID.");
+                    return (int)ExitCode.InvalidArguments;
+                }
+
+                var force = parsed.GetBool("force", defaultValue: true);
+                var response = await service.DeleteMediaAsync(id.Value, force, ct).ConfigureAwait(false);
+                OutputFormatter.WriteDeleteResponse(response, format, Console.Out);
+
+                if (response.Deleted && !string.IsNullOrWhiteSpace(profile.CachePath))
+                {
+                    var cacheService = new CacheService(profile.CachePath);
+                    cacheService.DeleteMediaFromCache(id.Value, profile.CachePath);
+                    Console.WriteLine($"\nMedia {id.Value} deleted from local cache.");
+                }
+
                 result = (int)ExitCode.Success;
                 break;
             }

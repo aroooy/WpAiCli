@@ -262,6 +262,20 @@ public sealed class WordPressApiClient
         return SendAsync<WordPressMedia>(HttpMethod.Post, url, cancellationToken, request);
     }
 
+    public async Task<WordPressDeleteResponse> DeleteMediaAsync(int id, bool force, CancellationToken cancellationToken)
+    {
+        EnsureAuthenticated(nameof(DeleteMediaAsync));
+
+        var url = BuildUrl($"/media/{id}");
+        if (force)
+        {
+            url = AppendQuery(url, "force", "true");
+        }
+
+        await SendAsync<JsonDocument>(HttpMethod.Delete, url, cancellationToken).ConfigureAwait(false);
+        return new WordPressDeleteResponse { Deleted = true };
+    }
+
     public async Task<byte[]> DownloadFileAsync(string url, CancellationToken cancellationToken)
     {
         return await _httpClient.GetByteArrayAsync(url, cancellationToken);

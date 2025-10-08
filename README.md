@@ -89,6 +89,8 @@ AI など機械連携では JSON モード (`--format json`) を推奨します�
   - `wpai media list [--per-page <NUM>] [--page <NUM>]`
 - `upload <file-path>`: ファイルをメディアライブラリにアップロードします。
   - `wpai media upload <PATH> [--title <TITLE>] [--description <DESC>]`
+- `delete <id>`: メディアを削除します。
+  - `wpai media delete 123 [--force]`
 
 ## 同期機能
 
@@ -126,6 +128,8 @@ wpai connections update "MyBlog" --cache-path ./my-blog-cache
 - ローカルで `posts/` ディレクトリ内の投稿ファイルを編集してから `posts sync` を実行すると、変更がサーバーにプッシュされます。
 - サーバー側で投稿が変更された場合、`posts sync` を実行するとローカルのファイルが更新されます。
 - ローカルとサーバーの両方で同じコンテンツが変更されていた場合、コンフリクト（競合）が検出され、安全のためその同期はスキップされます。
+
+- **個別コマンドとキャッシュ同期:** `posts`, `categories`, `tags`, `media`の各個別コマンド (`create`, `update`, `delete`, `get`, `upload`) は、実行後に影響を受けたアイテムのローカルキャッシュを自動で更新します。これにより、`sync`コマンドを実行しなくても、キャッシュは常に最新の状態に保たれます。
 
 ### ローカルで編集可能なファイル
 

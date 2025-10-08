@@ -77,6 +77,9 @@ public sealed class WordPressService : IDisposable
     public Task<WordPressMedia> UpdateMediaAsync(int id, WordPressUpdateMediaRequest request, CancellationToken cancellationToken)
         => _apiClient.UpdateMediaAsync(id, request, cancellationToken);
 
+    public Task<WordPressDeleteResponse> DeleteMediaAsync(int id, bool force, CancellationToken cancellationToken)
+        => _apiClient.DeleteMediaAsync(id, force, cancellationToken);
+
     public Task<WordPressMedia> UploadMediaAsync(string filePath, string? title, string? description, CancellationToken cancellationToken)
         => _apiClient.UploadMediaAsync(filePath, title, description, cancellationToken);
 
