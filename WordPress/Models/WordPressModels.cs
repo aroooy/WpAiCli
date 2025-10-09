@@ -207,7 +207,7 @@ public sealed class WordPressRevision : IHasTitle
     public Dictionary<string, JsonElement>? AdditionalData { get; set; }
 }
 
-public sealed class WordPressCategory
+public abstract class WordPressTerm
 {
     [JsonPropertyName("id")]
     public int Id { get; set; }
@@ -220,7 +220,10 @@ public sealed class WordPressCategory
 
     [JsonPropertyName("description")]
     public string? Description { get; set; }
+}
 
+public sealed class WordPressCategory : WordPressTerm
+{
     [JsonPropertyName("count")]
     public int? Count { get; set; }
 
@@ -228,20 +231,8 @@ public sealed class WordPressCategory
     public int? Parent { get; set; }
 }
 
-public sealed class WordPressTag
+public sealed class WordPressTag : WordPressTerm
 {
-    [JsonPropertyName("id")]
-    public int Id { get; set; }
-
-    [JsonPropertyName("name")]
-    public string? Name { get; set; }
-
-    [JsonPropertyName("slug")]
-    public string? Slug { get; set; }
-
-    [JsonPropertyName("description")]
-    public string? Description { get; set; }
-
     [JsonPropertyName("count")]
     public int? Count { get; set; }
 }

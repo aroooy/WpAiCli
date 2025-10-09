@@ -74,6 +74,10 @@ AI など機械連携では JSON モード (`--format json`) を推奨します�
 ### カテゴリ (`categories`)
 - `list`: カテゴリを一覧表示します。
 - `get <id>`: 指定したIDのカテゴリを1件取得します。
+- `create`: 新しいカテゴリを作成します。
+  - `wpai categories create --name <NAME> [--slug <SLUG>] [--description <DESC>]`
+- `update <id>`: 既存のカテゴリを更新します。
+  - `wpai categories update <ID> [--name <NAME>] [--slug <SLUG>] [--description <DESC>]`
 - `delete <id>`: カテゴリを削除します。
 
 ### タグ (`tags`)
@@ -81,6 +85,8 @@ AI など機械連携では JSON モード (`--format json`) を推奨します�
 - `create`: 新しいタグを作成します。
   - `wpai tags create --name <NAME> [--slug <SLUG>] [--description <DESC>]`
 - `get <id>`: 指定したIDのタグを1件取得します。
+- `update <id>`: 既存のタグを更新します。
+  - `wpai tags update <ID> [--name <NAME>] [--slug <SLUG>] [--description <DESC>]`
 - `delete <id>`: タグを削除します。
 
 ### メディア (`media`)
@@ -91,6 +97,25 @@ AI など機械連携では JSON モード (`--format json`) を推奨します�
   - `wpai media upload <PATH> [--title <TITLE>] [--description <DESC>]`
 - `delete <id>`: メディアを削除します。
   - `wpai media delete 123 [--force]`
+
+### 競合の解決 (`resolve`)
+`posts sync` を実行した際に競合が検出された場合、このコマンドを使って手動で競合を解決します。
+
+- `resolve <type> <id> --strategy <strategy>`: 競合を解決します。
+  - `<type>`: 競合したコンテンツの種類 (`post`, `category`, `tag`)。
+  - `<id>`: 競合したアイテムのID。
+  - `--strategy <strategy>`: 必須。以下のいずれかの解決戦略を指定します。
+    - `local-wins`: ローカルの変更を正とし、サーバーの状態をローカルの状態で上書きします。
+    - `server-wins`: サーバーの変更を正とし、ローカルの状態をサーバーの状態で上書きします。
+
+  **実行例:**
+  ```bash
+  # 投稿ID 123 の競合を、ローカルの変更を優先して解決
+  wpai resolve post 123 --strategy local-wins
+
+  # カテゴリID 45 の競合を、サーバーの変更を優先して解決
+  wpai resolve category 45 --strategy server-wins
+  ```
 
 ## 同期機能
 
@@ -127,9 +152,9 @@ wpai connections update "MyBlog" --cache-path ./my-blog-cache
 - **メディア:** `media sync` を実行すると、まずローカルの `media/` ディレクトリ内にあるYAMLファイルの変更（タイトル、代替テキスト、キャプション、説明）がサーバーにプッシュされます。その後、サーバーからメディアの情報とファイル本体がダウンロードされ、ローカルキャッシュが更新されます。
 - ローカルで `posts/` ディレクトリ内の投稿ファイルを編集してから `posts sync` を実行すると、変更がサーバーにプッシュされます。
 - サーバー側で投稿が変更された場合、`posts sync` を実行するとローカルのファイルが更新されます。
-- ローカルとサーバーの両方で同じコンテンツが変更されていた場合、コンフリクト（競合）が検出され、安全のためその同期はスキップされます。
+- ローカルとサーバーの両方で同じ投稿が変更されていた場合、コンフリクト（競合）が検出され、安全のためその同期はスキップされます。レポートに表示される案内に従って `resolve` コマンドで手動解決が必要です。
 
-- **個別コマンドとキャッシュ同期:** `posts`, `categories`, `tags`, `media`の各個別コマンド (`create`, `update`, `delete`, `get`, `upload`) は、実行後に影響を受けたアイテムのローカルキャッシュを自動で更新します。これにより、`sync`コマンドを実行しなくても、キャッシュは常に最新の状態に保たれます。
+- **個別コマンドとキャッシュ同期:** `posts`, `categories`, `tags`, `media`の各個別コマンド (`create`, `update`, `delete`など) は、サーバー上のデータを直接変更しますが、ローカルキャッシュは更新**しません**。サーバー上で行った変更をローカルキャッシュに反映させるには、必ず `posts sync` または `media sync` を実行してください。
 
 ### ローカルで編集可能なファイル
 

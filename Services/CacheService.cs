@@ -714,4 +714,63 @@ public class CacheService
     {
         return YamlDeserializer.Deserialize<T>(yaml) ?? new T();
     }
+
+    public async Task<T?> GetLocalTaxonomyTermAsync<T>(string type, int id, string cachePath) where T : class, new()
+    {
+        var dir = Path.Combine(cachePath, type == "category" ? "categories" : "tags");
+        if (!Directory.Exists(dir)) return null;
+
+        var file = Directory.GetFiles(dir, $"{id}-*.yaml").FirstOrDefault();
+        if (file == null)
+        {
+            return null;
+        }
+
+        var yamlContent = await File.ReadAllTextAsync(file);
+        return DeserializeFromYaml<T>(yamlContent);
+    }
+
+    public async Task UpdateLocalTaxonomyTermAsync(WordPressTerm term, string cachePath, bool updateHashOnly = false)
+    {
+        var type = term is WordPressCategory ? "category" : "tag";
+        var dir = Path.Combine(cachePath, type == "category" ? "categories" : "tags");
+        Directory.CreateDirectory(dir);
+
+        string yamlContent;
+        if (!updateHashOnly)
+        {
+            // Find and delete the old file for this ID, as the name might have changed
+            var oldFiles = Directory.GetFiles(dir, $"{term.Id}-*.yaml");
+            foreach (var oldFile in oldFiles) File.Delete(oldFile);
+
+            object editableTerm;
+            if (term is WordPressCategory cat)
+            {
+                editableTerm = new EditableCategory { Id = cat.Id, Name = cat.Name ?? string.Empty, Slug = cat.Slug ?? string.Empty, Description = cat.Description ?? string.Empty };
+            }
+            else if (term is WordPressTag tag)
+            {
+                editableTerm = new EditableTag { Id = tag.Id, Name = tag.Name ?? string.Empty, Slug = tag.Slug ?? string.Empty, Description = tag.Description ?? string.Empty };
+            }
+            else
+            {
+                return;
+            }
+            yamlContent = YamlSerializer.Serialize(editableTerm);
+            var sanitizedName = SanitizeTitleForFilename(term.Name ?? string.Empty);
+            var filePath = Path.Combine(dir, $"{term.Id}-{sanitizedName}.yaml");
+            await File.WriteAllTextAsync(filePath, yamlContent);
+        }
+        else
+        {
+            // Hash only: read the content of the file that must already exist
+            var file = Directory.GetFiles(dir, $"{term.Id}-*.yaml").FirstOrDefault();
+            if (file == null) throw new FileNotFoundException($"Cannot update hash for non-existent {type} {term.Id}");
+            yamlContent = await File.ReadAllTextAsync(file);
+        }
+
+        var hash = ComputeSha256Hash(yamlContent);
+        SetState($"{type}_{term.Id}_hash", hash);
+        await _db.SaveChangesAsync();
+    }
 }

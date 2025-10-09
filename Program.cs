@@ -49,6 +49,7 @@ try
         "tags" => await HandleTagsAsync(commandArgs),
         "media" => await HandleMediaAsync(commandArgs),
         "connections" => HandleConnections(commandArgs),
+        "resolve" => await HandleResolveAsync(commandArgs),
         "completion" => HandleCompletion(commandArgs),
         "docs" => PrintDocsAndReturn(),
         _ => UnknownCommand(command)
@@ -118,22 +119,6 @@ async Task<int> HandlePostsAsync(string[] args)
                 var posts = await service.ListPostsAsync(status, perPage, page, ct).ConfigureAwait(false);
                 OutputFormatter.WritePosts(posts, format, Console.Out);
 
-                // Cache the results if a path is configured
-                if (!string.IsNullOrWhiteSpace(profile.CachePath))
-                {
-                    var cacheService = new CacheService(profile.CachePath);
-                    int cachedCount = 0;
-                    foreach (var post in posts)
-                    {
-                        cacheService.SavePostToCache(post, profile.CachePath);
-                        cachedCount++;
-                    }
-                    if (cachedCount > 0)
-                    {
-                        Console.WriteLine($"\n{cachedCount} post(s) cached to {profile.CachePath}");
-                    }
-                }
-
                 result = (int)ExitCode.Success;
                 break;
             }
@@ -149,13 +134,6 @@ async Task<int> HandlePostsAsync(string[] args)
 
                 var post = await service.GetPostAsync(id.Value, ct).ConfigureAwait(false);
                 OutputFormatter.WritePost(post, format, Console.Out);
-
-                if (!string.IsNullOrWhiteSpace(profile.CachePath))
-                {
-                    var cacheService = new CacheService(profile.CachePath);
-                    cacheService.SavePostToCache(post, profile.CachePath);
-                    Console.WriteLine($"\nPost {post.Id} saved to local cache.");
-                }
 
                 result = (int)ExitCode.Success;
                 break;
@@ -190,13 +168,6 @@ async Task<int> HandlePostsAsync(string[] args)
                 var post = await service.CreatePostAsync(request, ct).ConfigureAwait(false);
                 OutputFormatter.WritePost(post, format, Console.Out);
 
-                if (!string.IsNullOrWhiteSpace(profile.CachePath))
-                {
-                    var cacheService = new CacheService(profile.CachePath);
-                    cacheService.SavePostToCache(post, profile.CachePath);
-                    Console.WriteLine($"\nPost {post.Id} saved to local cache.");
-                }
-
                 result = (int)ExitCode.Success;
                 break;
             }
@@ -229,13 +200,6 @@ async Task<int> HandlePostsAsync(string[] args)
                 var post = await service.UpdatePostAsync(id.Value, request, ct).ConfigureAwait(false);
                 OutputFormatter.WritePost(post, format, Console.Out);
 
-                if (!string.IsNullOrWhiteSpace(profile.CachePath))
-                {
-                    var cacheService = new CacheService(profile.CachePath);
-                    cacheService.SavePostToCache(post, profile.CachePath);
-                    Console.WriteLine($"\nPost {post.Id} updated in local cache.");
-                }
-
                 result = (int)ExitCode.Success;
                 break;
             }
@@ -253,13 +217,6 @@ async Task<int> HandlePostsAsync(string[] args)
                 var response = await service.DeletePostAsync(id.Value, force, ct).ConfigureAwait(false);
                 OutputFormatter.WriteDeleteResponse(response, format, Console.Out);
 
-                if (response.Deleted && !string.IsNullOrWhiteSpace(profile.CachePath))
-                {
-                    var cacheService = new CacheService(profile.CachePath);
-                    cacheService.DeletePostFromCache(id.Value, profile.CachePath);
-                    Console.WriteLine($"\nPost {id.Value} deleted from local cache.");
-                }
-                
                 result = (int)ExitCode.Success;
                 break;
             }
@@ -325,6 +282,56 @@ async Task<int> HandlePostsAsync(string[] args)
     {
         Console.Error.WriteLine(ex.Message);
         return (int)ExitCode.InvalidArguments;
+    }
+}
+
+async Task<int> HandleResolveAsync(string[] args)
+{
+    if (args.Length < 2)
+    {
+        Console.Error.WriteLine("Usage: wpai resolve <type> <id> --strategy <local-wins|server-wins>");
+        return (int)ExitCode.InvalidArguments;
+    }
+
+    var type = args[0].ToLowerInvariant();
+    if (!int.TryParse(args[1], out var id))
+    {
+        Console.Error.WriteLine("ID must be an integer.");
+        return (int)ExitCode.InvalidArguments;
+    }
+
+    var subArgs = args.Skip(2).ToArray();
+    var parsed = OptionParser.Parse(subArgs);
+    var strategy = parsed.GetString("strategy");
+
+    if (strategy != "local-wins" && strategy != "server-wins")
+    {
+        Console.Error.WriteLine("Invalid strategy. Must be one of: local-wins, server-wins");
+        return (int)ExitCode.InvalidArguments;
+    }
+
+    var (store, profile, token) = ResolveConnection(globalConnectionName);
+    if (string.IsNullOrWhiteSpace(profile.CachePath))
+    {
+        Console.Error.WriteLine("Cache path is not configured for this connection.");
+        return (int)ExitCode.InvalidArguments;
+    }
+
+    var settings = new WordPressSettings(profile.BaseUrl, token);
+    using var wpService = new WordPressService(settings);
+    var cacheService = new CacheService(profile.CachePath);
+    var syncService = new SyncService(wpService, cacheService);
+
+    try
+    {
+        await syncService.ResolveConflictAsync(type, id, strategy, profile.CachePath, CancellationToken.None);
+        UpdateLastUsedConnection(store, profile.Name);
+        return (int)ExitCode.Success;
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"An error occurred during conflict resolution: {ex.Message}");
+        return (int)ExitCode.UnhandledError;
     }
 }
 
@@ -395,7 +402,10 @@ void PrintSyncReport(SyncReport report)
     }
     if (report.ConflictDetected.Count > 0)
     {
-        Console.WriteLine($"Conflict Post IDs: {string.Join(", ", report.ConflictDetected)}");
+        Console.WriteLine("\nConflicts detected for the following Post IDs:");
+        Console.WriteLine($"  {string.Join(", ", report.ConflictDetected)}");
+        Console.WriteLine("Please resolve them individually using the 'resolve' command.");
+        Console.WriteLine("Example: wpai resolve post 123 --strategy [local-wins|server-wins]");
     }
     Console.WriteLine("-------------------");
 }
@@ -441,13 +451,48 @@ async Task<int> HandleCategoriesAsync(string[] args)
                 var category = await service.GetCategoryAsync(id.Value, ct).ConfigureAwait(false);
                 OutputFormatter.WriteCategory(category, format, Console.Out);
 
-                if (!string.IsNullOrWhiteSpace(profile.CachePath))
+                result = (int)ExitCode.Success;
+                break;
+            }
+            case "create":
+            {
+                var name = parsed.GetString("name");
+                if (string.IsNullOrWhiteSpace(name))
                 {
-                    var cacheService = new CacheService(profile.CachePath);
-                    cacheService.SaveCategoryToCache(category, profile.CachePath);
-                    Console.WriteLine($"\nCategory {category.Id} saved to local cache.");
+                    Console.Error.WriteLine("Provide --name.");
+                    return (int)ExitCode.InvalidArguments;
                 }
 
+                var request = new WordPressCreateCategoryRequest
+                {
+                    Name = name,
+                    Slug = parsed.GetString("slug"),
+                    Description = parsed.GetString("description")
+                };
+
+                var category = await service.CreateCategoryAsync(request, ct).ConfigureAwait(false);
+                OutputFormatter.WriteCategory(category, format, Console.Out);
+                result = (int)ExitCode.Success;
+                break;
+            }
+            case "update":
+            {
+                var id = ResolveId(parsed, defaultValue: parsed.Positionals.FirstOrDefault());
+                if (id is null)
+                {
+                    Console.Error.WriteLine("Provide a category ID.");
+                    return (int)ExitCode.InvalidArguments;
+                }
+
+                var request = new WordPressUpdateCategoryRequest
+                {
+                    Name = parsed.GetString("name"),
+                    Slug = parsed.GetString("slug"),
+                    Description = parsed.GetString("description")
+                };
+
+                var category = await service.UpdateCategoryAsync(id.Value, request, ct).ConfigureAwait(false);
+                OutputFormatter.WriteCategory(category, format, Console.Out);
                 result = (int)ExitCode.Success;
                 break;
             }
@@ -463,13 +508,6 @@ async Task<int> HandleCategoriesAsync(string[] args)
                 var force = parsed.GetBool("force", defaultValue: true);
                 var response = await service.DeleteCategoryAsync(id.Value, force, ct).ConfigureAwait(false);
                 OutputFormatter.WriteDeleteResponse(response, format, Console.Out);
-
-                if (response.Deleted && !string.IsNullOrWhiteSpace(profile.CachePath))
-                {
-                    var cacheService = new CacheService(profile.CachePath);
-                    cacheService.DeleteCategoryFromCache(id.Value, profile.CachePath);
-                    Console.WriteLine($"\nCategory {id.Value} deleted from local cache.");
-                }
 
                 result = (int)ExitCode.Success;
                 break;
@@ -546,13 +584,6 @@ async Task<int> HandleTagsAsync(string[] args)
                 var tag = await service.CreateTagAsync(request, ct).ConfigureAwait(false);
                 OutputFormatter.WriteTag(tag, format, Console.Out);
 
-                if (!string.IsNullOrWhiteSpace(profile.CachePath))
-                {
-                    var cacheService = new CacheService(profile.CachePath);
-                    cacheService.SaveTagToCache(tag, profile.CachePath);
-                    Console.WriteLine($"\nTag {tag.Id} saved to local cache.");
-                }
-
                 result = (int)ExitCode.Success;
                 break;
             }
@@ -567,13 +598,6 @@ async Task<int> HandleTagsAsync(string[] args)
 
                 var tag = await service.GetTagAsync(id.Value, ct).ConfigureAwait(false);
                 OutputFormatter.WriteTag(tag, format, Console.Out);
-
-                if (!string.IsNullOrWhiteSpace(profile.CachePath))
-                {
-                    var cacheService = new CacheService(profile.CachePath);
-                    cacheService.SaveTagToCache(tag, profile.CachePath);
-                    Console.WriteLine($"\nTag {tag.Id} saved to local cache.");
-                }
 
                 result = (int)ExitCode.Success;
                 break;
@@ -590,13 +614,6 @@ async Task<int> HandleTagsAsync(string[] args)
                 var force = parsed.GetBool("force", defaultValue: true);
                 var response = await service.DeleteTagAsync(id.Value, force, ct).ConfigureAwait(false);
                 OutputFormatter.WriteDeleteResponse(response, format, Console.Out);
-
-                if (response.Deleted && !string.IsNullOrWhiteSpace(profile.CachePath))
-                {
-                    var cacheService = new CacheService(profile.CachePath);
-                    cacheService.DeleteTagFromCache(id.Value, profile.CachePath);
-                    Console.WriteLine($"\nTag {id.Value} deleted from local cache.");
-                }
 
                 result = (int)ExitCode.Success;
                 break;
@@ -676,15 +693,6 @@ async Task<int> HandleMediaAsync(string[] args)
                 var mediaItem = await service.UploadMediaAsync(filePath, title, description, ct).ConfigureAwait(false);
                 OutputFormatter.WriteMediaItem(mediaItem, format, Console.Out);
 
-                if (!string.IsNullOrWhiteSpace(profile.CachePath) && !string.IsNullOrWhiteSpace(mediaItem.SourceUrl))
-                {
-                    Console.WriteLine("\nDownloading uploaded media to local cache...");
-                    var fileContent = await service.DownloadMediaFileAsync(mediaItem.SourceUrl, ct).ConfigureAwait(false);
-                    var cacheService = new CacheService(profile.CachePath);
-                    cacheService.SaveMediaToCache(mediaItem, fileContent, profile.CachePath);
-                    Console.WriteLine($"Media {mediaItem.Id} saved to local cache.");
-                }
-
                 result = (int)ExitCode.Success;
                 break;
             }
@@ -700,13 +708,6 @@ async Task<int> HandleMediaAsync(string[] args)
                 var force = parsed.GetBool("force", defaultValue: true);
                 var response = await service.DeleteMediaAsync(id.Value, force, ct).ConfigureAwait(false);
                 OutputFormatter.WriteDeleteResponse(response, format, Console.Out);
-
-                if (response.Deleted && !string.IsNullOrWhiteSpace(profile.CachePath))
-                {
-                    var cacheService = new CacheService(profile.CachePath);
-                    cacheService.DeleteMediaFromCache(id.Value, profile.CachePath);
-                    Console.WriteLine($"\nMedia {id.Value} deleted from local cache.");
-                }
 
                 result = (int)ExitCode.Success;
                 break;

@@ -310,7 +310,7 @@ public class SyncService
             var isLocalMetaChanged = localEditableMetaHash != localMeta.EditableMetaHash;
             var isServerMetaChanged = serverEditableMetaHash != localMeta.EditableMetaHash;
 
-            if ((isLocalContentChanged && isServerContentChanged) || (isLocalMetaChanged && isServerMetaChanged))
+            if ((isLocalContentChanged || isLocalMetaChanged) && (isServerContentChanged || isServerMetaChanged))
             {
                 report.ConflictDetected.Add(id);
             }
@@ -373,7 +373,7 @@ public class SyncService
                 else
                 {
                     // Could not resolve term, so we fail
-                    Console.Error.WriteLine($"Error: Could not resolve taxonomy term ''{item}'' to an ID.");
+                    Console.Error.WriteLine($"Error: Could not resolve taxonomy term '{item}' to an ID.");
                     resolvedIds = null;
                     return false;
                 }
@@ -382,5 +382,109 @@ public class SyncService
 
         resolvedIds = idList.ToArray();
         return true;
+    }
+
+    public async Task ResolveConflictAsync(string type, int id, string strategy, string cachePath, CancellationToken cancellationToken)
+    {
+        switch (type.ToLowerInvariant())
+        {
+            case "post":
+                await ResolvePostConflictAsync(id, strategy, cachePath, cancellationToken);
+                break;
+            case "category":
+            case "tag":
+                // TODO: Implement taxonomy conflict resolution
+                await ResolveTaxonomyConflictAsync(type, id, strategy, cachePath, cancellationToken);
+                break;
+            default:
+                throw new ArgumentException($"Unsupported conflict type: {type}");
+        }
+    }
+
+    private async Task ResolvePostConflictAsync(int id, string strategy, string cachePath, CancellationToken cancellationToken)
+    {
+        Console.WriteLine($"Resolving conflict for post {id} with strategy: {strategy}...");
+
+        if (strategy == "server-wins")
+        {
+            var remotePost = await _wpService.GetPostAsync(id, cancellationToken);
+            _cacheService.SavePostToCache(remotePost, cachePath);
+            Console.WriteLine($"Conflict resolved. Local post {id} was overwritten with the server version.");
+        }
+        else if (strategy == "local-wins")
+        {
+            var localContent = _cacheService.ReadLocalContent(id, cachePath);
+            var localEditableMeta = _cacheService.ReadEditableMetadata(id, cachePath);
+
+            if (localEditableMeta == null)
+            {
+                throw new InvalidOperationException($"Could not read local metadata for post {id}. Cannot push local changes.");
+            }
+
+            var request = new WordPressUpdatePostRequest();
+            request.Content = localContent;
+            request.Title = localEditableMeta.Title;
+            request.Slug = localEditableMeta.Slug;
+            request.Status = localEditableMeta.Status;
+            request.Date = localEditableMeta.Date;
+            request.Excerpt = localEditableMeta.Excerpt;
+            request.FeaturedMedia = localEditableMeta.FeaturedMedia;
+            request.CommentStatus = localEditableMeta.CommentStatus;
+            request.PingStatus = localEditableMeta.PingStatus;
+
+            if (!TryResolveTaxonomyIds(localEditableMeta.Categories, _cacheService.FindCategoryId, out var categoryIds) ||
+                !TryResolveTaxonomyIds(localEditableMeta.Tags, _cacheService.FindTagId, out var tagIds))
+            {
+                throw new InvalidOperationException($"Failed to resolve taxonomy IDs for post {id}. Please check the category and tag names in the local file.");
+            }
+            request.Categories = categoryIds;
+            request.Tags = tagIds;
+
+            var updatedPost = await _wpService.UpdatePostAsync(id, request, cancellationToken);
+            _cacheService.SavePostToCache(updatedPost, cachePath);
+            Console.WriteLine($"Conflict resolved. Server post {id} was overwritten with the local version.");
+        }
+    }
+
+    private async Task ResolveTaxonomyConflictAsync(string type, int id, string strategy, string cachePath, CancellationToken cancellationToken)
+    {
+        Console.WriteLine($"Resolving conflict for {type} {id} with strategy: {strategy}...");
+
+        if (strategy == "server-wins")
+        {
+            if (type == "category")
+            {
+                var remoteTerm = await _wpService.GetCategoryAsync(id, cancellationToken);
+                await _cacheService.UpdateLocalTaxonomyTermAsync(remoteTerm, cachePath);
+            }
+            else // tag
+            {
+                var remoteTerm = await _wpService.GetTagAsync(id, cancellationToken);
+                await _cacheService.UpdateLocalTaxonomyTermAsync(remoteTerm, cachePath);
+            }
+            Console.WriteLine($"Conflict resolved. Local {type} {id} was overwritten with the server version.");
+        }
+        else if (strategy == "local-wins")
+        {
+            if (type == "category")
+            {
+                var localTerm = await _cacheService.GetLocalTaxonomyTermAsync<EditableCategory>(type, id, cachePath);
+                if (localTerm == null) throw new InvalidOperationException($"Could not find local category with ID {id}.");
+
+                var request = new WordPressUpdateCategoryRequest { Name = localTerm.Name, Slug = localTerm.Slug, Description = localTerm.Description };
+                var updatedTerm = await _wpService.UpdateCategoryAsync(id, request, cancellationToken);
+                await _cacheService.UpdateLocalTaxonomyTermAsync(updatedTerm, cachePath, updateHashOnly: true);
+            }
+            else // tag
+            {
+                var localTerm = await _cacheService.GetLocalTaxonomyTermAsync<EditableTag>(type, id, cachePath);
+                if (localTerm == null) throw new InvalidOperationException($"Could not find local tag with ID {id}.");
+
+                var request = new WordPressUpdateTagRequest { Name = localTerm.Name, Slug = localTerm.Slug, Description = localTerm.Description };
+                var updatedTerm = await _wpService.UpdateTagAsync(id, request, cancellationToken);
+                await _cacheService.UpdateLocalTaxonomyTermAsync(updatedTerm, cachePath, updateHashOnly: true);
+            }
+            Console.WriteLine($"Conflict resolved. Server {type} {id} was overwritten with the local version.");
+        }
     }
 }
