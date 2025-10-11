@@ -29,6 +29,9 @@ wpai connections add --name "BlogName" --base-url "https://example.com/?rest_rou
 - `--token`: WordPress で発行した Bearer トークン。OSの資格情報ストアに安全に保存されます。
 - `--cache-path <PATH>`: (任意) 同期機能で利用するローカルキャッシュの保存先ディレクトリを指定します。
 - `--sync-limit <NUMBER>`: (任意) 一度の同期でチェックする最大投稿数を指定します (デフォルト: 30)。
+- `--markdown-conversion <client|server>`: (任意) MarkdownからHTMLへの変換をどこで行うかを指定します (デフォルト: `client`)。
+  - `client`: CLIツール側で変換します。
+  - `server`: サーバー側のプラグイン(Jetpackなど)での変換を期待し、Markdown原文をそのまま送信します。
 
 ### 2. 接続の確認
 ```
@@ -48,9 +51,9 @@ AI など機械連携では JSON モード (`--format json`) を推奨します�
 ### 接続管理 (`connections`)
 - `list`: 登録済み接続の一覧を表示します。
 - `add`: 新しい接続を登録します。
-  - `wpai connections add --name <名称> --base-url <URL> --token <Bearer> [--cache-path <PATH>] [--sync-limit <NUMBER>]`
+  - `wpai connections add --name <名称> --base-url <URL> --token <Bearer> [--cache-path <PATH>] [--sync-limit <NUMBER>] [--markdown-conversion <client|server>]`
 - `update <name>`: 既存の接続情報を更新します。
-  - `wpai connections update "BlogName" --cache-path ./new-cache --sync-limit 50`
+  - `wpai connections update "BlogName" --cache-path ./new-cache --sync-limit 50 --markdown-conversion server`
 - `remove`: 対話形式で既存の接続を削除します。
 
 ### 投稿 (`posts`)
@@ -61,9 +64,9 @@ AI など機械連携では JSON モード (`--format json`) を推奨します�
 - `get <id>`: 指定したIDの投稿を1件取得します。
   - `wpai posts get 123`
 - `create`: 新しい投稿を作成します。
-  - `wpai posts create --title <TITLE> [--content <CONTENT> | --content-file <PATH>] [--status <STATUS>] [--categories <IDs>] [--tags <IDs>] [--featured-media <ID>]`
+  - `wpai posts create --title <TITLE> [--content <CONTENT> | --content-file <PATH>] [--status <STATUS>] [--edit-mode <markdown|html>] [--categories <IDs>] [--tags <IDs>] [--featured-media <ID>]`
 - `update <id>`: 既存の投稿を更新します。
-  - `wpai posts update 123 [--title <TITLE>] [--content <CONTENT> | --content-file <PATH>] [--status <STATUS>] [--categories <IDs>] [--tags <IDs>] [--featured-media <ID>]`
+  - `wpai posts update 123 [--title <TITLE>] [--content <CONTENT> | --content-file <PATH>] [--status <STATUS>] [--edit-mode <markdown|html>] [--categories <IDs>] [--tags <IDs>] [--featured-media <ID>]`
 - `delete <id>`: 投稿を削除します。
   - `wpai posts delete 123 [--force]`
 - `revisions <id>`: 指定した投稿のリビジョン一覧を取得します。
@@ -170,6 +173,9 @@ wpai connections update "MyBlog" --cache-path ./my-blog-cache
 - `posts/[ID]-[slug]_content.md`: 投稿の本文。
 - `posts/[ID]-[slug]_editable.yaml`: 投稿のメタデータ。このファイルを編集することで、以下の項目を変更できます。
     - `title`, `slug`, `status`, `date`, `excerpt` など。
+    - `editMode`: `markdown` または `html` を指定します。`_content.md` ファイルの内容をどちらとして扱うかを `posts sync` 時に決定します。
+      - `posts sync` で初めて投稿をキャッシュする際、サーバーの `_md_source` カスタムフィールドの有無に応じて自動設定されます。
+      - この値を `html` から `markdown` に変更すると、次回 `posts sync` 時に `_content.md` の内容がMarkdownとして扱われます。
     - `categories` や `tags` には、IDだけでなく、`categories/` や `tags/` ディレクトリ内に存在する名前やスラッグで指定できます。
     - **注意:** ローカルで新しい投稿ファイルセットを作成して `posts sync` を実行しても、サーバーに新規投稿として作成することはできません。新規投稿は `posts create` コマンドを使用してください。
 

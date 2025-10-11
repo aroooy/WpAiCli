@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
+
 using WpAiCli.Services.Data;
 using WpAiCli.WordPress.Models;
 using YamlDotNet.Serialization;
@@ -43,6 +44,8 @@ public class EditablePostMetadata
     public List<string>? Categories { get; set; }
     [YamlMember(Alias = "tags")]
     public List<string>? Tags { get; set; }
+    [YamlMember(Alias = "editMode")]
+    public string? EditMode { get; set; }
 }
 
 public class EditableCategory
@@ -97,6 +100,7 @@ public class CacheService
 
     public CacheService(string cachePath)
     {
+        Directory.CreateDirectory(cachePath);
         var dbPath = Path.Combine(cachePath, "cache.db");
         _db = new CacheDbContext(dbPath);
     }
@@ -132,9 +136,28 @@ public class CacheService
 
         DeletePostFromCache(post.Id, cachePath);
 
-        // 1. Handle editable.yaml
+        // 1. Determine content and edit mode from meta field
+        string contentToSave;
+        string contentForHash;
+        bool hasMarkdownMeta = false;
+        if (post.Meta != null && post.Meta.TryGetValue("_md_source", out var markdownSourceObj) && markdownSourceObj is JsonElement markdownJson && markdownJson.ValueKind == JsonValueKind.String && !string.IsNullOrEmpty(markdownJson.GetString()))
+        {
+            var markdownFromMeta = markdownJson.GetString()!;
+            contentToSave = markdownFromMeta;
+            contentForHash = markdownFromMeta;
+            hasMarkdownMeta = true;
+        }
+        else
+        {
+            var htmlFromServer = post.Content?.Raw ?? string.Empty;
+            contentToSave = htmlFromServer;
+            contentForHash = htmlFromServer;
+        }
+
+        // 2. Handle editable.yaml
         var editableMeta = new EditablePostMetadata
         {
+            EditMode = hasMarkdownMeta ? "markdown" : "html",
             Title = post.Title?.Raw,
             Slug = post.Slug,
             Status = post.Status,
@@ -151,11 +174,10 @@ public class CacheService
         File.WriteAllText(editableMetaFilePath, yamlContent);
         var editableMetaHash = ComputeSha256Hash(yamlContent);
 
-        // 2. Handle content.md
+        // 3. Handle content.md
         var contentFilePath = Path.Combine(postsDir, $"{fileBaseName}_content.md");
-        var content = post.Content?.Raw ?? string.Empty;
-        File.WriteAllText(contentFilePath, content);
-        var contentHash = ComputeSha256Hash(content);
+        File.WriteAllText(contentFilePath, contentToSave);
+        var contentHash = ComputeSha256Hash(contentForHash);
 
         // 3. Save metadata to database
         var existingPost = _db.Posts.FirstOrDefault(p => p.PostId == post.Id);

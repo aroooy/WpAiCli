@@ -16,4 +16,6 @@ public sealed class ConnectionProfile
     public string? CachePath { get; set; }
 
     public int? SyncItemsLimit { get; set; } = 30;
+
+    public string? MarkdownConversion { get; set; }
 }

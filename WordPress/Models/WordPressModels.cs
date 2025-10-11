@@ -109,6 +109,9 @@ public sealed class WordPressPostDetail : WordPressPostBase
 
     [JsonPropertyName("excerpt")]
     public WordPressRenderedContent? Excerpt { get; set; }
+
+    [JsonPropertyName("meta")]
+    public Dictionary<string, object>? Meta { get; set; }
 }
 
 public sealed class WordPressCreatePostRequest
@@ -130,6 +133,10 @@ public sealed class WordPressCreatePostRequest
 
     [JsonPropertyName("featured_media")]
     public int? FeaturedMedia { get; set; }
+
+    [JsonPropertyName("meta")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Dictionary<string, object>? Meta { get; set; }
 }
 
 public sealed class WordPressUpdatePostRequest
@@ -175,6 +182,10 @@ public sealed class WordPressUpdatePostRequest
 
     [JsonPropertyName("excerpt")]
     public string? Excerpt { get; set; }
+
+    [JsonPropertyName("meta")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Dictionary<string, object>? Meta { get; set; }
 }
 
 public sealed class WordPressRevision : IHasTitle

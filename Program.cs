@@ -11,6 +11,7 @@ using WpAiCli.Output;
 using WpAiCli.Parsing;
 using WpAiCli.Services;
 using WpAiCli.WordPress.Models;
+using Markdig;
 
 Console.OutputEncoding = System.Text.Encoding.UTF8;
 Console.InputEncoding = System.Text.Encoding.UTF8;
@@ -139,38 +140,123 @@ async Task<int> HandlePostsAsync(string[] args)
                 break;
             }
 
-            case "create":
-            {
-                var title = parsed.GetString("title");
-                if (string.IsNullOrWhiteSpace(title))
-                {
-                    Console.Error.WriteLine("Provide --title.");
-                    return (int)ExitCode.InvalidArguments;
-                }
+                        case "create":
 
-                var content = parsed.GetString("content");
-                var contentFile = ToFileInfo(parsed.GetString("content-file"));
-                var status = parsed.GetString("status") ?? "draft";
-                var categories = parsed.GetIntArray("categories");
-                var tags = parsed.GetIntArray("tags");
-                var featured = parsed.GetInt("featured-media");
+                        {
 
-                var request = new WordPressCreatePostRequest
-                {
-                    Title = title,
-                    Content = ContentLoader.ReadContent(content, contentFile),
-                    Status = status,
-                    Categories = categories,
-                    Tags = tags,
-                    FeaturedMedia = featured
-                };
+                            var title = parsed.GetString("title");
 
-                var post = await service.CreatePostAsync(request, ct).ConfigureAwait(false);
-                OutputFormatter.WritePost(post, format, Console.Out);
+                            if (string.IsNullOrWhiteSpace(title))
 
-                result = (int)ExitCode.Success;
-                break;
-            }
+                            {
+
+                                Console.Error.WriteLine("Provide --title.");
+
+                                return (int)ExitCode.InvalidArguments;
+
+                            }
+
+            
+
+                            var content = parsed.GetString("content");
+
+                            var contentFile = ToFileInfo(parsed.GetString("content-file"));
+
+                            var status = parsed.GetString("status") ?? "draft";
+
+                            var categories = parsed.GetIntArray("categories");
+
+                            var tags = parsed.GetIntArray("tags");
+
+                            var featured = parsed.GetInt("featured-media");
+
+                            var editMode = parsed.GetString("edit-mode") ?? "markdown";
+
+            
+
+                            if (editMode != "markdown" && editMode != "html")
+
+                            {
+
+                                Console.Error.WriteLine("Invalid value for --edit-mode. Must be 'markdown' or 'html'.");
+
+                                return (int)ExitCode.InvalidArguments;
+
+                            }
+
+            
+
+                            var rawContent = ContentLoader.ReadContent(content, contentFile) ?? string.Empty;
+
+            
+
+                            var request = new WordPressCreatePostRequest
+
+                            {
+
+                                Title = title,
+
+                                Status = status,
+
+                                Categories = categories,
+
+                                Tags = tags,
+
+                                FeaturedMedia = featured
+
+                            };
+
+            
+
+                            var conversion = profile.MarkdownConversion ?? "client";
+
+            
+
+                            if (editMode == "markdown")
+
+                            {
+
+                                request.Meta = new Dictionary<string, object> { { "_md_source", rawContent } };
+
+                                if (conversion == "client")
+
+                                {
+
+                                    request.Content = Markdown.ToHtml(rawContent);
+
+                                }
+
+                                else // server conversion
+
+                                {
+
+                                    request.Content = rawContent;
+
+                                }
+
+                            }
+
+                            else // html mode
+
+                            {
+
+                                request.Content = rawContent;
+
+                            }
+
+            
+
+                            var post = await service.CreatePostAsync(request, ct).ConfigureAwait(false);
+
+                            OutputFormatter.WritePost(post, format, Console.Out);
+
+            
+
+                            result = (int)ExitCode.Success;
+
+                            break;
+
+                        }
 
             case "update":
             {
@@ -186,16 +272,45 @@ async Task<int> HandlePostsAsync(string[] args)
                 var categories = parsed.GetIntArray("categories");
                 var tags = parsed.GetIntArray("tags");
                 var featured = parsed.GetInt("featured-media");
+                var editMode = parsed.GetString("edit-mode") ?? "html"; // Default to html for updates
+
+                if (editMode != "markdown" && editMode != "html")
+                {
+                    Console.Error.WriteLine("Invalid value for --edit-mode. Must be 'markdown' or 'html'.");
+                    return (int)ExitCode.InvalidArguments;
+                }
+
+                var rawContent = ContentLoader.ReadContent(content, contentFile);
 
                 var request = new WordPressUpdatePostRequest
                 {
                     Title = parsed.GetString("title"),
-                    Content = ContentLoader.ReadContent(content, contentFile),
                     Status = parsed.GetString("status"),
                     Categories = categories,
                     Tags = tags,
                     FeaturedMedia = featured
                 };
+
+                if (rawContent != null)
+                {
+                    var conversion = profile.MarkdownConversion ?? "client";
+                    if (editMode == "markdown")
+                    {
+                        request.Meta = new Dictionary<string, object> { { "_md_source", rawContent } };
+                        if (conversion == "client")
+                        {
+                            request.Content = Markdown.ToHtml(rawContent);
+                        }
+                        else // server conversion
+                        {
+                            request.Content = rawContent;
+                        }
+                    }
+                    else // html mode
+                    {
+                        request.Content = rawContent;
+                    }
+                }
 
                 var post = await service.UpdatePostAsync(id.Value, request, ct).ConfigureAwait(false);
                 OutputFormatter.WritePost(post, format, Console.Out);
@@ -324,7 +439,7 @@ async Task<int> HandleResolveAsync(string[] args)
 
     try
     {
-        await syncService.ResolveConflictAsync(type, id, strategy, profile.CachePath, CancellationToken.None);
+        await syncService.ResolveConflictAsync(type, id, strategy, profile, CancellationToken.None);
         UpdateLastUsedConnection(store, profile.Name);
         return (int)ExitCode.Success;
     }
@@ -351,7 +466,7 @@ async Task<int> HandlePostsSyncAsync()
 
     Console.WriteLine("Starting synchronization...");
     var syncLimit = profile.SyncItemsLimit ?? 30;
-    var report = await syncService.SynchronizePostsAsync(profile.CachePath, syncLimit, CancellationToken.None);
+    var report = await syncService.SynchronizePostsAsync(profile, syncLimit, CancellationToken.None);
     PrintSyncReport(report);
 
     UpdateLastUsedConnection(store, profile.Name);
@@ -803,9 +918,17 @@ int HandleConnectionsAdd(ParsedOptions parsed)
     var cachePath = parsed.GetString("cache-path");
     var syncLimitStr = parsed.GetString("sync-limit");
 
+    var markdownConversion = parsed.GetString("markdown-conversion");
+
     if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(baseUrl) || string.IsNullOrWhiteSpace(token))
     {
         Console.Error.WriteLine("Provide --name, --base-url, and --token when adding a connection.");
+        return (int)ExitCode.InvalidArguments;
+    }
+
+    if (markdownConversion != null && markdownConversion != "client" && markdownConversion != "server")
+    {
+        Console.Error.WriteLine("Invalid value for --markdown-conversion. Must be 'client' or 'server'.");
         return (int)ExitCode.InvalidArguments;
     }
 
@@ -825,7 +948,8 @@ int HandleConnectionsAdd(ParsedOptions parsed)
         BaseUrl = baseUrl.Trim(),
         CredentialKey = $"WpAiCli/{name}",
         CachePath = absoluteCachePath,
-        SyncItemsLimit = syncLimit
+        SyncItemsLimit = syncLimit,
+        MarkdownConversion = markdownConversion
     };
 
     CredentialManager.Save(profile.CredentialKey, token);
@@ -856,10 +980,11 @@ int HandleConnectionsUpdate(ParsedOptions parsed)
 
     var cachePath = parsed.GetString("cache-path");
     var syncLimitStr = parsed.GetString("sync-limit");
+    var markdownConversion = parsed.GetString("markdown-conversion");
 
-    if (cachePath is null && syncLimitStr is null)
+    if (cachePath is null && syncLimitStr is null && markdownConversion is null)
     {
-        Console.Error.WriteLine("Specify the setting to update. Supported options: --cache-path, --sync-limit");
+        Console.Error.WriteLine("Specify the setting to update. Supported options: --cache-path, --sync-limit, --markdown-conversion");
         return (int)ExitCode.InvalidArguments;
     }
 
@@ -898,6 +1023,26 @@ int HandleConnectionsUpdate(ParsedOptions parsed)
         else
         {
             Console.Error.WriteLine($"Invalid value for --sync-limit: '{syncLimitStr}'. Must be a positive integer.");
+            return (int)ExitCode.InvalidArguments;
+        }
+        updated = true;
+    }
+
+    if (markdownConversion is not null)
+    {
+        if (markdownConversion == "client" || markdownConversion == "server")
+        {
+            profile.MarkdownConversion = markdownConversion;
+            Console.WriteLine($"Markdown conversion strategy set to: {profile.MarkdownConversion}");
+        }
+        else if (string.IsNullOrEmpty(markdownConversion))
+        {
+            profile.MarkdownConversion = null; // Reset to default
+            Console.WriteLine("Markdown conversion strategy has been reset to default (client).");
+        }
+        else
+        {
+            Console.Error.WriteLine($"Invalid value for --markdown-conversion: '{markdownConversion}'. Must be 'client' or 'server'.");
             return (int)ExitCode.InvalidArguments;
         }
         updated = true;

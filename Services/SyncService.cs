@@ -4,12 +4,16 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using System.Threading;
+using Markdig;
 using System.Threading.Tasks;
 using WpAiCli.WordPress;
 using WpAiCli.WordPress.Models;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
+
+using WpAiCli.Configuration;
 
 namespace WpAiCli.Services;
 
@@ -46,21 +50,18 @@ public class SyncService
         _cacheService = cacheService;
     }
 
-    public async Task<SyncReport> SynchronizePostsAsync(string cachePath, int syncLimit, CancellationToken cancellationToken)
+    public async Task<SyncReport> SynchronizePostsAsync(ConnectionProfile profile, int syncLimit, CancellationToken cancellationToken)
     {
         var report = new SyncReport();
 
         // 1. Push local taxonomy changes first
-        await SynchronizeLocalTaxonomyChangesAsync(cachePath, report, cancellationToken);
-
+                    await SynchronizeLocalTaxonomyChangesAsync(profile.CachePath, report, cancellationToken);
         // 2. Synchronize taxonomies from server (pull changes and update local state)
         var allCategories = await _wpService.ListCategoriesAsync(cancellationToken);
         var allTags = await _wpService.ListTagsAsync(cancellationToken);
-        await _cacheService.UpdateTaxonomiesCacheAsync(cachePath, allCategories, allTags);
-
+                    await _cacheService.UpdateTaxonomiesCacheAsync(profile.CachePath, allCategories, allTags);
         // 3. Synchronize posts
-        var localPosts = _cacheService.ListLocalPostMetadata(cachePath)
-            .ToDictionary(meta => meta.Post.Id, meta => meta);
+                    var localPosts = _cacheService.ListLocalPostMetadata(profile.CachePath)            .ToDictionary(meta => meta.Post.Id, meta => meta);
 
         var publishPosts = await _wpService.ListPostsAsync(
                 status: "publish",
@@ -91,19 +92,19 @@ public class SyncService
 
             if (hasLocal && hasRemoteInTopN)
             {
-                await CompareAndSyncAsync(id, localMeta, remotePostFromTopN, cachePath, report, cancellationToken);
+                await CompareAndSyncAsync(id, localMeta, remotePostFromTopN, profile, report, cancellationToken);
             }
             else if (!hasLocal && hasRemoteInTopN)
             {
-                _cacheService.SavePostToCache(remotePostFromTopN, cachePath);
+                _cacheService.SavePostToCache(remotePostFromTopN, profile.CachePath);
                 report.NewlyCached.Add(id);
             }
             else if (hasLocal && !hasRemoteInTopN)
             {
-                var localContent = _cacheService.ReadLocalContent(id, cachePath);
+                var localContent = _cacheService.ReadLocalContent(id, profile.CachePath);
                 var localContentHash = _cacheService.ComputeSha256Hash(localContent);
                 
-                var localEditableMeta = _cacheService.ReadEditableMetadata(id, cachePath);
+                var localEditableMeta = _cacheService.ReadEditableMetadata(id, profile.CachePath);
                 var localEditableMetaYaml = _cacheService.SerializeToYaml(localEditableMeta ?? new EditablePostMetadata());
                 var localEditableMetaHash = _cacheService.ComputeSha256Hash(localEditableMetaYaml);
 
@@ -112,11 +113,11 @@ public class SyncService
                     try
                     {
                         var remotePost = await _wpService.GetPostAsync(id, cancellationToken);
-                        await CompareAndSyncAsync(id, localMeta, remotePost, cachePath, report, cancellationToken);
+                        await CompareAndSyncAsync(id, localMeta, remotePost, profile, report, cancellationToken);
                     }
                     catch (WordPressApiException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
                     {
-                        _cacheService.DeletePostFromCache(id, cachePath);
+                        _cacheService.DeletePostFromCache(id, profile.CachePath);
                         report.DeletedFromLocal.Add(id);
                     }
                 }
@@ -239,8 +240,11 @@ public class SyncService
         }
     }
 
-    private async Task CompareAndSyncAsync(int id, CachePostMetadata localMeta, WordPressPostDetail remotePost, string cachePath, SyncReport report, CancellationToken cancellationToken)
+    private async Task CompareAndSyncAsync(int id, CachePostMetadata localMeta, WordPressPostDetail remotePost, ConnectionProfile profile, SyncReport report, CancellationToken cancellationToken)
     {
+        var cachePath = profile.CachePath;
+        if (string.IsNullOrEmpty(cachePath)) return;
+
         var (contentFileExists, editableFileExists) = _cacheService.CheckCacheFileExistence(id, cachePath);
 
         if (!contentFileExists || !editableFileExists)
@@ -277,19 +281,36 @@ public class SyncService
         }
         else
         {
-            // --- Both files exist, proceed with full comparison ---
-
-            // Compare content hashes
+            // 1. Check for local changes
             var localContent = _cacheService.ReadLocalContent(id, cachePath);
             var localContentHash = _cacheService.ComputeSha256Hash(localContent);
-            var serverContentHash = _cacheService.ComputeSha256Hash(remotePost.Content?.Raw ?? string.Empty);
             var isLocalContentChanged = localContentHash != localMeta.ContentHash;
-            var isServerContentChanged = serverContentHash != localMeta.ContentHash;
 
-            // Compare editable meta hashes
             var localEditableMeta = _cacheService.ReadEditableMetadata(id, cachePath);
             var localEditableMetaYaml = _cacheService.SerializeToYaml(localEditableMeta ?? new EditablePostMetadata());
             var localEditableMetaHash = _cacheService.ComputeSha256Hash(localEditableMetaYaml);
+            var isLocalMetaChanged = localEditableMetaHash != localMeta.EditableMetaHash;
+
+            // 2. Check for remote changes
+            bool isServerContentChanged;
+            if (localEditableMeta?.EditMode == "markdown")
+            {
+                if (remotePost.Meta != null && remotePost.Meta.TryGetValue("_md_source", out var markdownSourceObj) && markdownSourceObj is JsonElement markdownJson && markdownJson.ValueKind == JsonValueKind.String)
+                {
+                    var remoteMarkdown = markdownJson.GetString() ?? "";
+                    var serverContentHash = _cacheService.ComputeSha256Hash(remoteMarkdown);
+                    isServerContentChanged = serverContentHash != localMeta.ContentHash;
+                }
+                else
+                {
+                    isServerContentChanged = false; 
+                }
+            }
+            else // html mode or mode not set
+            {
+                var serverContentHash = _cacheService.ComputeSha256Hash(remotePost.Content?.Raw ?? string.Empty);
+                isServerContentChanged = serverContentHash != localMeta.ContentHash;
+            }
 
             var serverEditableMeta = new EditablePostMetadata
             {
@@ -306,10 +327,9 @@ public class SyncService
             };
             var serverEditableMetaYaml = _cacheService.SerializeToYaml(serverEditableMeta);
             var serverEditableMetaHash = _cacheService.ComputeSha256Hash(serverEditableMetaYaml);
-
-            var isLocalMetaChanged = localEditableMetaHash != localMeta.EditableMetaHash;
             var isServerMetaChanged = serverEditableMetaHash != localMeta.EditableMetaHash;
 
+            // 3. Determine action
             if ((isLocalContentChanged || isLocalMetaChanged) && (isServerContentChanged || isServerMetaChanged))
             {
                 report.ConflictDetected.Add(id);
@@ -317,7 +337,30 @@ public class SyncService
             else if (isLocalContentChanged || isLocalMetaChanged)
             {
                 var request = new WordPressUpdatePostRequest();
-                if (isLocalContentChanged) request.Content = localContent;
+
+                if (isLocalContentChanged)
+                {
+                    var editMode = localEditableMeta?.EditMode ?? "html";
+                    var conversion = profile.MarkdownConversion ?? "client";
+
+                    if (editMode == "markdown")
+                    {
+                        request.Meta = new Dictionary<string, object> { { "_md_source", localContent } };
+                        if (conversion == "client")
+                        {
+                            request.Content = Markdown.ToHtml(localContent);
+                        }
+                        else // server conversion
+                        {
+                            request.Content = localContent;
+                        }
+                    }
+                    else // html mode
+                    {
+                        request.Content = localContent;
+                    }
+                }
+
                 if (isLocalMetaChanged && localEditableMeta != null)
                 {
                     request.Title = localEditableMeta.Title;
@@ -329,7 +372,7 @@ public class SyncService
                     request.CommentStatus = localEditableMeta.CommentStatus;
                     request.PingStatus = localEditableMeta.PingStatus;
 
-                    if (!TryResolveTaxonomyIds(localEditableMeta.Categories, _cacheService.FindCategoryId, out var categoryIds) || 
+                    if (!TryResolveTaxonomyIds(localEditableMeta.Categories, _cacheService.FindCategoryId, out var categoryIds) ||
                         !TryResolveTaxonomyIds(localEditableMeta.Tags, _cacheService.FindTagId, out var tagIds))
                     {
                         report.ConflictDetected.Add(id);
@@ -384,26 +427,32 @@ public class SyncService
         return true;
     }
 
-    public async Task ResolveConflictAsync(string type, int id, string strategy, string cachePath, CancellationToken cancellationToken)
+    public async Task ResolveConflictAsync(string type, int id, string strategy, ConnectionProfile profile, CancellationToken cancellationToken)
     {
         switch (type.ToLowerInvariant())
         {
             case "post":
-                await ResolvePostConflictAsync(id, strategy, cachePath, cancellationToken);
+                await ResolvePostConflictAsync(id, strategy, profile, cancellationToken);
                 break;
             case "category":
             case "tag":
                 // TODO: Implement taxonomy conflict resolution
-                await ResolveTaxonomyConflictAsync(type, id, strategy, cachePath, cancellationToken);
+                await ResolveTaxonomyConflictAsync(type, id, strategy, profile.CachePath, cancellationToken);
                 break;
             default:
                 throw new ArgumentException($"Unsupported conflict type: {type}");
         }
     }
 
-    private async Task ResolvePostConflictAsync(int id, string strategy, string cachePath, CancellationToken cancellationToken)
+    private async Task ResolvePostConflictAsync(int id, string strategy, ConnectionProfile profile, CancellationToken cancellationToken)
     {
         Console.WriteLine($"Resolving conflict for post {id} with strategy: {strategy}...");
+
+        var cachePath = profile.CachePath;
+        if (string.IsNullOrEmpty(cachePath))
+        {
+            throw new InvalidOperationException("Cache path is not configured.");
+        }
 
         if (strategy == "server-wins")
         {
@@ -422,7 +471,28 @@ public class SyncService
             }
 
             var request = new WordPressUpdatePostRequest();
-            request.Content = localContent;
+
+            // Handle content based on edit mode
+            var editMode = localEditableMeta?.EditMode ?? "html";
+            var conversion = profile.MarkdownConversion ?? "client";
+
+            if (editMode == "markdown")
+            {
+                request.Meta = new Dictionary<string, object> { { "_md_source", localContent } };
+                if (conversion == "client")
+                {
+                    request.Content = Markdown.ToHtml(localContent);
+                }
+                else // server conversion
+                {
+                    request.Content = localContent;
+                }
+            }
+            else // html mode
+            {
+                request.Content = localContent;
+            }
+
             request.Title = localEditableMeta.Title;
             request.Slug = localEditableMeta.Slug;
             request.Status = localEditableMeta.Status;
