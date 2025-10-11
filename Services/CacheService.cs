@@ -600,6 +600,10 @@ public class CacheService
         var mediaDir = Path.Combine(_cachePath, "media");
         Directory.CreateDirectory(mediaDir);
 
+        if (string.IsNullOrEmpty(media.SourceUrl))
+        {
+            throw new ArgumentException("Media SourceUrl cannot be null or empty.", nameof(media));
+        }
         var fileName = Path.GetFileName(new Uri(media.SourceUrl).LocalPath);
         var fileBaseName = $"{media.Id}-{fileName}";
         var yamlFileName = $"{media.Id}-{Path.GetFileNameWithoutExtension(fileName)}.yaml";

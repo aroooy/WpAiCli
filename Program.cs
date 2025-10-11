@@ -428,7 +428,7 @@ async Task<int> HandleResolveAsync(string[] args)
     var (store, profile, token) = ResolveConnection(globalConnectionName);
     var settings = new WordPressSettings(profile.BaseUrl, token);
     using var wpService = new WordPressService(settings);
-    var cacheService = new CacheService(profile.CachePath, profile.Name);
+    var cacheService = new CacheService(profile.CachePath!, profile.Name);
     var syncService = new SyncService(wpService, cacheService);
 
     try
@@ -455,7 +455,7 @@ async Task<int> HandlePostsSyncAsync()
 
     var settings = new WordPressSettings(profile.BaseUrl, token);
     using var wpService = new WordPressService(settings);
-    var cacheService = new CacheService(profile.CachePath, profile.Name);
+    var cacheService = new CacheService(profile.CachePath!, profile.Name);
     var syncService = new SyncService(wpService, cacheService);
 
     Console.WriteLine("Starting synchronization...");
@@ -478,7 +478,7 @@ async Task<int> HandleMediaSyncAsync()
 
     var settings = new WordPressSettings(profile.BaseUrl, token);
     using var wpService = new WordPressService(settings);
-    var cacheService = new CacheService(profile.CachePath, profile.Name);
+    var cacheService = new CacheService(profile.CachePath!, profile.Name);
     var syncService = new SyncService(wpService, cacheService);
 
     Console.WriteLine("Starting media synchronization...");

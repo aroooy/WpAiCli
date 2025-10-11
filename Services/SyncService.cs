@@ -94,11 +94,11 @@ public class SyncService
 
             if (hasLocal && hasRemoteInTopN)
             {
-                await CompareAndSyncAsync(id, localMeta, remotePostFromTopN, profile, report, cancellationToken);
+                await CompareAndSyncAsync(id, localMeta!, remotePostFromTopN!, profile, report, cancellationToken);
             }
             else if (!hasLocal && hasRemoteInTopN)
             {
-                _cacheService.SavePostToCache(remotePostFromTopN);
+                _cacheService.SavePostToCache(remotePostFromTopN!);
                 report.NewlyCached.Add(id);
             }
             else if (hasLocal && !hasRemoteInTopN)
@@ -110,12 +110,15 @@ public class SyncService
                 var localEditableMetaYaml = _cacheService.SerializeToYaml(localEditableMeta ?? new EditablePostMetadata());
                 var localEditableMetaHash = _cacheService.ComputeSha256Hash(localEditableMetaYaml);
 
-                if (localContentHash != localMeta.ContentHash || localEditableMetaHash != localMeta.EditableMetaHash)
+                if (localContentHash != localMeta!.ContentHash || localEditableMetaHash != localMeta.EditableMetaHash)
                 {
                     try
                     {
                         var remotePost = await _wpService.GetPostAsync(id, cancellationToken);
-                        await CompareAndSyncAsync(id, localMeta, remotePost, profile, report, cancellationToken);
+                        if (remotePost != null)
+                        {
+                            await CompareAndSyncAsync(id, localMeta!, remotePost, profile, report, cancellationToken);
+                        }
                     }
                     catch (WordPressApiException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
                     {
@@ -452,6 +455,11 @@ public class SyncService
 
     private async Task ResolvePostConflictAsync(int id, string strategy, ConnectionProfile profile, CancellationToken cancellationToken)
     {
+        if (profile is null)
+        {
+            throw new ArgumentNullException(nameof(profile));
+        }
+
         Console.WriteLine($"Resolving conflict for post {id} with strategy: {strategy}...");
 
         if (strategy == "server-wins")
