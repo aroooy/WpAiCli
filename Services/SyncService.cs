@@ -293,11 +293,17 @@ public class SyncService
 
             // 2. Check for remote changes
             bool isServerContentChanged;
+            string? remoteMarkdown = null;
+            bool hasMarkdownMeta = remotePost.Meta != null && 
+                                   remotePost.Meta.TryGetValue("_md_source", out var markdownSourceObj) && 
+                                   markdownSourceObj is JsonElement markdownJson && 
+                                   markdownJson.ValueKind == JsonValueKind.String && 
+                                   !string.IsNullOrEmpty(remoteMarkdown = markdownJson.GetString());
+
             if (localEditableMeta?.EditMode == "markdown")
             {
-                if (remotePost.Meta != null && remotePost.Meta.TryGetValue("_md_source", out var markdownSourceObj) && markdownSourceObj is JsonElement markdownJson && markdownJson.ValueKind == JsonValueKind.String)
+                if (hasMarkdownMeta && remoteMarkdown != null)
                 {
-                    var remoteMarkdown = markdownJson.GetString() ?? "";
                     var serverContentHash = _cacheService.ComputeSha256Hash(remoteMarkdown);
                     isServerContentChanged = serverContentHash != localMeta.ContentHash;
                 }
@@ -314,6 +320,7 @@ public class SyncService
 
             var serverEditableMeta = new EditablePostMetadata
             {
+                EditMode = hasMarkdownMeta ? "markdown" : "html",
                 Title = remotePost.Title?.Raw,
                 Slug = remotePost.Slug,
                 Status = remotePost.Status,
