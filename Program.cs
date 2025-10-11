@@ -1,9 +1,11 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using WpAiCli.Configuration;
 using WpAiCli.Completion;
 using WpAiCli.Help;
@@ -13,101 +15,152 @@ using WpAiCli.Services;
 using WpAiCli.WordPress.Models;
 using Markdig;
 
-Console.OutputEncoding = System.Text.Encoding.UTF8;
-Console.InputEncoding = System.Text.Encoding.UTF8;
-
-string? globalConnectionName;
-args = ExtractGlobalOptions(args, out globalConnectionName);
-
-if (args.Length == 0)
+public class Program
 {
-    PrintDocs();
-    return (int)ExitCode.Success;
-}
-
-if (args.Length == 1 && args[0] is "--help" or "-h" or "help")
-{
-    PrintDocs();
-    return (int)ExitCode.Success;
-}
-
-if (args.Length == 1 && args[0] is "--version" or "-V")
-{
-    var version = typeof(Program).Assembly.GetName().Version;
-    Console.WriteLine(version?.ToString() ?? "unknown");
-    return (int)ExitCode.Success;
-}
-
-var command = args[0].ToLowerInvariant();
-var commandArgs = args.Skip(1).ToArray();
-
-try
-{
-    return command switch
+    public static async Task<int> Main(string[] args)
     {
-        "posts" => await HandlePostsAsync(commandArgs),
-        "categories" => await HandleCategoriesAsync(commandArgs),
-        "tags" => await HandleTagsAsync(commandArgs),
-        "media" => await HandleMediaAsync(commandArgs),
-        "connections" => HandleConnections(commandArgs),
-        "resolve" => await HandleResolveAsync(commandArgs),
-        "completion" => HandleCompletion(commandArgs),
-        "docs" => PrintDocsAndReturn(),
-        _ => UnknownCommand(command)
-    };
-}
-catch (Exception ex)
-{
-    Console.Error.WriteLine(ex.ToString());
-    return (int)ExitCode.UnhandledError;
-}
+        Console.OutputEncoding = System.Text.Encoding.UTF8;
+        Console.InputEncoding = System.Text.Encoding.UTF8;
 
-int UnknownCommand(string command)
-{
-    Console.Error.WriteLine($"Unknown command: {command}");
-    return (int)ExitCode.InvalidArguments;
-}
+        string? globalConnectionName;
+        var remainingArgs = ExtractGlobalOptions(args, out globalConnectionName);
 
-void PrintDocs()
-{
-    if (!HelpPrinter.TryPrintDocumentation(Console.Out))
-    {
-        Console.Error.WriteLine("Help files not found. Place README.md or HOWTO.md alongside the executable.");
-    }
-}
+        if (remainingArgs.Length == 0)
+        {
+            PrintDocs();
+            return (int)ExitCode.Success;
+        }
 
-int PrintDocsAndReturn()
-{
-    PrintDocs();
-    return (int)ExitCode.Success;
-}
+        var command = remainingArgs[0].ToLowerInvariant();
+        var commandArgs = remainingArgs.Skip(1).ToArray();
 
-async Task<int> HandlePostsAsync(string[] args)
-{
-    if (args.Length == 0)
-    {
-        Console.Error.WriteLine("Specify posts subcommand (list|get|create|update|delete|revisions|revision).");
-        return (int)ExitCode.InvalidArguments;
+        // Handle commands that don't require a connection/DI first
+        switch (command)
+        {
+            case "--help":
+            case "-h":
+            case "help":
+            case "docs":
+                PrintDocs();
+                return (int)ExitCode.Success;
+            case "--version":
+            case "-V":
+                var version = typeof(Program).Assembly.GetName().Version;
+                Console.WriteLine(version?.ToString() ?? "unknown");
+                return (int)ExitCode.Success;
+            case "connections":
+                return HandleConnections(commandArgs);
+            case "completion":
+                return HandleCompletion(commandArgs);
+        }
+
+        try
+        {
+            var (store, profile, token) = ResolveConnection(globalConnectionName);
+
+            var host = Host.CreateDefaultBuilder(args)
+                .ConfigureServices((_, services) =>
+                {
+                    services.AddSingleton(store);
+                    services.AddSingleton(profile);
+                    services.AddSingleton(new WordPressSettings(profile.BaseUrl, token));
+
+                    services.AddTransient<WordPressService>();
+                    services.AddTransient<CacheService>(sp => new CacheService(profile.CachePath!, profile.Name));
+                    services.AddTransient<SyncService>();
+                })
+                .Build();
+
+            UpdateLastUsedConnection(store, profile.Name);
+
+            return await RunCommandAsync(host.Services, command, commandArgs);
+        }
+        catch (InvalidOperationException ex)
+        {
+            Console.Error.WriteLine(ex.Message);
+            return (int)ExitCode.InvalidArguments;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine(ex.ToString());
+            return (int)ExitCode.UnhandledError;
+        }
     }
 
-    var subcommand = args[0].ToLowerInvariant();
-    var subArgs = args.Skip(1).ToArray();
-    var parsed = OptionParser.Parse(subArgs);
-    var format = OutputFormatter.ParseFormat(parsed.GetString("format"));
-
-    try
+    private static async Task<int> RunCommandAsync(IServiceProvider services, string command, string[] commandArgs)
     {
-        var (store, profile, token) = ResolveConnection(globalConnectionName);
-        var settings = new WordPressSettings(profile.BaseUrl, token);
-        using var service = new WordPressService(settings);
+        try
+        {
+            switch (command)
+            {
+                case "posts":
+                    return await HandlePostsAsync(
+                        commandArgs,
+                        services.GetRequiredService<WordPressService>(),
+                        services.GetRequiredService<SyncService>(),
+                        services.GetRequiredService<ConnectionProfile>()
+                    );
+                case "categories":
+                    return await HandleCategoriesAsync(commandArgs, services.GetRequiredService<WordPressService>());
+                case "tags":
+                    return await HandleTagsAsync(commandArgs, services.GetRequiredService<WordPressService>());
+                case "media":
+                    return await HandleMediaAsync(
+                        commandArgs,
+                        services.GetRequiredService<WordPressService>(),
+                        services.GetRequiredService<SyncService>(),
+                        services.GetRequiredService<ConnectionProfile>()
+                        );
+                case "resolve":
+                    return await HandleResolveAsync(commandArgs, services.GetRequiredService<SyncService>(), services.GetRequiredService<ConnectionProfile>());
+                default:
+                    Console.Error.WriteLine($"Unknown command: {command}");
+                    return (int)ExitCode.InvalidArguments;
+            }
+        }
+        catch (WpAiCli.WordPress.WordPressApiException ex)
+        {
+            Console.Error.WriteLine(ex.Message);
+            if (!string.IsNullOrWhiteSpace(ex.ResponseBody))
+            {
+                Console.Error.WriteLine(ex.ResponseBody);
+            }
+            return (int)ExitCode.ApiError;
+        }
+        catch (FileNotFoundException ex)
+        {
+            Console.Error.WriteLine(ex.Message);
+            return (int)ExitCode.InvalidArguments;
+        }
+    }
+
+
+    static void PrintDocs()
+    {
+        if (!HelpPrinter.TryPrintDocumentation(Console.Out))
+        {
+            Console.Error.WriteLine("Help files not found. Place README.md or HOWTO.md alongside the executable.");
+        }
+    }
+
+    static async Task<int> HandlePostsAsync(string[] args, WordPressService service, SyncService syncService, ConnectionProfile profile)
+    {
+        if (args.Length == 0)
+        {
+            Console.Error.WriteLine("Specify posts subcommand (list|get|create|update|delete|revisions|revision).");
+            return (int)ExitCode.InvalidArguments;
+        }
+
+        var subcommand = args[0].ToLowerInvariant();
+        var subArgs = args.Skip(1).ToArray();
+        var parsed = OptionParser.Parse(subArgs);
+        var format = OutputFormatter.ParseFormat(parsed.GetString("format"));
         var ct = CancellationToken.None;
-
-        int result;
 
         switch (subcommand)
         {
             case "sync":
-                return await HandlePostsSyncAsync();
+                return await HandlePostsSyncAsync(syncService, profile);
 
             case "list":
             {
@@ -120,8 +173,7 @@ async Task<int> HandlePostsAsync(string[] args)
                 var posts = await service.ListPostsAsync(status, perPage, page, ct).ConfigureAwait(false);
                 OutputFormatter.WritePosts(posts, format, Console.Out);
 
-                result = (int)ExitCode.Success;
-                break;
+                return (int)ExitCode.Success;
             }
 
             case "get":
@@ -136,127 +188,67 @@ async Task<int> HandlePostsAsync(string[] args)
                 var post = await service.GetPostAsync(id.Value, ct).ConfigureAwait(false);
                 OutputFormatter.WritePost(post, format, Console.Out);
 
-                result = (int)ExitCode.Success;
-                break;
+                return (int)ExitCode.Success;
             }
 
-                        case "create":
+            case "create":
+            {
+                var title = parsed.GetString("title");
+                if (string.IsNullOrWhiteSpace(title))
+                {
+                    Console.Error.WriteLine("Provide --title.");
+                    return (int)ExitCode.InvalidArguments;
+                }
 
-                        {
+                var content = parsed.GetString("content");
+                var contentFile = ToFileInfo(parsed.GetString("content-file"));
+                var status = parsed.GetString("status") ?? "draft";
+                var categories = parsed.GetIntArray("categories");
+                var tags = parsed.GetIntArray("tags");
+                var featured = parsed.GetInt("featured-media");
+                var editMode = parsed.GetString("edit-mode") ?? "markdown";
 
-                            var title = parsed.GetString("title");
+                if (editMode != "markdown" && editMode != "html")
+                {
+                    Console.Error.WriteLine("Invalid value for --edit-mode. Must be 'markdown' or 'html'.");
+                    return (int)ExitCode.InvalidArguments;
+                }
 
-                            if (string.IsNullOrWhiteSpace(title))
+                var rawContent = ContentLoader.ReadContent(content, contentFile) ?? string.Empty;
 
-                            {
+                var request = new WordPressCreatePostRequest
+                {
+                    Title = title,
+                    Status = status,
+                    Categories = categories,
+                    Tags = tags,
+                    FeaturedMedia = featured
+                };
 
-                                Console.Error.WriteLine("Provide --title.");
+                var conversion = profile.MarkdownConversion ?? "client";
 
-                                return (int)ExitCode.InvalidArguments;
+                if (editMode == "markdown")
+                {
+                    request.Meta = new Dictionary<string, object> { { "_md_source", rawContent } };
+                    if (conversion == "client")
+                    {
+                        request.Content = Markdown.ToHtml(rawContent);
+                    }
+                    else // server conversion
+                    {
+                        request.Content = rawContent;
+                    }
+                }
+                else // html mode
+                {
+                    request.Content = rawContent;
+                }
 
-                            }
+                var post = await service.CreatePostAsync(request, ct).ConfigureAwait(false);
+                OutputFormatter.WritePost(post, format, Console.Out);
 
-            
-
-                            var content = parsed.GetString("content");
-
-                            var contentFile = ToFileInfo(parsed.GetString("content-file"));
-
-                            var status = parsed.GetString("status") ?? "draft";
-
-                            var categories = parsed.GetIntArray("categories");
-
-                            var tags = parsed.GetIntArray("tags");
-
-                            var featured = parsed.GetInt("featured-media");
-
-                            var editMode = parsed.GetString("edit-mode") ?? "markdown";
-
-            
-
-                            if (editMode != "markdown" && editMode != "html")
-
-                            {
-
-                                Console.Error.WriteLine("Invalid value for --edit-mode. Must be 'markdown' or 'html'.");
-
-                                return (int)ExitCode.InvalidArguments;
-
-                            }
-
-            
-
-                            var rawContent = ContentLoader.ReadContent(content, contentFile) ?? string.Empty;
-
-            
-
-                            var request = new WordPressCreatePostRequest
-
-                            {
-
-                                Title = title,
-
-                                Status = status,
-
-                                Categories = categories,
-
-                                Tags = tags,
-
-                                FeaturedMedia = featured
-
-                            };
-
-            
-
-                            var conversion = profile.MarkdownConversion ?? "client";
-
-            
-
-                            if (editMode == "markdown")
-
-                            {
-
-                                request.Meta = new Dictionary<string, object> { { "_md_source", rawContent } };
-
-                                if (conversion == "client")
-
-                                {
-
-                                    request.Content = Markdown.ToHtml(rawContent);
-
-                                }
-
-                                else // server conversion
-
-                                {
-
-                                    request.Content = rawContent;
-
-                                }
-
-                            }
-
-                            else // html mode
-
-                            {
-
-                                request.Content = rawContent;
-
-                            }
-
-            
-
-                            var post = await service.CreatePostAsync(request, ct).ConfigureAwait(false);
-
-                            OutputFormatter.WritePost(post, format, Console.Out);
-
-            
-
-                            result = (int)ExitCode.Success;
-
-                            break;
-
-                        }
+                return (int)ExitCode.Success;
+            }
 
             case "update":
             {
@@ -315,8 +307,7 @@ async Task<int> HandlePostsAsync(string[] args)
                 var post = await service.UpdatePostAsync(id.Value, request, ct).ConfigureAwait(false);
                 OutputFormatter.WritePost(post, format, Console.Out);
 
-                result = (int)ExitCode.Success;
-                break;
+                return (int)ExitCode.Success;
             }
 
             case "delete":
@@ -332,8 +323,7 @@ async Task<int> HandlePostsAsync(string[] args)
                 var response = await service.DeletePostAsync(id.Value, force, ct).ConfigureAwait(false);
                 OutputFormatter.WriteDeleteResponse(response, format, Console.Out);
 
-                result = (int)ExitCode.Success;
-                break;
+                return (int)ExitCode.Success;
             }
 
             case "revisions":
@@ -347,8 +337,7 @@ async Task<int> HandlePostsAsync(string[] args)
 
                 var revisions = await service.GetPostRevisionsAsync(id.Value, ct).ConfigureAwait(false);
                 OutputFormatter.WriteRevisions(revisions, format, Console.Out);
-                result = (int)ExitCode.Success;
-                break;
+                return (int)ExitCode.Success;
             }
 
             case "revision":
@@ -367,177 +356,103 @@ async Task<int> HandlePostsAsync(string[] args)
 
                 var revision = await service.GetPostRevisionAsync(postId, revisionId, ct).ConfigureAwait(false);
                 OutputFormatter.WriteRevision(revision, format, Console.Out);
-                result = (int)ExitCode.Success;
-                break;
+                return (int)ExitCode.Success;
             }
 
             default:
                 Console.Error.WriteLine($"Unknown posts subcommand: {subcommand}");
                 return (int)ExitCode.InvalidArguments;
         }
+    }
 
-        UpdateLastUsedConnection(store, profile.Name);
-        return result;
-    }
-    catch (InvalidOperationException ex)
+    static async Task<int> HandleResolveAsync(string[] args, SyncService syncService, ConnectionProfile profile)
     {
-        Console.Error.WriteLine(ex.Message);
-        return (int)ExitCode.InvalidArguments;
-    }
-    catch (WpAiCli.WordPress.WordPressApiException ex)
-    {
-        Console.Error.WriteLine(ex.Message);
-        if (!string.IsNullOrWhiteSpace(ex.ResponseBody))
+        if (args.Length < 2)
         {
-            Console.Error.WriteLine(ex.ResponseBody);
+            Console.Error.WriteLine("Usage: wpai resolve <type> <id> --strategy <local-wins|server-wins>");
+            return (int)ExitCode.InvalidArguments;
         }
-        return (int)ExitCode.ApiError;
-    }
-    catch (FileNotFoundException ex)
-    {
-        Console.Error.WriteLine(ex.Message);
-        return (int)ExitCode.InvalidArguments;
-    }
-}
 
-async Task<int> HandleResolveAsync(string[] args)
-{
-    if (args.Length < 2)
-    {
-        Console.Error.WriteLine("Usage: wpai resolve <type> <id> --strategy <local-wins|server-wins>");
-        return (int)ExitCode.InvalidArguments;
-    }
+        var type = args[0].ToLowerInvariant();
+        if (!int.TryParse(args[1], out var id))
+        {
+            Console.Error.WriteLine("ID must be an integer.");
+            return (int)ExitCode.InvalidArguments;
+        }
 
-    var type = args[0].ToLowerInvariant();
-    if (!int.TryParse(args[1], out var id))
-    {
-        Console.Error.WriteLine("ID must be an integer.");
-        return (int)ExitCode.InvalidArguments;
-    }
+        var subArgs = args.Skip(2).ToArray();
+        var parsed = OptionParser.Parse(subArgs);
+        var strategy = parsed.GetString("strategy");
 
-    var subArgs = args.Skip(2).ToArray();
-    var parsed = OptionParser.Parse(subArgs);
-    var strategy = parsed.GetString("strategy");
+        if (strategy != "local-wins" && strategy != "server-wins")
+        {
+            Console.Error.WriteLine("Invalid strategy. Must be one of: local-wins, server-wins");
+            return (int)ExitCode.InvalidArguments;
+        }
 
-    if (strategy != "local-wins" && strategy != "server-wins")
-    {
-        Console.Error.WriteLine("Invalid strategy. Must be one of: local-wins, server-wins");
-        return (int)ExitCode.InvalidArguments;
-    }
-
-    var (store, profile, token) = ResolveConnection(globalConnectionName);
-    var settings = new WordPressSettings(profile.BaseUrl, token);
-    using var wpService = new WordPressService(settings);
-    var cacheService = new CacheService(profile.CachePath!, profile.Name);
-    var syncService = new SyncService(wpService, cacheService);
-
-    try
-    {
         await syncService.ResolveConflictAsync(type, id, strategy, profile, CancellationToken.None);
-        UpdateLastUsedConnection(store, profile.Name);
         return (int)ExitCode.Success;
     }
-    catch (Exception ex)
-    {
-        Console.Error.WriteLine($"An error occurred during conflict resolution: {ex.Message}");
-        return (int)ExitCode.UnhandledError;
-    }
-}
 
-async Task<int> HandlePostsSyncAsync()
-{
-    var (store, profile, token) = ResolveConnection(globalConnectionName);
-    if (string.IsNullOrWhiteSpace(profile.CachePath))
+    static async Task<int> HandlePostsSyncAsync(SyncService syncService, ConnectionProfile profile)
     {
-        Console.Error.WriteLine("Cache path is not configured for this connection. Use `wpai connections update` to set it.");
-        return (int)ExitCode.InvalidArguments;
+        Console.WriteLine("Starting synchronization...");
+        var syncLimit = profile.SyncItemsLimit ?? 30;
+        var report = await syncService.SynchronizePostsAsync(profile, syncLimit, CancellationToken.None);
+        PrintSyncReport(report);
+        return (int)ExitCode.Success;
     }
 
-    var settings = new WordPressSettings(profile.BaseUrl, token);
-    using var wpService = new WordPressService(settings);
-    var cacheService = new CacheService(profile.CachePath!, profile.Name);
-    var syncService = new SyncService(wpService, cacheService);
-
-    Console.WriteLine("Starting synchronization...");
-    var syncLimit = profile.SyncItemsLimit ?? 30;
-    var report = await syncService.SynchronizePostsAsync(profile, syncLimit, CancellationToken.None);
-    PrintSyncReport(report);
-
-    UpdateLastUsedConnection(store, profile.Name);
-    return (int)ExitCode.Success;
-}
-
-async Task<int> HandleMediaSyncAsync()
-{
-    var (store, profile, token) = ResolveConnection(globalConnectionName);
-    if (string.IsNullOrWhiteSpace(profile.CachePath))
+    static async Task<int> HandleMediaSyncAsync(SyncService syncService, ConnectionProfile profile)
     {
-        Console.Error.WriteLine("Cache path is not configured for this connection. Use `wpai connections update` to set it.");
-        return (int)ExitCode.InvalidArguments;
+        Console.WriteLine("Starting media synchronization...");
+        var syncLimit = profile.SyncItemsLimit ?? 30;
+        var report = await syncService.SynchronizeMediaAsync(syncLimit, CancellationToken.None);
+        PrintSyncReport(report);
+        return (int)ExitCode.Success;
     }
 
-    var settings = new WordPressSettings(profile.BaseUrl, token);
-    using var wpService = new WordPressService(settings);
-    var cacheService = new CacheService(profile.CachePath!, profile.Name);
-    var syncService = new SyncService(wpService, cacheService);
-
-    Console.WriteLine("Starting media synchronization...");
-    var syncLimit = profile.SyncItemsLimit ?? 30;
-    var report = await syncService.SynchronizeMediaAsync(syncLimit, CancellationToken.None);
-    PrintSyncReport(report);
-
-    UpdateLastUsedConnection(store, profile.Name);
-    return (int)ExitCode.Success;
-}
-
-void PrintSyncReport(SyncReport report)
-{
-    Console.WriteLine("\n--- Sync Report ---");
-    Console.WriteLine($"Pushed to server: {report.PushedToServer.Count} post(s)");
-    Console.WriteLine($"Pulled from server: {report.PulledFromServer.Count} post(s)");
-    Console.WriteLine($"Newly cached: {report.NewlyCached.Count} post(s)");
-    Console.WriteLine($"Deleted from local: {report.DeletedFromLocal.Count} post(s)");
-    Console.WriteLine($"Conflicts detected (skipped): {report.ConflictDetected.Count} post(s)");
-    if (report.PushedTaxonomies.Count > 0)
+    static void PrintSyncReport(SyncReport report)
     {
-        Console.WriteLine($"Pushed taxonomies: {report.PushedTaxonomies.Count}");
-    }
-    if (report.PushedMediaToServer.Count > 0 || report.NewlyCachedMedia.Count > 0 || report.MediaConflicts.Count > 0)
-    {
-        Console.WriteLine("--- Media ---");
-        Console.WriteLine($"Pushed metadata to server: {report.PushedMediaToServer.Count} item(s)");
-        Console.WriteLine($"Newly cached from server: {report.NewlyCachedMedia.Count} item(s)");
-        Console.WriteLine($"Conflicts/Errors: {report.MediaConflicts.Count} item(s)");
-    }
-    if (report.ConflictDetected.Count > 0)
-    {
-        Console.WriteLine("\nConflicts detected for the following Post IDs:");
-        Console.WriteLine($"  {string.Join(", ", report.ConflictDetected)}");
-        Console.WriteLine("Please resolve them individually using the 'resolve' command.");
-        Console.WriteLine("Example: wpai resolve post 123 --strategy [local-wins|server-wins]");
-    }
-    Console.WriteLine("-------------------");
-}
-
-async Task<int> HandleCategoriesAsync(string[] args)
-{
-    if (args.Length == 0)
-    {
-        args = new[] { "list" };
+        Console.WriteLine("\n--- Sync Report ---");
+        Console.WriteLine($"Pushed to server: {report.PushedToServer.Count} post(s)");
+        Console.WriteLine($"Pulled from server: {report.PulledFromServer.Count} post(s)");
+        Console.WriteLine($"Newly cached: {report.NewlyCached.Count} post(s)");
+        Console.WriteLine($"Deleted from local: {report.DeletedFromLocal.Count} post(s)");
+        Console.WriteLine($"Conflicts detected (skipped): {report.ConflictDetected.Count} post(s)");
+        if (report.PushedTaxonomies.Count > 0)
+        {
+            Console.WriteLine($"Pushed taxonomies: {report.PushedTaxonomies.Count}");
+        }
+        if (report.PushedMediaToServer.Count > 0 || report.NewlyCachedMedia.Count > 0 || report.MediaConflicts.Count > 0)
+        {
+            Console.WriteLine("--- Media ---");
+            Console.WriteLine($"Pushed metadata to server: {report.PushedMediaToServer.Count} item(s)");
+            Console.WriteLine($"Newly cached from server: {report.NewlyCachedMedia.Count} item(s)");
+            Console.WriteLine($"Conflicts/Errors: {report.MediaConflicts.Count} item(s)");
+        }
+        if (report.ConflictDetected.Count > 0)
+        {
+            Console.WriteLine("\nConflicts detected for the following Post IDs:");
+            Console.WriteLine($"  {string.Join(", ", report.ConflictDetected)}");
+            Console.WriteLine("Please resolve them individually using the 'resolve' command.");
+            Console.WriteLine("Example: wpai resolve post 123 --strategy [local-wins|server-wins]");
+        }
+        Console.WriteLine("-------------------");
     }
 
-    var subcommand = args[0].ToLowerInvariant();
-    var subArgs = args.Skip(1).ToArray();
-    var parsed = OptionParser.Parse(subArgs);
-    var format = OutputFormatter.ParseFormat(parsed.GetString("format"));
-
-    try
+    static async Task<int> HandleCategoriesAsync(string[] args, WordPressService service)
     {
-        var (store, profile, token) = ResolveConnection(globalConnectionName);
-        var settings = new WordPressSettings(profile.BaseUrl, token);
-        using var service = new WordPressService(settings);
+        if (args.Length == 0)
+        {
+            args = new[] { "list" };
+        }
+
+        var subcommand = args[0].ToLowerInvariant();
+        var subArgs = args.Skip(1).ToArray();
+        var parsed = OptionParser.Parse(subArgs);
+        var format = OutputFormatter.ParseFormat(parsed.GetString("format"));
         var ct = CancellationToken.None;
-        int result;
 
         switch (subcommand)
         {
@@ -545,8 +460,7 @@ async Task<int> HandleCategoriesAsync(string[] args)
             {
                 var categories = await service.ListCategoriesAsync(ct).ConfigureAwait(false);
                 OutputFormatter.WriteCategories(categories, format, Console.Out);
-                result = (int)ExitCode.Success;
-                break;
+                return (int)ExitCode.Success;
             }
             case "get":
             {
@@ -560,8 +474,7 @@ async Task<int> HandleCategoriesAsync(string[] args)
                 var category = await service.GetCategoryAsync(id.Value, ct).ConfigureAwait(false);
                 OutputFormatter.WriteCategory(category, format, Console.Out);
 
-                result = (int)ExitCode.Success;
-                break;
+                return (int)ExitCode.Success;
             }
             case "create":
             {
@@ -581,8 +494,7 @@ async Task<int> HandleCategoriesAsync(string[] args)
 
                 var category = await service.CreateCategoryAsync(request, ct).ConfigureAwait(false);
                 OutputFormatter.WriteCategory(category, format, Console.Out);
-                result = (int)ExitCode.Success;
-                break;
+                return (int)ExitCode.Success;
             }
             case "update":
             {
@@ -602,8 +514,7 @@ async Task<int> HandleCategoriesAsync(string[] args)
 
                 var category = await service.UpdateCategoryAsync(id.Value, request, ct).ConfigureAwait(false);
                 OutputFormatter.WriteCategory(category, format, Console.Out);
-                result = (int)ExitCode.Success;
-                break;
+                return (int)ExitCode.Success;
             }
             case "delete":
             {
@@ -618,52 +529,26 @@ async Task<int> HandleCategoriesAsync(string[] args)
                 var response = await service.DeleteCategoryAsync(id.Value, force, ct).ConfigureAwait(false);
                 OutputFormatter.WriteDeleteResponse(response, format, Console.Out);
 
-                result = (int)ExitCode.Success;
-                break;
+                return (int)ExitCode.Success;
             }
             default:
                 Console.Error.WriteLine($"Unknown categories subcommand: {subcommand}");
                 return (int)ExitCode.InvalidArguments;
         }
+    }
 
-        UpdateLastUsedConnection(store, profile.Name);
-        return result;
-    }
-    catch (InvalidOperationException ex)
+    static async Task<int> HandleTagsAsync(string[] args, WordPressService service)
     {
-        Console.Error.WriteLine(ex.Message);
-        return (int)ExitCode.InvalidArguments;
-    }
-    catch (WpAiCli.WordPress.WordPressApiException ex)
-    {
-        Console.Error.WriteLine(ex.Message);
-        if (!string.IsNullOrWhiteSpace(ex.ResponseBody))
+        if (args.Length == 0)
         {
-            Console.Error.WriteLine(ex.ResponseBody);
+            args = new[] { "list" };
         }
-        return (int)ExitCode.ApiError;
-    }
-}
 
-async Task<int> HandleTagsAsync(string[] args)
-{
-    if (args.Length == 0)
-    {
-        args = new[] { "list" };
-    }
-
-    var subcommand = args[0].ToLowerInvariant();
-    var subArgs = args.Skip(1).ToArray();
-    var parsed = OptionParser.Parse(subArgs);
-    var format = OutputFormatter.ParseFormat(parsed.GetString("format"));
-
-    try
-    {
-        var (store, profile, token) = ResolveConnection(globalConnectionName);
-        var settings = new WordPressSettings(profile.BaseUrl, token);
-        using var service = new WordPressService(settings);
+        var subcommand = args[0].ToLowerInvariant();
+        var subArgs = args.Skip(1).ToArray();
+        var parsed = OptionParser.Parse(subArgs);
+        var format = OutputFormatter.ParseFormat(parsed.GetString("format"));
         var ct = CancellationToken.None;
-        int result;
 
         switch (subcommand)
         {
@@ -671,8 +556,7 @@ async Task<int> HandleTagsAsync(string[] args)
             {
                 var tags = await service.ListTagsAsync(ct).ConfigureAwait(false);
                 OutputFormatter.WriteTags(tags, format, Console.Out);
-                result = (int)ExitCode.Success;
-                break;
+                return (int)ExitCode.Success;
             }
             case "create":
             {
@@ -693,8 +577,7 @@ async Task<int> HandleTagsAsync(string[] args)
                 var tag = await service.CreateTagAsync(request, ct).ConfigureAwait(false);
                 OutputFormatter.WriteTag(tag, format, Console.Out);
 
-                result = (int)ExitCode.Success;
-                break;
+                return (int)ExitCode.Success;
             }
             case "get":
             {
@@ -708,8 +591,7 @@ async Task<int> HandleTagsAsync(string[] args)
                 var tag = await service.GetTagAsync(id.Value, ct).ConfigureAwait(false);
                 OutputFormatter.WriteTag(tag, format, Console.Out);
 
-                result = (int)ExitCode.Success;
-                break;
+                return (int)ExitCode.Success;
             }
             case "delete":
             {
@@ -724,57 +606,31 @@ async Task<int> HandleTagsAsync(string[] args)
                 var response = await service.DeleteTagAsync(id.Value, force, ct).ConfigureAwait(false);
                 OutputFormatter.WriteDeleteResponse(response, format, Console.Out);
 
-                result = (int)ExitCode.Success;
-                break;
+                return (int)ExitCode.Success;
             }
             default:
                 Console.Error.WriteLine($"Unknown tags subcommand: {subcommand}");
                 return (int)ExitCode.InvalidArguments;
         }
+    }
 
-        UpdateLastUsedConnection(store, profile.Name);
-        return result;
-    }
-    catch (InvalidOperationException ex)
+    static async Task<int> HandleMediaAsync(string[] args, WordPressService service, SyncService syncService, ConnectionProfile profile)
     {
-        Console.Error.WriteLine(ex.Message);
-        return (int)ExitCode.InvalidArguments;
-    }
-    catch (WpAiCli.WordPress.WordPressApiException ex)
-    {
-        Console.Error.WriteLine(ex.Message);
-        if (!string.IsNullOrWhiteSpace(ex.ResponseBody))
+        if (args.Length == 0)
         {
-            Console.Error.WriteLine(ex.ResponseBody);
+            args = new[] { "list" };
         }
-        return (int)ExitCode.ApiError;
-    }
-}
 
-async Task<int> HandleMediaAsync(string[] args)
-{
-    if (args.Length == 0)
-    {
-        args = new[] { "list" };
-    }
-
-    var subcommand = args[0].ToLowerInvariant();
-    var subArgs = args.Skip(1).ToArray();
-    var parsed = OptionParser.Parse(subArgs);
-    var format = OutputFormatter.ParseFormat(parsed.GetString("format"));
-
-    try
-    {
-        var (store, profile, token) = ResolveConnection(globalConnectionName);
-        var settings = new WordPressSettings(profile.BaseUrl, token);
-        using var service = new WordPressService(settings);
+        var subcommand = args[0].ToLowerInvariant();
+        var subArgs = args.Skip(1).ToArray();
+        var parsed = OptionParser.Parse(subArgs);
+        var format = OutputFormatter.ParseFormat(parsed.GetString("format"));
         var ct = CancellationToken.None;
-        int result;
 
         switch (subcommand)
         {
             case "sync":
-                return await HandleMediaSyncAsync();
+                return await HandleMediaSyncAsync(syncService, profile);
             case "list":
             {
                 var perPage = parsed.GetInt("per-page") ?? 10;
@@ -784,8 +640,7 @@ async Task<int> HandleMediaAsync(string[] args)
 
                 var mediaItems = await service.ListMediaAsync(perPage, page, ct).ConfigureAwait(false);
                 OutputFormatter.WriteMediaItems(mediaItems, format, Console.Out);
-                result = (int)ExitCode.Success;
-                break;
+                return (int)ExitCode.Success;
             }
             case "upload":
             {
@@ -802,8 +657,7 @@ async Task<int> HandleMediaAsync(string[] args)
                 var mediaItem = await service.UploadMediaAsync(filePath, title, description, ct).ConfigureAwait(false);
                 OutputFormatter.WriteMediaItem(mediaItem, format, Console.Out);
 
-                result = (int)ExitCode.Success;
-                break;
+                return (int)ExitCode.Success;
             }
             case "delete":
             {
@@ -818,454 +672,423 @@ async Task<int> HandleMediaAsync(string[] args)
                 var response = await service.DeleteMediaAsync(id.Value, force, ct).ConfigureAwait(false);
                 OutputFormatter.WriteDeleteResponse(response, format, Console.Out);
 
-                result = (int)ExitCode.Success;
-                break;
+                return (int)ExitCode.Success;
             }
             default:
                 Console.Error.WriteLine($"Unknown media subcommand: {subcommand}");
                 return (int)ExitCode.InvalidArguments;
         }
+    }
 
-        UpdateLastUsedConnection(store, profile.Name);
-        return result;
-    }
-    catch (InvalidOperationException ex)
+    static int HandleConnections(string[] args)
     {
-        Console.Error.WriteLine(ex.Message);
-        return (int)ExitCode.InvalidArguments;
-    }
-    catch (WpAiCli.WordPress.WordPressApiException ex)
-    {
-        Console.Error.WriteLine(ex.Message);
-        if (!string.IsNullOrWhiteSpace(ex.ResponseBody))
+        if (args.Length == 0)
         {
-            Console.Error.WriteLine(ex.ResponseBody);
+            Console.Error.WriteLine("Specify connections subcommand (list|add|update|remove).");
+            return (int)ExitCode.InvalidArguments;
         }
-        return (int)ExitCode.ApiError;
+
+        var subcommand = args[0].ToLowerInvariant();
+        var subArgs = args.Skip(1).ToArray();
+        var parsed = OptionParser.Parse(subArgs);
+
+        return subcommand switch
+        {
+            "list" => HandleConnectionsList(),
+            "add" => HandleConnectionsAdd(parsed),
+            "update" => HandleConnectionsUpdate(parsed),
+            "remove" => HandleConnectionsRemove(),
+            _ => UnknownConnectionsCommand(subcommand)
+        };
     }
-    catch (FileNotFoundException ex)
+
+    static int UnknownConnectionsCommand(string subcommand)
     {
-        Console.Error.WriteLine(ex.Message);
+        Console.Error.WriteLine($"Unknown connections subcommand: {subcommand}");
         return (int)ExitCode.InvalidArguments;
     }
-}
 
-int HandleConnections(string[] args)
-{
-    if (args.Length == 0)
+    static int HandleConnectionsList()
     {
-        Console.Error.WriteLine("Specify connections subcommand (list|add|update|remove).");
-        return (int)ExitCode.InvalidArguments;
-    }
+        var store = ConnectionStore.Load();
+        if (store.Profiles.Count == 0)
+        {
+            Console.WriteLine("No connections have been registered yet.");
+            return (int)ExitCode.Success;
+        }
 
-    var subcommand = args[0].ToLowerInvariant();
-    var subArgs = args.Skip(1).ToArray();
-    var parsed = OptionParser.Parse(subArgs);
+        Console.WriteLine("Registered connections:");
+        for (int i = 0; i < store.Profiles.Count; i++)
+        {
+            var profile = store.Profiles[i];
+            var isLastUsed = string.Equals(profile.Name, store.LastUsedConnection, StringComparison.OrdinalIgnoreCase);
+            var marker = isLastUsed ? "*" : " ";
+            Console.WriteLine($" {marker} {i + 1}. {profile.Name} ({profile.BaseUrl})");
+        }
 
-    return subcommand switch
-    {
-        "list" => HandleConnectionsList(),
-        "add" => HandleConnectionsAdd(parsed),
-        "update" => HandleConnectionsUpdate(parsed),
-        "remove" => HandleConnectionsRemove(),
-        _ => UnknownConnectionsCommand(subcommand)
-    };
-}
+        if (!string.IsNullOrWhiteSpace(store.LastUsedConnection))
+        {
+            Console.WriteLine($"* indicates the last used connection ({store.LastUsedConnection}).");
+        }
 
-int UnknownConnectionsCommand(string subcommand)
-{
-    Console.Error.WriteLine($"Unknown connections subcommand: {subcommand}");
-    return (int)ExitCode.InvalidArguments;
-}
-
-int HandleConnectionsList()
-{
-    var store = ConnectionStore.Load();
-    if (store.Profiles.Count == 0)
-    {
-        Console.WriteLine("No connections have been registered yet.");
         return (int)ExitCode.Success;
     }
 
-    Console.WriteLine("Registered connections:");
-    for (int i = 0; i < store.Profiles.Count; i++)
+    static int HandleConnectionsAdd(ParsedOptions parsed)
     {
-        var profile = store.Profiles[i];
-        var isLastUsed = string.Equals(profile.Name, store.LastUsedConnection, StringComparison.OrdinalIgnoreCase);
-        var marker = isLastUsed ? "*" : " ";
-        Console.WriteLine($" {marker} {i + 1}. {profile.Name} ({profile.BaseUrl})");
-    }
+        var name = parsed.GetString("name");
+        var baseUrl = parsed.GetString("base-url");
+        var token = parsed.GetString("token");
+        var cachePath = parsed.GetString("cache-path");
+        var syncLimitStr = parsed.GetString("sync-limit");
 
-    if (!string.IsNullOrWhiteSpace(store.LastUsedConnection))
-    {
-        Console.WriteLine($"* indicates the last used connection ({store.LastUsedConnection}).");
-    }
+        var markdownConversion = parsed.GetString("markdown-conversion");
 
-    return (int)ExitCode.Success;
-}
-
-int HandleConnectionsAdd(ParsedOptions parsed)
-{
-    var name = parsed.GetString("name");
-    var baseUrl = parsed.GetString("base-url");
-    var token = parsed.GetString("token");
-    var cachePath = parsed.GetString("cache-path");
-    var syncLimitStr = parsed.GetString("sync-limit");
-
-    var markdownConversion = parsed.GetString("markdown-conversion");
-
-    if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(baseUrl) || string.IsNullOrWhiteSpace(token))
-    {
-        Console.Error.WriteLine("Provide --name, --base-url, and --token when adding a connection.");
-        return (int)ExitCode.InvalidArguments;
-    }
-
-    if (markdownConversion != null && markdownConversion != "client" && markdownConversion != "server")
-    {
-        Console.Error.WriteLine("Invalid value for --markdown-conversion. Must be 'client' or 'server'.");
-        return (int)ExitCode.InvalidArguments;
-    }
-
-    var store = ConnectionStore.Load();
-    if (store.Profiles.Any(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase)))
-    {
-        Console.Error.WriteLine($"Connection '{name}' already exists. Remove it first if you need to redefine it.");
-        return (int)ExitCode.InvalidArguments;
-    }
-
-    var absoluteCachePath = !string.IsNullOrWhiteSpace(cachePath) ? Path.GetFullPath(cachePath) : null;
-    int? syncLimit = int.TryParse(syncLimitStr, out var parsedLimit) ? parsedLimit : null;
-
-    var profile = new ConnectionProfile
-    {
-        Name = name,
-        BaseUrl = baseUrl.Trim(),
-        CredentialKey = $"WpAiCli/{name}",
-        CachePath = absoluteCachePath,
-        SyncItemsLimit = syncLimit,
-        MarkdownConversion = markdownConversion
-    };
-
-    CredentialManager.Save(profile.CredentialKey, token);
-    store.Profiles.Add(profile);
-    store.LastUsedConnection = profile.Name;
-    store.Save();
-
-    Console.WriteLine($"Connection '{profile.Name}' registered.");
-    if (profile.CachePath is not null)
-    {
-        Console.WriteLine($"Cache location: {profile.CachePath}");
-    }
-    if (profile.SyncItemsLimit is not null)
-    {
-        Console.WriteLine($"Sync limit: {profile.SyncItemsLimit}");
-    }
-    return (int)ExitCode.Success;
-}
-
-int HandleConnectionsUpdate(ParsedOptions parsed)
-{
-    var name = parsed.Positionals.FirstOrDefault();
-    if (string.IsNullOrWhiteSpace(name))
-    {
-        Console.Error.WriteLine("Specify the name of the connection to update.");
-        return (int)ExitCode.InvalidArguments;
-    }
-
-    var cachePath = parsed.GetString("cache-path");
-    var syncLimitStr = parsed.GetString("sync-limit");
-    var markdownConversion = parsed.GetString("markdown-conversion");
-
-    if (cachePath is null && syncLimitStr is null && markdownConversion is null)
-    {
-        Console.Error.WriteLine("Specify the setting to update. Supported options: --cache-path, --sync-limit, --markdown-conversion");
-        return (int)ExitCode.InvalidArguments;
-    }
-
-    var store = ConnectionStore.Load();
-    var profile = store.Profiles.FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase));
-
-    if (profile is null)
-    {
-        Console.Error.WriteLine($"Connection '{name}' not found.");
-        return (int)ExitCode.InvalidArguments;
-    }
-
-    var updated = false;
-
-    if (cachePath is not null)
-    {
-        profile.CachePath = !string.IsNullOrWhiteSpace(cachePath) ? Path.GetFullPath(cachePath) : null;
-        updated = true;
-        Console.WriteLine(profile.CachePath is not null
-            ? $"Cache location set to: {profile.CachePath}"
-            : "Cache location has been removed.");
-    }
-
-    if (syncLimitStr is not null)
-    {
-        if (int.TryParse(syncLimitStr, out var parsedLimit) && parsedLimit > 0)
+        if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(baseUrl) || string.IsNullOrWhiteSpace(token))
         {
-            profile.SyncItemsLimit = parsedLimit;
-            Console.WriteLine($"Sync limit set to: {profile.SyncItemsLimit}");
-        }
-        else if (string.IsNullOrEmpty(syncLimitStr))
-        {
-            profile.SyncItemsLimit = null;
-            Console.WriteLine("Sync limit has been reset to default (30).");
-        }
-        else
-        {
-            Console.Error.WriteLine($"Invalid value for --sync-limit: '{syncLimitStr}'. Must be a positive integer.");
+            Console.Error.WriteLine("Provide --name, --base-url, and --token when adding a connection.");
             return (int)ExitCode.InvalidArguments;
         }
-        updated = true;
-    }
 
-    if (markdownConversion is not null)
-    {
-        if (markdownConversion == "client" || markdownConversion == "server")
+        if (markdownConversion != null && markdownConversion != "client" && markdownConversion != "server")
         {
-            profile.MarkdownConversion = markdownConversion;
-            Console.WriteLine($"Markdown conversion strategy set to: {profile.MarkdownConversion}");
-        }
-        else if (string.IsNullOrEmpty(markdownConversion))
-        {
-            profile.MarkdownConversion = null; // Reset to default
-            Console.WriteLine("Markdown conversion strategy has been reset to default (client).");
-        }
-        else
-        {
-            Console.Error.WriteLine($"Invalid value for --markdown-conversion: '{markdownConversion}'. Must be 'client' or 'server'.");
+            Console.Error.WriteLine("Invalid value for --markdown-conversion. Must be 'client' or 'server'.");
             return (int)ExitCode.InvalidArguments;
         }
-        updated = true;
-    }
 
-    if (updated)
-    {
+        var store = ConnectionStore.Load();
+        if (store.Profiles.Any(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase)))
+        {
+            Console.Error.WriteLine($"Connection '{name}' already exists. Remove it first if you need to redefine it.");
+            return (int)ExitCode.InvalidArguments;
+        }
+
+        var absoluteCachePath = !string.IsNullOrWhiteSpace(cachePath) ? Path.GetFullPath(cachePath) : null;
+        int? syncLimit = int.TryParse(syncLimitStr, out var parsedLimit) ? parsedLimit : null;
+
+        var profile = new ConnectionProfile
+        {
+            Name = name,
+            BaseUrl = baseUrl.Trim(),
+            CredentialKey = $"WpAiCli/{name}",
+            CachePath = absoluteCachePath,
+            SyncItemsLimit = syncLimit,
+            MarkdownConversion = markdownConversion
+        };
+
+        CredentialManager.Save(profile.CredentialKey, token);
+        store.Profiles.Add(profile);
+        store.LastUsedConnection = profile.Name;
         store.Save();
-        Console.WriteLine($"\nConnection '{name}' updated.");
-    }
 
-    return (int)ExitCode.Success;
-}
-
-int HandleConnectionsRemove()
-{
-    var store = ConnectionStore.Load();
-    if (store.Profiles.Count == 0)
-    {
-        Console.WriteLine("No connections available to remove.");
-        return (int)ExitCode.Success;
-    }
-
-    Console.WriteLine("Select the connection to remove:");
-    for (int i = 0; i < store.Profiles.Count; i++)
-    {
-        Console.WriteLine($" {i + 1}. {store.Profiles[i].Name}");
-    }
-
-    Console.Write("Enter number (blank to cancel): ");
-    var input = Console.ReadLine();
-    if (string.IsNullOrWhiteSpace(input))
-    {
-        Console.WriteLine("Removal cancelled.");
-        return (int)ExitCode.Success;
-    }
-
-    if (!int.TryParse(input, out var choice) || choice < 1 || choice > store.Profiles.Count)
-    {
-        Console.Error.WriteLine("Invalid selection.");
-        return (int)ExitCode.InvalidArguments;
-    }
-
-    var profile = store.Profiles[choice - 1];
-    Console.Write($"Delete connection '{profile.Name}'? (y/N): ");
-    var confirmation = Console.ReadLine();
-    if (!string.Equals(confirmation, "y", StringComparison.OrdinalIgnoreCase))
-    {
-        Console.WriteLine("Removal cancelled.");
-        return (int)ExitCode.Success;
-    }
-
-    CredentialManager.Delete(profile.CredentialKey);
-    store.Profiles.RemoveAt(choice - 1);
-    if (string.Equals(store.LastUsedConnection, profile.Name, StringComparison.OrdinalIgnoreCase))
-    {
-        store.LastUsedConnection = store.Profiles.FirstOrDefault()?.Name;
-    }
-
-    store.Save();
-    Console.WriteLine("Connection removed.");
-    return (int)ExitCode.Success;
-}
-
-int HandleCompletion(string[] args)
-{
-    var parsed = OptionParser.Parse(args);
-    var shell = parsed.GetString("shell") ?? parsed.Positionals.FirstOrDefault();
-    if (string.IsNullOrWhiteSpace(shell))
-    {
-        Console.Error.WriteLine("Specify a shell via --shell (bash|zsh|powershell).");
-        return (int)ExitCode.InvalidArguments;
-    }
-
-    try
-    {
-        Console.WriteLine(CompletionScriptGenerator.Generate(shell));
-        return (int)ExitCode.Success;
-    }
-    catch (Exception ex)
-    {
-        Console.Error.WriteLine(ex.Message);
-        return (int)ExitCode.InvalidArguments;
-    }
-}
-
-string[] ExtractGlobalOptions(string[] source, out string? connectionOverride)
-{
-    connectionOverride = null;
-    var remaining = new List<string>();
-
-    for (int i = 0; i < source.Length; i++)
-    {
-        var token = source[i];
-        if (!token.StartsWith("--"))
+        Console.WriteLine($"Connection '{profile.Name}' registered.");
+        if (profile.CachePath is not null)
         {
+            Console.WriteLine($"Cache location: {profile.CachePath}");
+        }
+        if (profile.SyncItemsLimit is not null)
+        {
+            Console.WriteLine($"Sync limit: {profile.SyncItemsLimit}");
+        }
+        return (int)ExitCode.Success;
+    }
+
+    static int HandleConnectionsUpdate(ParsedOptions parsed)
+    {
+        var name = parsed.Positionals.FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            Console.Error.WriteLine("Specify the name of the connection to update.");
+            return (int)ExitCode.InvalidArguments;
+        }
+
+        var cachePath = parsed.GetString("cache-path");
+        var syncLimitStr = parsed.GetString("sync-limit");
+        var markdownConversion = parsed.GetString("markdown-conversion");
+
+        if (cachePath is null && syncLimitStr is null && markdownConversion is null)
+        {
+            Console.Error.WriteLine("Specify the setting to update. Supported options: --cache-path, --sync-limit, --markdown-conversion");
+            return (int)ExitCode.InvalidArguments;
+        }
+
+        var store = ConnectionStore.Load();
+        var profile = store.Profiles.FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase));
+
+        if (profile is null)
+        {
+            Console.Error.WriteLine($"Connection '{name}' not found.");
+            return (int)ExitCode.InvalidArguments;
+        }
+
+        var updated = false;
+
+        if (cachePath is not null)
+        {
+            profile.CachePath = !string.IsNullOrWhiteSpace(cachePath) ? Path.GetFullPath(cachePath) : null;
+            updated = true;
+            Console.WriteLine(profile.CachePath is not null
+                ? $"Cache location set to: {profile.CachePath}"
+                : "Cache location has been removed.");
+        }
+
+        if (syncLimitStr is not null)
+        {
+            if (int.TryParse(syncLimitStr, out var parsedLimit) && parsedLimit > 0)
+            {
+                profile.SyncItemsLimit = parsedLimit;
+                Console.WriteLine($"Sync limit set to: {profile.SyncItemsLimit}");
+            }
+            else if (string.IsNullOrEmpty(syncLimitStr))
+            {
+                profile.SyncItemsLimit = null;
+                Console.WriteLine("Sync limit has been reset to default (30).");
+            }
+            else
+            {
+                Console.Error.WriteLine($"Invalid value for --sync-limit: '{syncLimitStr}'. Must be a positive integer.");
+                return (int)ExitCode.InvalidArguments;
+            }
+            updated = true;
+        }
+
+        if (markdownConversion is not null)
+        {
+            if (markdownConversion == "client" || markdownConversion == "server")
+            {
+                profile.MarkdownConversion = markdownConversion;
+                Console.WriteLine($"Markdown conversion strategy set to: {profile.MarkdownConversion}");
+            }
+            else if (string.IsNullOrEmpty(markdownConversion))
+            {
+                profile.MarkdownConversion = null; // Reset to default
+                Console.WriteLine("Markdown conversion strategy has been reset to default (client).");
+            }
+            else
+            {
+                Console.Error.WriteLine($"Invalid value for --markdown-conversion: '{markdownConversion}'. Must be 'client' or 'server'.");
+                return (int)ExitCode.InvalidArguments;
+            }
+            updated = true;
+        }
+
+        if (updated)
+        {
+            store.Save();
+            Console.WriteLine($"\nConnection '{name}' updated.");
+        }
+
+        return (int)ExitCode.Success;
+    }
+
+    static int HandleConnectionsRemove()
+    {
+        var store = ConnectionStore.Load();
+        if (store.Profiles.Count == 0)
+        {
+            Console.WriteLine("No connections available to remove.");
+            return (int)ExitCode.Success;
+        }
+
+        Console.WriteLine("Select the connection to remove:");
+        for (int i = 0; i < store.Profiles.Count; i++)
+        {
+            Console.WriteLine($" {i + 1}. {store.Profiles[i].Name}");
+        }
+
+        Console.Write("Enter number (blank to cancel): ");
+        var input = Console.ReadLine();
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            Console.WriteLine("Removal cancelled.");
+            return (int)ExitCode.Success;
+        }
+
+        if (!int.TryParse(input, out var choice) || choice < 1 || choice > store.Profiles.Count)
+        {
+            Console.Error.WriteLine("Invalid selection.");
+            return (int)ExitCode.InvalidArguments;
+        }
+
+        var profile = store.Profiles[choice - 1];
+        Console.Write($"Delete connection '{profile.Name}'? (y/N): ");
+        var confirmation = Console.ReadLine();
+        if (!string.Equals(confirmation, "y", StringComparison.OrdinalIgnoreCase))
+        {
+            Console.WriteLine("Removal cancelled.");
+            return (int)ExitCode.Success;
+        }
+
+        CredentialManager.Delete(profile.CredentialKey);
+        store.Profiles.RemoveAt(choice - 1);
+        if (string.Equals(store.LastUsedConnection, profile.Name, StringComparison.OrdinalIgnoreCase))
+        {
+            store.LastUsedConnection = store.Profiles.FirstOrDefault()?.Name;
+        }
+
+        store.Save();
+        Console.WriteLine("Connection removed.");
+        return (int)ExitCode.Success;
+    }
+
+    static int HandleCompletion(string[] args)
+    {
+        var parsed = OptionParser.Parse(args);
+        var shell = parsed.GetString("shell") ?? parsed.Positionals.FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(shell))
+        {
+            Console.Error.WriteLine("Specify a shell via --shell (bash|zsh|powershell).");
+            return (int)ExitCode.InvalidArguments;
+        }
+
+        try
+        {
+            Console.WriteLine(CompletionScriptGenerator.Generate(shell));
+            return (int)ExitCode.Success;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine(ex.Message);
+            return (int)ExitCode.InvalidArguments;
+        }
+    }
+
+    static string[] ExtractGlobalOptions(string[] source, out string? connectionOverride)
+    {
+        connectionOverride = null;
+        var remaining = new List<string>();
+
+        for (int i = 0; i < source.Length; i++)
+        {
+            var token = source[i];
+            if (!token.StartsWith("--"))
+            {
+                remaining.Add(token);
+                continue;
+            }
+
+            if (TryMatchOption(token, "connection", out var inlineValue))
+            {
+                connectionOverride = ExtractValue(source, ref i, inlineValue);
+                continue;
+            }
+
             remaining.Add(token);
-            continue;
         }
 
-        if (TryMatchOption(token, "connection", out var inlineValue))
+        connectionOverride = string.IsNullOrWhiteSpace(connectionOverride) ? null : connectionOverride.Trim();
+
+        return remaining.ToArray();
+
+        static bool TryMatchOption(string token, string optionName, out string? inlineValue)
         {
-            connectionOverride = ExtractValue(source, ref i, inlineValue);
-            continue;
-        }
+            var prefix = $"--{optionName}";
+            if (!token.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                inlineValue = null;
+                return false;
+            }
 
-        remaining.Add(token);
-    }
+            if (token.Length == prefix.Length)
+            {
+                inlineValue = null;
+                return true;
+            }
 
-    connectionOverride = string.IsNullOrWhiteSpace(connectionOverride) ? null : connectionOverride.Trim();
+            if (token[prefix.Length] == '=')
+            {
+                inlineValue = token[(prefix.Length + 1)..];
+                return true;
+            }
 
-    return remaining.ToArray();
-
-    static bool TryMatchOption(string token, string optionName, out string? inlineValue)
-    {
-        var prefix = $"--{optionName}";
-        if (!token.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-        {
             inlineValue = null;
             return false;
         }
 
-        if (token.Length == prefix.Length)
+        static string? ExtractValue(string[] source, ref int index, string? inlineValue)
         {
-            inlineValue = null;
-            return true;
-        }
+            if (inlineValue is not null)
+            {
+                return inlineValue;
+            }
 
-        if (token[prefix.Length] == '=')
-        {
-            inlineValue = token[(prefix.Length + 1)..];
-            return true;
-        }
+            if (index + 1 < source.Length && !source[index + 1].StartsWith("--"))
+            {
+                index++;
+                return source[index];
+            }
 
-        inlineValue = null;
-        return false;
-    }
-
-    static string? ExtractValue(string[] source, ref int index, string? inlineValue)
-    {
-        if (inlineValue is not null)
-        {
-            return inlineValue;
-        }
-
-        if (index + 1 < source.Length && !source[index + 1].StartsWith("--"))
-        {
-            index++;
-            return source[index];
-        }
-
-        return null;
-    }
-}
-
-(ConnectionStore Store, ConnectionProfile Profile, string Token) ResolveConnection(string? requestedName)
-{
-    var store = ConnectionStore.Load();
-    if (store.Profiles.Count == 0)
-    {
-        throw new InvalidOperationException("No connections registered. Use `wpai connections add` first.");
-    }
-
-    ConnectionProfile? profile = null;
-
-    if (!string.IsNullOrWhiteSpace(requestedName))
-    {
-        profile = store.Profiles.FirstOrDefault(p => string.Equals(p.Name, requestedName, StringComparison.OrdinalIgnoreCase));
-        if (profile is null)
-        {
-            throw new InvalidOperationException($"Connection '{requestedName}' was not found. Run `wpai connections list` to review names.");
+            return null;
         }
     }
-    else if (!string.IsNullOrWhiteSpace(store.LastUsedConnection))
+
+    static (ConnectionStore Store, ConnectionProfile Profile, string Token) ResolveConnection(string? requestedName)
     {
-        profile = store.Profiles.FirstOrDefault(p => string.Equals(p.Name, store.LastUsedConnection, StringComparison.OrdinalIgnoreCase));
+        var store = ConnectionStore.Load();
+        if (store.Profiles.Count == 0)
+        {
+            throw new InvalidOperationException("No connections registered. Use `wpai connections add` first.");
+        }
+
+        ConnectionProfile? profile = null;
+
+        if (!string.IsNullOrWhiteSpace(requestedName))
+        {
+            profile = store.Profiles.FirstOrDefault(p => string.Equals(p.Name, requestedName, StringComparison.OrdinalIgnoreCase));
+            if (profile is null)
+            {
+                throw new InvalidOperationException($"Connection '{requestedName}' was not found. Run `wpai connections list` to review names.");
+            }
+        }
+        else if (!string.IsNullOrWhiteSpace(store.LastUsedConnection))
+        {
+            profile = store.Profiles.FirstOrDefault(p => string.Equals(p.Name, store.LastUsedConnection, StringComparison.OrdinalIgnoreCase));
+        }
+
+        profile ??= store.Profiles.Count == 1
+            ? store.Profiles[0]
+            : throw new InvalidOperationException("Multiple connections registered. Specify one with `--connection <name>`.");
+
+        var token = CredentialManager.ReadSecret(profile.CredentialKey);
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            throw new InvalidOperationException($"Credential for connection '{profile.Name}' is missing. Re-add the connection.");
+        }
+
+        return (store, profile, token);
     }
 
-    profile ??= store.Profiles.Count == 1
-        ? store.Profiles[0]
-        : throw new InvalidOperationException("Multiple connections registered. Specify one with `--connection <name>`.");
-
-    var token = CredentialManager.ReadSecret(profile.CredentialKey);
-    if (string.IsNullOrWhiteSpace(token))
+    static void UpdateLastUsedConnection(ConnectionStore store, string connectionName)
     {
-        throw new InvalidOperationException($"Credential for connection '{profile.Name}' is missing. Re-add the connection.");
+        if (!string.Equals(store.LastUsedConnection, connectionName, StringComparison.OrdinalIgnoreCase))
+        {
+            store.LastUsedConnection = connectionName;
+            store.Save();
+        }
     }
 
-    return (store, profile, token);
+    static int? ResolveId(ParsedOptions parsed, string? defaultValue)
+    {
+        if (parsed.Positionals.Count > 0 && int.TryParse(parsed.Positionals[0], out var positionalId))
+        {
+            return positionalId;
+        }
+
+        if (!string.IsNullOrWhiteSpace(defaultValue) && int.TryParse(defaultValue, out var fallback))
+        {
+            return fallback;
+        }
+
+        return parsed.GetInt("id");
+    }
+
+    static FileInfo? ToFileInfo(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return null;
+        }
+
+        return new FileInfo(path);
+    }
 }
-
-void UpdateLastUsedConnection(ConnectionStore store, string connectionName)
-{
-    if (!string.Equals(store.LastUsedConnection, connectionName, StringComparison.OrdinalIgnoreCase))
-    {
-        store.LastUsedConnection = connectionName;
-        store.Save();
-    }
-}
-
-int? ResolveId(ParsedOptions parsed, string? defaultValue)
-{
-    if (parsed.Positionals.Count > 0 && int.TryParse(parsed.Positionals[0], out var positionalId))
-    {
-        return positionalId;
-    }
-
-    if (!string.IsNullOrWhiteSpace(defaultValue) && int.TryParse(defaultValue, out var fallback))
-    {
-        return fallback;
-    }
-
-    return parsed.GetInt("id");
-}
-
-FileInfo? ToFileInfo(string? path)
-{
-    if (string.IsNullOrWhiteSpace(path))
-    {
-        return null;
-    }
-
-    return new FileInfo(path);
-}
-
-
-
-
-
-
-
-
