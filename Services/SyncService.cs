@@ -1,3 +1,4 @@
+
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -55,13 +56,14 @@ public class SyncService
         var report = new SyncReport();
 
         // 1. Push local taxonomy changes first
-                    await SynchronizeLocalTaxonomyChangesAsync(profile.CachePath, report, cancellationToken);
+        await SynchronizeLocalTaxonomyChangesAsync(report, cancellationToken);
         // 2. Synchronize taxonomies from server (pull changes and update local state)
         var allCategories = await _wpService.ListCategoriesAsync(cancellationToken);
         var allTags = await _wpService.ListTagsAsync(cancellationToken);
-                    await _cacheService.UpdateTaxonomiesCacheAsync(profile.CachePath, allCategories, allTags);
+        await _cacheService.UpdateTaxonomiesCacheAsync(allCategories, allTags);
         // 3. Synchronize posts
-                    var localPosts = _cacheService.ListLocalPostMetadata(profile.CachePath)            .ToDictionary(meta => meta.Post.Id, meta => meta);
+        var localPosts = _cacheService.ListLocalPostMetadata()
+            .ToDictionary(meta => meta.Post.Id, meta => meta);
 
         var publishPosts = await _wpService.ListPostsAsync(
                 status: "publish",
@@ -96,15 +98,15 @@ public class SyncService
             }
             else if (!hasLocal && hasRemoteInTopN)
             {
-                _cacheService.SavePostToCache(remotePostFromTopN, profile.CachePath);
+                _cacheService.SavePostToCache(remotePostFromTopN);
                 report.NewlyCached.Add(id);
             }
             else if (hasLocal && !hasRemoteInTopN)
             {
-                var localContent = _cacheService.ReadLocalContent(id, profile.CachePath);
+                var localContent = _cacheService.ReadLocalContent(id);
                 var localContentHash = _cacheService.ComputeSha256Hash(localContent);
                 
-                var localEditableMeta = _cacheService.ReadEditableMetadata(id, profile.CachePath);
+                var localEditableMeta = _cacheService.ReadEditableMetadata(id);
                 var localEditableMetaYaml = _cacheService.SerializeToYaml(localEditableMeta ?? new EditablePostMetadata());
                 var localEditableMetaHash = _cacheService.ComputeSha256Hash(localEditableMetaYaml);
 
@@ -117,7 +119,7 @@ public class SyncService
                     }
                     catch (WordPressApiException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
                     {
-                        _cacheService.DeletePostFromCache(id, profile.CachePath);
+                        _cacheService.DeletePostFromCache(id);
                         report.DeletedFromLocal.Add(id);
                     }
                 }
@@ -127,12 +129,12 @@ public class SyncService
         return report;
     }
 
-    public async Task<SyncReport> SynchronizeMediaAsync(string cachePath, int syncLimit, CancellationToken cancellationToken)
+    public async Task<SyncReport> SynchronizeMediaAsync(int syncLimit, CancellationToken cancellationToken)
     {
         var report = new SyncReport();
 
         // 1. Push local metadata changes
-        var localMediaItems = _cacheService.ReadLocalMediaMetadata(cachePath);
+        var localMediaItems = _cacheService.ReadLocalMediaMetadata();
         foreach (var (mediaId, metadata) in localMediaItems)
         {
             var yamlContent = SerializeToYaml(metadata);
@@ -162,7 +164,7 @@ public class SyncService
             try
             {
                 var fileContent = await _wpService.DownloadMediaFileAsync(media.SourceUrl, cancellationToken);
-                _cacheService.SaveMediaToCache(media, fileContent, cachePath);
+                _cacheService.SaveMediaToCache(media, fileContent);
                 report.NewlyCachedMedia.Add(media.Id);
             }
             catch (Exception ex)
@@ -180,10 +182,10 @@ public class SyncService
         return YamlSerializer.Serialize(data);
     }
 
-    private async Task SynchronizeLocalTaxonomyChangesAsync(string cachePath, SyncReport report, CancellationToken cancellationToken)
+    private async Task SynchronizeLocalTaxonomyChangesAsync(SyncReport report, CancellationToken cancellationToken)
     {
         // 1. Read local taxonomy files
-        var (localCategories, localTags) = _cacheService.ReadLocalTaxonomies(cachePath);
+        var (localCategories, localTags) = _cacheService.ReadLocalTaxonomies();
 
         // 2. Synchronize Categories
         var (cachedCategories, cachedTags) = _cacheService.GetTaxonomies();
@@ -242,10 +244,7 @@ public class SyncService
 
     private async Task CompareAndSyncAsync(int id, CachePostMetadata localMeta, WordPressPostDetail remotePost, ConnectionProfile profile, SyncReport report, CancellationToken cancellationToken)
     {
-        var cachePath = profile.CachePath;
-        if (string.IsNullOrEmpty(cachePath)) return;
-
-        var (contentFileExists, editableFileExists) = _cacheService.CheckCacheFileExistence(id, cachePath);
+        var (contentFileExists, editableFileExists) = _cacheService.CheckCacheFileExistence(id);
 
         if (!contentFileExists || !editableFileExists)
         {
@@ -253,7 +252,7 @@ public class SyncService
             var isLocalContentChanged = false;
             if (contentFileExists)
             {
-                var localContent = _cacheService.ReadLocalContent(id, cachePath);
+                var localContent = _cacheService.ReadLocalContent(id);
                 var localContentHash = _cacheService.ComputeSha256Hash(localContent);
                 isLocalContentChanged = localContentHash != localMeta.ContentHash;
             }
@@ -261,7 +260,7 @@ public class SyncService
             var isLocalMetaChanged = false;
             if (editableFileExists)
             {
-                var localEditableMeta = _cacheService.ReadEditableMetadata(id, cachePath);
+                var localEditableMeta = _cacheService.ReadEditableMetadata(id);
                 var localEditableMetaYaml = _cacheService.SerializeToYaml(localEditableMeta ?? new EditablePostMetadata());
                 var localEditableMetaHash = _cacheService.ComputeSha256Hash(localEditableMetaYaml);
                 isLocalMetaChanged = localEditableMetaHash != localMeta.EditableMetaHash;
@@ -275,18 +274,18 @@ public class SyncService
             else
             {
                 // Incomplete cache but no local modifications, restore from server
-                _cacheService.SavePostToCache(remotePost, cachePath);
+                _cacheService.SavePostToCache(remotePost);
                 report.PulledFromServer.Add(id);
             }
         }
         else
         {
             // 1. Check for local changes
-            var localContent = _cacheService.ReadLocalContent(id, cachePath);
+            var localContent = _cacheService.ReadLocalContent(id);
             var localContentHash = _cacheService.ComputeSha256Hash(localContent);
             var isLocalContentChanged = localContentHash != localMeta.ContentHash;
 
-            var localEditableMeta = _cacheService.ReadEditableMetadata(id, cachePath);
+            var localEditableMeta = _cacheService.ReadEditableMetadata(id);
             var localEditableMetaYaml = _cacheService.SerializeToYaml(localEditableMeta ?? new EditablePostMetadata());
             var localEditableMetaHash = _cacheService.ComputeSha256Hash(localEditableMetaYaml);
             var isLocalMetaChanged = localEditableMetaHash != localMeta.EditableMetaHash;
@@ -390,12 +389,12 @@ public class SyncService
                 }
 
                 var updatedPost = await _wpService.UpdatePostAsync(id, request, cancellationToken);
-                _cacheService.SavePostToCache(updatedPost, cachePath);
+                _cacheService.SavePostToCache(updatedPost);
                 report.PushedToServer.Add(id);
             }
             else if (isServerContentChanged || isServerMetaChanged)
             {
-                _cacheService.SavePostToCache(remotePost, cachePath);
+                _cacheService.SavePostToCache(remotePost);
                 report.PulledFromServer.Add(id);
             }
         }
@@ -444,7 +443,7 @@ public class SyncService
             case "category":
             case "tag":
                 // TODO: Implement taxonomy conflict resolution
-                await ResolveTaxonomyConflictAsync(type, id, strategy, profile.CachePath, cancellationToken);
+                await ResolveTaxonomyConflictAsync(type, id, strategy, cancellationToken);
                 break;
             default:
                 throw new ArgumentException($"Unsupported conflict type: {type}");
@@ -455,22 +454,16 @@ public class SyncService
     {
         Console.WriteLine($"Resolving conflict for post {id} with strategy: {strategy}...");
 
-        var cachePath = profile.CachePath;
-        if (string.IsNullOrEmpty(cachePath))
-        {
-            throw new InvalidOperationException("Cache path is not configured.");
-        }
-
         if (strategy == "server-wins")
         {
             var remotePost = await _wpService.GetPostAsync(id, cancellationToken);
-            _cacheService.SavePostToCache(remotePost, cachePath);
+            _cacheService.SavePostToCache(remotePost);
             Console.WriteLine($"Conflict resolved. Local post {id} was overwritten with the server version.");
         }
         else if (strategy == "local-wins")
         {
-            var localContent = _cacheService.ReadLocalContent(id, cachePath);
-            var localEditableMeta = _cacheService.ReadEditableMetadata(id, cachePath);
+            var localContent = _cacheService.ReadLocalContent(id);
+            var localEditableMeta = _cacheService.ReadEditableMetadata(id);
 
             if (localEditableMeta == null)
             {
@@ -518,12 +511,12 @@ public class SyncService
             request.Tags = tagIds;
 
             var updatedPost = await _wpService.UpdatePostAsync(id, request, cancellationToken);
-            _cacheService.SavePostToCache(updatedPost, cachePath);
+            _cacheService.SavePostToCache(updatedPost);
             Console.WriteLine($"Conflict resolved. Server post {id} was overwritten with the local version.");
         }
     }
 
-    private async Task ResolveTaxonomyConflictAsync(string type, int id, string strategy, string cachePath, CancellationToken cancellationToken)
+    private async Task ResolveTaxonomyConflictAsync(string type, int id, string strategy, CancellationToken cancellationToken)
     {
         Console.WriteLine($"Resolving conflict for {type} {id} with strategy: {strategy}...");
 
@@ -532,12 +525,12 @@ public class SyncService
             if (type == "category")
             {
                 var remoteTerm = await _wpService.GetCategoryAsync(id, cancellationToken);
-                await _cacheService.UpdateLocalTaxonomyTermAsync(remoteTerm, cachePath);
+                await _cacheService.UpdateLocalTaxonomyTermAsync(remoteTerm);
             }
             else // tag
             {
                 var remoteTerm = await _wpService.GetTagAsync(id, cancellationToken);
-                await _cacheService.UpdateLocalTaxonomyTermAsync(remoteTerm, cachePath);
+                await _cacheService.UpdateLocalTaxonomyTermAsync(remoteTerm);
             }
             Console.WriteLine($"Conflict resolved. Local {type} {id} was overwritten with the server version.");
         }
@@ -545,21 +538,21 @@ public class SyncService
         {
             if (type == "category")
             {
-                var localTerm = await _cacheService.GetLocalTaxonomyTermAsync<EditableCategory>(type, id, cachePath);
+                var localTerm = await _cacheService.GetLocalTaxonomyTermAsync<EditableCategory>(type, id);
                 if (localTerm == null) throw new InvalidOperationException($"Could not find local category with ID {id}.");
 
                 var request = new WordPressUpdateCategoryRequest { Name = localTerm.Name, Slug = localTerm.Slug, Description = localTerm.Description };
                 var updatedTerm = await _wpService.UpdateCategoryAsync(id, request, cancellationToken);
-                await _cacheService.UpdateLocalTaxonomyTermAsync(updatedTerm, cachePath, updateHashOnly: true);
+                await _cacheService.UpdateLocalTaxonomyTermAsync(updatedTerm, updateHashOnly: true);
             }
             else // tag
             {
-                var localTerm = await _cacheService.GetLocalTaxonomyTermAsync<EditableTag>(type, id, cachePath);
+                var localTerm = await _cacheService.GetLocalTaxonomyTermAsync<EditableTag>(type, id);
                 if (localTerm == null) throw new InvalidOperationException($"Could not find local tag with ID {id}.");
 
                 var request = new WordPressUpdateTagRequest { Name = localTerm.Name, Slug = localTerm.Slug, Description = localTerm.Description };
                 var updatedTerm = await _wpService.UpdateTagAsync(id, request, cancellationToken);
-                await _cacheService.UpdateLocalTaxonomyTermAsync(updatedTerm, cachePath, updateHashOnly: true);
+                await _cacheService.UpdateLocalTaxonomyTermAsync(updatedTerm, updateHashOnly: true);
             }
             Console.WriteLine($"Conflict resolved. Server {type} {id} was overwritten with the local version.");
         }

@@ -426,15 +426,9 @@ async Task<int> HandleResolveAsync(string[] args)
     }
 
     var (store, profile, token) = ResolveConnection(globalConnectionName);
-    if (string.IsNullOrWhiteSpace(profile.CachePath))
-    {
-        Console.Error.WriteLine("Cache path is not configured for this connection.");
-        return (int)ExitCode.InvalidArguments;
-    }
-
     var settings = new WordPressSettings(profile.BaseUrl, token);
     using var wpService = new WordPressService(settings);
-    var cacheService = new CacheService(profile.CachePath);
+    var cacheService = new CacheService(profile.CachePath, profile.Name);
     var syncService = new SyncService(wpService, cacheService);
 
     try
@@ -461,7 +455,7 @@ async Task<int> HandlePostsSyncAsync()
 
     var settings = new WordPressSettings(profile.BaseUrl, token);
     using var wpService = new WordPressService(settings);
-    var cacheService = new CacheService(profile.CachePath);
+    var cacheService = new CacheService(profile.CachePath, profile.Name);
     var syncService = new SyncService(wpService, cacheService);
 
     Console.WriteLine("Starting synchronization...");
@@ -484,12 +478,12 @@ async Task<int> HandleMediaSyncAsync()
 
     var settings = new WordPressSettings(profile.BaseUrl, token);
     using var wpService = new WordPressService(settings);
-    var cacheService = new CacheService(profile.CachePath);
+    var cacheService = new CacheService(profile.CachePath, profile.Name);
     var syncService = new SyncService(wpService, cacheService);
 
     Console.WriteLine("Starting media synchronization...");
     var syncLimit = profile.SyncItemsLimit ?? 30;
-    var report = await syncService.SynchronizeMediaAsync(profile.CachePath, syncLimit, CancellationToken.None);
+    var report = await syncService.SynchronizeMediaAsync(syncLimit, CancellationToken.None);
     PrintSyncReport(report);
 
     UpdateLastUsedConnection(store, profile.Name);

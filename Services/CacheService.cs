@@ -81,6 +81,7 @@ public class EditableMediaMetadata
 public class CacheService
 {
     private readonly CacheDbContext _db;
+    private readonly string _cachePath;
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
         WriteIndented = true,
@@ -98,10 +99,11 @@ public class CacheService
         .IgnoreUnmatchedProperties()
         .Build();
 
-    public CacheService(string cachePath)
+    public CacheService(string rootCachePath, string connectionName)
     {
-        Directory.CreateDirectory(cachePath);
-        var dbPath = Path.Combine(cachePath, "cache.db");
+        _cachePath = Path.Combine(rootCachePath, connectionName);
+        Directory.CreateDirectory(_cachePath);
+        var dbPath = Path.Combine(_cachePath, "wp-ai-cache.db");
         _db = new CacheDbContext(dbPath);
     }
 
@@ -126,15 +128,15 @@ public class CacheService
         return sanitizedTitle;
     }
 
-    public void SavePostToCache(WordPressPostDetail post, string cachePath)
+    public void SavePostToCache(WordPressPostDetail post)
     {
-        var postsDir = Path.Combine(cachePath, "posts");
+        var postsDir = Path.Combine(_cachePath, "posts");
         Directory.CreateDirectory(postsDir);
 
         var sanitizedTitle = SanitizeTitleForFilename(post.Title?.Raw ?? post.Slug ?? string.Empty);
         var fileBaseName = $"{post.Id}-{sanitizedTitle}";
 
-        DeletePostFromCache(post.Id, cachePath);
+        DeletePostFromCache(post.Id);
 
         // 1. Determine content and edit mode from meta field
         string contentToSave;
@@ -214,7 +216,7 @@ public class CacheService
         _db.SaveChanges();
     }
 
-    public async Task UpdateTaxonomiesCacheAsync(string cachePath, IEnumerable<WordPressCategory> categories, IEnumerable<WordPressTag> tags)
+    public async Task UpdateTaxonomiesCacheAsync(IEnumerable<WordPressCategory> categories, IEnumerable<WordPressTag> tags)
     {
         _db.ChangeTracker.Clear();
         // Update database
@@ -232,8 +234,8 @@ public class CacheService
         // --- Start Refactoring: Individual YAML files ---
 
         // 1. Define and clean up directories
-        var categoriesDir = Path.Combine(cachePath, "categories");
-        var tagsDir = Path.Combine(cachePath, "tags");
+        var categoriesDir = Path.Combine(_cachePath, "categories");
+        var tagsDir = Path.Combine(_cachePath, "tags");
 
         if (Directory.Exists(categoriesDir))
         {
@@ -248,8 +250,8 @@ public class CacheService
         Directory.CreateDirectory(tagsDir);
 
         // Delete old single files if they exist
-        File.Delete(Path.Combine(cachePath, "categories.yaml"));
-        File.Delete(Path.Combine(cachePath, "tags.yaml"));
+        File.Delete(Path.Combine(_cachePath, "categories.yaml"));
+        File.Delete(Path.Combine(_cachePath, "tags.yaml"));
         await _db.States.Where(s => s.Key == "categories_yaml_hash" || s.Key == "tags_yaml_hash").ExecuteDeleteAsync();
 
 
@@ -285,9 +287,9 @@ public class CacheService
         // --- End Refactoring ---
     }
 
-    public List<CachePostMetadata> ListLocalPostMetadata(string cachePath)
+    public List<CachePostMetadata> ListLocalPostMetadata()
     {
-        var postsDir = Path.Combine(cachePath, "posts");
+        var postsDir = Path.Combine(_cachePath, "posts");
         if (!Directory.Exists(postsDir)) return new List<CachePostMetadata>();
 
         var cachedPosts = _db.Posts.ToList();
@@ -317,9 +319,9 @@ public class CacheService
         return metadataList;
     }
 
-    public string ReadLocalContent(int postId, string cachePath)
+    public string ReadLocalContent(int postId)
     {
-        var contentFile = FindFileByPattern(cachePath, $"{postId}-*_content.md");
+        var contentFile = FindFileByPattern($"{postId}-*_content.md");
         if (File.Exists(contentFile))
         {
             return File.ReadAllText(contentFile);
@@ -327,9 +329,9 @@ public class CacheService
         return string.Empty;
     }
     
-    public EditablePostMetadata? ReadEditableMetadata(int postId, string cachePath)
+    public EditablePostMetadata? ReadEditableMetadata(int postId)
     {
-        var editableFile = FindFileByPattern(cachePath, $"{postId}-*_editable.yaml");
+        var editableFile = FindFileByPattern($"{postId}-*_editable.yaml");
         if (File.Exists(editableFile))
         {
             return DeserializeFromYaml<EditablePostMetadata>(File.ReadAllText(editableFile));
@@ -342,10 +344,10 @@ public class CacheService
         return (_db.Categories.ToList(), _db.Tags.ToList());
     }
 
-    public (List<EditableCategory> Categories, List<EditableTag> Tags) ReadLocalTaxonomies(string cachePath)
+    public (List<EditableCategory> Categories, List<EditableTag> Tags) ReadLocalTaxonomies()
     {
         var categories = new List<EditableCategory>();
-        var categoriesDir = Path.Combine(cachePath, "categories");
+        var categoriesDir = Path.Combine(_cachePath, "categories");
         if (Directory.Exists(categoriesDir))
         {
             foreach (var file in Directory.GetFiles(categoriesDir, "*.yaml"))
@@ -364,7 +366,7 @@ public class CacheService
         }
 
         var tags = new List<EditableTag>();
-        var tagsDir = Path.Combine(cachePath, "tags");
+        var tagsDir = Path.Combine(_cachePath, "tags");
         if (Directory.Exists(tagsDir))
         {
             foreach (var file in Directory.GetFiles(tagsDir, "*.yaml"))
@@ -390,10 +392,10 @@ public class CacheService
         return _db.Media.FirstOrDefault(m => m.MediaId == mediaId)?.MetadataHash;
     }
 
-    public List<(int MediaId, EditableMediaMetadata Metadata)> ReadLocalMediaMetadata(string cachePath)
+    public List<(int MediaId, EditableMediaMetadata Metadata)> ReadLocalMediaMetadata()
     {
         var mediaMetadataList = new List<(int MediaId, EditableMediaMetadata Metadata)>();
-        var mediaDir = Path.Combine(cachePath, "media");
+        var mediaDir = Path.Combine(_cachePath, "media");
 
         if (!Directory.Exists(mediaDir)) return mediaMetadataList;
 
@@ -419,24 +421,24 @@ public class CacheService
         return mediaMetadataList;
     }
 
-    public bool AreCacheFilesPresent(int postId, string cachePath)
+    public bool AreCacheFilesPresent(int postId)
     {
-        var contentFile = FindFileByPattern(cachePath, $"{postId}-*_content.md");
-        var editableFile = FindFileByPattern(cachePath, $"{postId}-*_editable.yaml");
+        var contentFile = FindFileByPattern($"{postId}-*_content.md");
+        var editableFile = FindFileByPattern($"{postId}-*_editable.yaml");
         return File.Exists(contentFile) && File.Exists(editableFile);
     }
 
-    public (bool contentFileExists, bool editableFileExists) CheckCacheFileExistence(int postId, string cachePath)
+    public (bool contentFileExists, bool editableFileExists) CheckCacheFileExistence(int postId)
     {
-        var contentFile = FindFileByPattern(cachePath, $"{postId}-*_content.md");
-        var editableFile = FindFileByPattern(cachePath, $"{postId}-*_editable.yaml");
+        var contentFile = FindFileByPattern($"{postId}-*_content.md");
+        var editableFile = FindFileByPattern($"{postId}-*_editable.yaml");
         return (File.Exists(contentFile), File.Exists(editableFile));
     }
 
-    public void DeletePostFromCache(int postId, string cachePath)
+    public void DeletePostFromCache(int postId)
     {
         // 1. Delete files from filesystem
-        var postsDir = Path.Combine(cachePath, "posts");
+        var postsDir = Path.Combine(_cachePath, "posts");
         if (Directory.Exists(postsDir))
         {
             var filesToDelete = Directory.GetFiles(postsDir, $"{postId}-*");
@@ -455,9 +457,9 @@ public class CacheService
         }
     }
 
-    public void SaveCategoryToCache(WordPressCategory category, string cachePath)
+    public void SaveCategoryToCache(WordPressCategory category)
     {
-        var categoriesDir = Path.Combine(cachePath, "categories");
+        var categoriesDir = Path.Combine(_cachePath, "categories");
         Directory.CreateDirectory(categoriesDir);
 
         // Clean up old files for this category ID first, to handle renames
@@ -487,10 +489,10 @@ public class CacheService
         SetState($"category_{category.Id}_hash", hash);
     }
 
-    public void DeleteCategoryFromCache(int categoryId, string cachePath)
+    public void DeleteCategoryFromCache(int categoryId)
     {
         // Delete file
-        var categoriesDir = Path.Combine(cachePath, "categories");
+        var categoriesDir = Path.Combine(_cachePath, "categories");
         if (Directory.Exists(categoriesDir))
         {
             var filesToDelete = Directory.GetFiles(categoriesDir, $"{categoryId}-*.yaml");
@@ -516,9 +518,9 @@ public class CacheService
         _db.SaveChanges();
     }
 
-    public void SaveTagToCache(WordPressTag tag, string cachePath)
+    public void SaveTagToCache(WordPressTag tag)
     {
-        var tagsDir = Path.Combine(cachePath, "tags");
+        var tagsDir = Path.Combine(_cachePath, "tags");
         Directory.CreateDirectory(tagsDir);
 
         var oldFiles = Directory.GetFiles(tagsDir, $"{tag.Id}-*.yaml");
@@ -544,9 +546,9 @@ public class CacheService
         SetState($"tag_{tag.Id}_hash", hash);
     }
 
-    public void DeleteTagFromCache(int tagId, string cachePath)
+    public void DeleteTagFromCache(int tagId)
     {
-        var tagsDir = Path.Combine(cachePath, "tags");
+        var tagsDir = Path.Combine(_cachePath, "tags");
         if (Directory.Exists(tagsDir))
         {
             var filesToDelete = Directory.GetFiles(tagsDir, $"{tagId}-*.yaml");
@@ -570,10 +572,10 @@ public class CacheService
         _db.SaveChanges();
     }
 
-    public void DeleteMediaFromCache(int mediaId, string cachePath)
+    public void DeleteMediaFromCache(int mediaId)
     {
         // 1. Delete files from filesystem
-        var mediaDir = Path.Combine(cachePath, "media");
+        var mediaDir = Path.Combine(_cachePath, "media");
         if (Directory.Exists(mediaDir))
         {
             // Find files like {mediaId}-*.* and {mediaId}-*.yaml
@@ -593,16 +595,16 @@ public class CacheService
         }
     }
 
-    public void SaveMediaToCache(WordPressMedia media, byte[] fileContent, string cachePath)
+    public void SaveMediaToCache(WordPressMedia media, byte[] fileContent)
     {
-        var mediaDir = Path.Combine(cachePath, "media");
+        var mediaDir = Path.Combine(_cachePath, "media");
         Directory.CreateDirectory(mediaDir);
 
         var fileName = Path.GetFileName(new Uri(media.SourceUrl).LocalPath);
         var fileBaseName = $"{media.Id}-{fileName}";
         var yamlFileName = $"{media.Id}-{Path.GetFileNameWithoutExtension(fileName)}.yaml";
 
-        DeleteMediaFromCache(media.Id, cachePath);
+        DeleteMediaFromCache(media.Id);
 
         // 1. Handle editable.yaml
         var editableMeta = new EditableMediaMetadata
@@ -664,9 +666,9 @@ public class CacheService
         }
     }
     
-    public string? FindFileByPattern(string cachePath, string pattern)
+    public string? FindFileByPattern(string pattern)
     {
-        var postsDir = Path.Combine(cachePath, "posts");
+        var postsDir = Path.Combine(_cachePath, "posts");
         return Directory.Exists(postsDir) ? Directory.GetFiles(postsDir, pattern).FirstOrDefault() : null;
     }
 
@@ -737,9 +739,9 @@ public class CacheService
         return YamlDeserializer.Deserialize<T>(yaml) ?? new T();
     }
 
-    public async Task<T?> GetLocalTaxonomyTermAsync<T>(string type, int id, string cachePath) where T : class, new()
+    public async Task<T?> GetLocalTaxonomyTermAsync<T>(string type, int id) where T : class, new()
     {
-        var dir = Path.Combine(cachePath, type == "category" ? "categories" : "tags");
+        var dir = Path.Combine(_cachePath, type == "category" ? "categories" : "tags");
         if (!Directory.Exists(dir)) return null;
 
         var file = Directory.GetFiles(dir, $"{id}-*.yaml").FirstOrDefault();
@@ -752,10 +754,10 @@ public class CacheService
         return DeserializeFromYaml<T>(yamlContent);
     }
 
-    public async Task UpdateLocalTaxonomyTermAsync(WordPressTerm term, string cachePath, bool updateHashOnly = false)
+    public async Task UpdateLocalTaxonomyTermAsync(WordPressTerm term, bool updateHashOnly = false)
     {
         var type = term is WordPressCategory ? "category" : "tag";
-        var dir = Path.Combine(cachePath, type == "category" ? "categories" : "tags");
+        var dir = Path.Combine(_cachePath, type == "category" ? "categories" : "tags");
         Directory.CreateDirectory(dir);
 
         string yamlContent;
