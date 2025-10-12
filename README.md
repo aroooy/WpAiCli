@@ -1,82 +1,115 @@
-﻿# WpAiCli 使用ガイド
+# WpAiCli Usage Guide
 
-## 概要
-WpAiCli は WordPress REST API とやり取りするための CLI です。投稿/カテゴリ/タグ/メディアの作成・取得・更新・削除に加え、ローカルキャッシュとの同期をサポートします。
-
-- Windows 資格情報マネージャに Bearer トークンを保存
-- ローカルキャッシュ（Markdown/YAML + SQLite）とサーバーの双方向同期
-- 単一投稿のキャッシュ反映（push）
-- 競合検出と手動解決
-
+## 概要EWpAiCli は WordPress REST API と連携するためのクロスプラチE��フォーム CLI です。投稿、カチE��リ、タグ、メチE��アの管琁E��加えて、褁E��サイト�E接続情報を安�Eに刁E��替えながら利用できます、E
+主な特徴:
+- Windows Credential Manager また�E macOS/Linux の Secret-Tool に Bearer ト�Eクンを保孁E- 接続�Eロファイルの登録 / 一覧 / 削除 / 更新めECLI から実衁E- 投稿、カチE��リ、タグ、メチE��アの作�E、取得、更新、削除の吁E��マンドをサポ�EチE- 投稿のローカルキャチE��ュと双方向同期に対忁E- 投稿リビジョンの取得にも対忁E- メチE��ア�E�画像など�E��EアチE�Eロード機�Eを搭輁E- `--format table|json|raw` で出力形式を刁E��替ぁE
 ## グローバルオプション
-- `--connection <name>` 接続プロファイルの選択
-- `--version` / `-V` バージョン表示
-- `--help` / `-h` ヘルプ表示
-
-## はじめに（接続の登録）
+- `--connection <name>`: 特定�E接続�Eロファイルを指定してコマンドを実行します、E- `--version`, `-V`: バ�Eジョン惁E��を表示します、E- `--help`, `-h`: ヘルプを表示します、E
+## 初期設宁E以下�E手頁E��おすすめします、E
+### 1. 接続情報を登録
 ```
-wpai connections add --name "MyBlog" --base-url "https://example.com/?rest_route=/wp/v2" --token <BearerToken> --cache-path ./wp-cache
+wpai connections add --name "BlogName" --base-url "https://example.com/?rest_route=/wp/v2/" --token <BearerToken>
 ```
-- `--sync-limit <NUMBER>` 同期時にチェックする最大件数（既定 30）
-- `--markdown-conversion <client|server>` Markdown→HTML 変換の実行場所（既定 client）
-
-## 投稿（posts）
-- `sync` ローカルキャッシュと投稿を双方向同期
-  - `wpai posts sync`
-- `list` 投稿一覧
-  - `wpai posts list [--status <STATUS>] [--per-page <NUM>] [--page <NUM>]`
-- `get <id>` 投稿取得
-  - `wpai posts get 123`
-- `create` 新規作成（作成直後にキャッシュへも保存されます）
-  - `wpai posts create --title <TITLE> [--content <TEXT> | --content-file <PATH>] [--status <STATUS>] [--edit-mode <markdown|html>] [--categories <IDs>] [--tags <IDs>] [--featured-media <ID>]`
-- `push <id>` 単一投稿のキャッシュ（`_content.md` + `_editable.yaml`）をそのままサーバーへ反映
-  - `wpai posts push 123`
-- `delete <id>` 削除（成功時はローカルキャッシュも即時削除、サーバー404でもキャッシュ削除）
-  - `wpai posts delete 123 [--force]`
-- `revisions <id>` リビジョン一覧
-  - `wpai posts revisions 123`
-- `revision <post-id> <revision-id>` 指定リビジョン取得
-  - `wpai posts revision 123 456`
-
-## カテゴリ（categories）
-- `list` / `get <id>` / `create` / `update <id>` / `delete <id>` をサポート
-- `delete` は成功時/404時にローカルキャッシュ（`categories/<ID>-*.yaml`）も即時削除
-
-## タグ（tags）
-- `list` / `get <id>` / `create` / `update <id>` / `delete <id>` をサポート
-- `delete` は成功時/404時にローカルキャッシュ（`tags/<ID>-*.yaml`）も即時削除
-
-## メディア（media）
-- `sync` ローカルのメタ（YAML）をプッシュ後、サーバーからメディア情報とファイルを取得
-  - `wpai media sync`
-- `list` / `upload <file>` / `delete <id>` をサポート
-- `delete` は成功時/404時にローカルキャッシュ（`media/<ID>-*`）も即時削除
-
-## 同期とキャッシュの仕様
-- 個別コマンドは基本的にサーバーのみ変更し、キャッシュ反映は `posts sync` / `media sync` が担当
-  - 例外: `posts create` は作成直後にキャッシュへ書き込み
-  - 例外: `delete`（posts/categories/tags/media）は成功時/404時にキャッシュを即時削除
-- Top-N（`--sync-limit`）外のローカル項目で、サーバーが 404 かつローカル未編集なら、同期時にローカルキャッシュを自動削除（投稿・メディア）
-- ローカルで新規投稿ファイルを置くだけでは新規作成されません。新規作成は `posts create` を使用してください
-- `posts push <id>` はローカルの `_content.md` + `_editable.yaml` を丸ごと適用します（editMode と MarkdownConversion を尊重）
-
-## 競合の解決
-- `wpai resolve post <id> --strategy <local-wins|server-wins>`
-- 競合は同期レポートに対象IDが表示されます。必要に応じて個別解決してください
-
-## キャッシュ構造（例）
+- `--name`: 任意�E表示吁E(接続�Eり替え時に使用)
+- `--base-url`: WordPress REST API のベ�Eス URL (`?rest_route=/wp/v2/` 形式がおすすめ)
+- `--token`: WordPress で発行しぁEBearer ト�Eクン。OSの賁E��惁E��ストアに安�Eに保存されます、E- `--cache-path <PATH>`: (任愁E 同期機�Eで利用するローカルキャチE��ュの保存�EチE��レクトリを指定します、E- `--sync-limit <NUMBER>`: (任愁E 一度の同期でチェチE��する最大投稿数を指定しまぁE(チE��ォルチE 30)、E- `--markdown-conversion <client|server>`: (任愁E MarkdownからHTMLへの変換をどこで行うかを持E��しまぁE(チE��ォルチE `client`)、E  - `client`: CLIチE�Eル側で変換します、E  - `server`: サーバ�E側のプラグイン(Jetpackなど)での変換を期征E��、Markdown原文をそのまま送信します、E
+### 2. 接続�E確誁E```
+wpai connections list
 ```
-wp-cache/
-  <connection>/
-    wp-ai-cache.db
-    categories/
-      <ID>-<Name>.yaml
-    tags/
-      <ID>-<Name>.yaml
-    posts/
-      <ID>-<slug>_content.md
-      <ID>-<slug>_editable.yaml
-    media/
-      <ID>-<filename>.<ext>
-      <ID>-<filename>.yaml
+登録済みプロファイルが番号付きで表示され、`*` が最後に利用した接続を示します、E
+### 3. 投稿一覧を取征E```
+wpai posts list --status publish --format table
 ```
+`--connection <name>` を付けると特定�E接続を直接持E��できます。省略時�E最後に使用した接続が利用されます、E
+## コマンド一覧
+AI など機械連携では JSON モーチE(`--format json`) を推奨します。テキスト�E力よりもエンコーチE��ング�E�解析面で扱ぁE��すく、文字化けも避けられます、E
+### 接続管琁E(`connections`)
+- `list`: 登録済み接続�E一覧を表示します、E- `add`: 新しい接続を登録します、E  - `wpai connections add --name <名称> --base-url <URL> --token <Bearer> [--cache-path <PATH>] [--sync-limit <NUMBER>] [--markdown-conversion <client|server>]`
+- `update <name>`: 既存�E接続情報を更新します、E  - `wpai connections update "BlogName" --cache-path ./new-cache --sync-limit 50 --markdown-conversion server`
+- `remove`: 対話形式で既存�E接続を削除します、E
+### 投稿 (`posts`)
+- `sync`: ローカルキャチE��ュとサーバ�E上�E投稿を双方向で同期します、E  - `wpai posts sync`
+- `list`: 投稿を一覧表示します、E  - `wpai posts list [--status <STATUS>] [--per-page <NUM>] [--page <NUM>]`
+- `get <id>`: 持E��したIDの投稿めE件取得します、E  - `wpai posts get 123`
+- `create`: 新しい投稿を作�Eします、E  - `wpai posts create --title <TITLE> [--content <CONTENT> | --content-file <PATH>] [--status <STATUS>] [--edit-mode <markdown|html>] [--categories <IDs>] [--tags <IDs>] [--featured-media <ID>]`
+- `update <id>`: 既存�E投稿を更新します、E  - `wpai posts update 123 [--title <TITLE>] [--content <CONTENT> | --content-file <PATH>] [--status <STATUS>] [--edit-mode <markdown|html>] [--categories <IDs>] [--tags <IDs>] [--featured-media <ID>]`
+- `delete <id>`: 投稿を削除します、E  - `wpai posts delete 123 [--force]`
+- `revisions <id>`: 持E��した投稿のリビジョン一覧を取得します、E  - `wpai posts revisions 123`
+- `revision <post-id> <revision-id>`: 特定�Eリビジョンの詳細を取得します、E  - `wpai posts revision 123 456`
+
+### カチE��リ (`categories`)
+- `list`: カチE��リを一覧表示します、E- `get <id>`: 持E��したIDのカチE��リめE件取得します、E- `create`: 新しいカチE��リを作�Eします、E  - `wpai categories create --name <NAME> [--slug <SLUG>] [--description <DESC>]`
+- `update <id>`: 既存�EカチE��リを更新します、E  - `wpai categories update <ID> [--name <NAME>] [--slug <SLUG>] [--description <DESC>]`
+- `delete <id>`: カチE��リを削除します、E
+### タグ (`tags`)
+- `list`: タグを一覧表示します、E- `create`: 新しいタグを作�Eします、E  - `wpai tags create --name <NAME> [--slug <SLUG>] [--description <DESC>]`
+- `get <id>`: 持E��したIDのタグめE件取得します、E- `update <id>`: 既存�Eタグを更新します、E  - `wpai tags update <ID> [--name <NAME>] [--slug <SLUG>] [--description <DESC>]`
+- `delete <id>`: タグを削除します、E
+### メチE��ア (`media`)
+- `sync`: ローカルキャチE��ュとサーバ�E上�EメチE��アを同期します、E- `list`: メチE��アライブラリの頁E��を一覧表示します、E  - `wpai media list [--per-page <NUM>] [--page <NUM>]`
+- `upload <file-path>`: ファイルをメチE��アライブラリにアチE�Eロードします、E  - `wpai media upload <PATH> [--title <TITLE>] [--description <DESC>]`
+- `delete <id>`: メチE��アを削除します、E  - `wpai media delete 123 [--force]`
+
+### 競合�E解決 (`resolve`)
+`posts sync` を実行した際に競合が検�Eされた場合、このコマンドを使って手動で競合を解決します、E
+- `resolve <type> <id> --strategy <strategy>`: 競合を解決します、E  - `<type>`: 競合したコンチE��チE�E種顁E(`post`, `category`, `tag`)、E  - `<id>`: 競合したアイチE��のID、E  - `--strategy <strategy>`: 忁E��。以下�EぁE��れかの解決戦略を指定します、E    - `local-wins`: ローカルの変更を正とし、サーバ�Eの状態をローカルの状態で上書きします、E    - `server-wins`: サーバ�Eの変更を正とし、ローカルの状態をサーバ�Eの状態で上書きします、E
+  **実行侁E**
+  ```bash
+  # 投稿ID 123 の競合を、ローカルの変更を優先して解決
+  wpai resolve post 123 --strategy local-wins
+
+  # カチE��リID 45 の競合を、サーバ�Eの変更を優先して解決
+  wpai resolve category 45 --strategy server-wins
+  ```
+
+  **注愁E Markdownの `server` 変換モードにおける競合検�E**
+
+  Markdownの変換設宁E(`--markdown-conversion`) めE`server` に設定してぁE��場合、同期�E競合検�Eはサーバ�E上�E `_md_source` とぁE��特別なメタフィールドへの変更に依存します、E
+  これは、WordPressの管琁E��面で通常のビジュアルエチE��タめE��ードエチE��タを使って投稿を編雁E��ても、この `_md_source` フィールド�E更新されなぁE��とを意味します。その結果、E*管琁E��面からの編雁E�Eサーバ�E側の変更として検�Eされず、競合が発生しません、E* ローカルの変更がサーバ�Eの変更を上書きしてしまぁE��す、E
+  `server` モードで正しく競合を検�Eさせるには、サーバ�E側でもREST API経由で `_md_source` メタフィールドを更新する忁E��があります、E
+## 同期機�E
+
+`posts sync` および `media sync` コマンド�E、ローカルのファイルシスチE��とWordPressサーバ�E上�EコンチE��チE��投稿、メチE��ア、カチE��リ、タグ�E�を同期する機�Eです、E
+### 設宁E
+同期を有効にするには、まず接続情報にキャチE��ュチE��レクトリのパスを設定する忁E��があります、E```
+# 新規接続時に設宁Ewpai connections add --name "MyBlog" --base-url <URL> --token <TOKEN> --cache-path ./my-blog-cache
+
+# 既存�E接続を更新
+wpai connections update "MyBlog" --cache-path ./my-blog-cache
+```
+
+### 同期の実行とキャチE��ュチE��レクトリ構造
+
+設定後、`posts sync` また�E `media sync` を実行すると同期が開始されます。キャチE��ュチE��レクトリの基本皁E��構造は以下�E通りです、E
+1.  **接続ごとのサブディレクトリ**: `--cache-path` で持E��したルートディレクトリ冁E��、接続�Eロファイル名�Eサブディレクトリが作�EされまぁE(侁E `wp-cache/my-blog/`)。これにより、褁E��のブログのキャチE��ュが互いに干渉することなく管琁E��れます、E2.  **キャチE��ュファイルの生�E**: 吁E��続�Eサブディレクトリ冁E��、以下�EファイルとチE��レクトリが生成されます、E
+    -   `wp-ai-cache.db`: コンチE��チE�Eメタ惁E��を管琁E��るSQLiteチE�Eタベ�Eスファイルです。このファイルはアプリケーションが�E部皁E��使用します、E*ユーザーが直接編雁E��なぁE��ください、E*
+    -   `categories/` チE��レクトリ: **編雁E��能な**カチE��リのYAMLファイルが個別に保存されまぁE(`[ID]-[名前].yaml`)、E    -   `tags/` チE��レクトリ: **編雁E��能な**タグのYAMLファイルが個別に保存されまぁE(`[ID]-[名前].yaml`)、E    -   `posts/` チE��レクトリ:
+        -   `[ID]-[slug]_content.md`: 編雁E��能な投稿の本斁E��す、E        -   `[ID]-[slug]_editable.yaml`: 編雁E��能な投稿のメタチE�Eタです、E    -   `media/` チE��レクトリ:
+        -   `[ID]-[ファイル名].[拡張子]`: メチE��アファイルの本体です、E        -   `[ID]-[ファイル名].yaml`: 編雁E��能なメチE��アのメタチE�Eタです、E
+### 同期のルール
+
+- **投稿とタクソノミ:** `posts sync` を実行すると、まずローカルの `categories/` と `tags/` チE��レクトリ冁E��あるYAMLファイルの変更�E�名前やスラチE��の編雁E��がサーバ�Eにプッシュされます。その後、サーバ�Eから最新の投稿とタクソノミーの惁E��が取得され、ローカルのファイル (`.md`, `.yaml`) とチE�Eタベ�Eス (`cache.db`) が更新されます、E- **メチE��ア:** `media sync` を実行すると、まずローカルの `media/` チE��レクトリ冁E��あるYAMLファイルの変更�E�タイトル、代替チE��スト、キャプション、説明）がサーバ�Eにプッシュされます。その後、サーバ�EからメチE��アの惁E��とファイル本体がダウンロードされ、ローカルキャチE��ュが更新されます、E- ローカルで `posts/` チE��レクトリ冁E�E投稿ファイルを編雁E��てから `posts sync` を実行すると、変更がサーバ�Eにプッシュされます、E- サーバ�E側で投稿が変更された場合、`posts sync` を実行するとローカルのファイルが更新されます、E- ローカルとサーバ�Eの両方で同じ投稿が変更されてぁE��場合、コンフリクト（競合）が検�Eされ、安�Eのためそ�E同期はスキチE�Eされます。レポ�Eトに表示される案�Eに従って `resolve` コマンドで手動解決が忁E��です、E
+- **個別コマンドとキャチE��ュ同期:** `posts`, `categories`, `tags`, `media`の吁E��別コマンチE(`create`, `update`, `delete`など) は、サーバ�E上�EチE�Eタを直接変更しますが、ローカルキャチE��ュは更新**しません**。サーバ�E上で行った変更をローカルキャチE��ュに反映させるには、忁E�� `posts sync` また�E `media sync` を実行してください、E
+### ローカルで編雁E��能なファイル
+
+ユーザーが直接編雁E��る�Eは以下�Eファイルです、E
+- `categories/[ID]-[名前].yaml`: カチE��リの `name`, `slug`, `description` を変更できます、E  - **新規作�E:** こ�EチE��レクトリに新しいYAMLファイルを追加し！Eid`は`0`か未持E��）、`posts sync`を実行すると、サーバ�Eに新しいカチE��リが作�Eされます、E  - **削除:** こ�Eファイルを削除しても、サーバ�E上�EカチE��リは削除されません。削除は `categories delete <id>` コマンドを使用してください、E- `tags/[ID]-[名前].yaml`: タグの `name`, `slug`, `description` を変更できます、E  - **新規作�E:** `categories` と同様�E手頁E��新しいタグを作�Eできます、E  - **削除:** こ�Eファイルを削除しても、サーバ�E上�Eタグは削除されません。削除は `tags delete <id>` コマンドを使用してください、E- `media/[ID]-[ファイル名].yaml`: メチE��アの `title`, `alt_text`, `caption`, `description` を変更できます、E- `posts/[ID]-[slug]_content.md`: 投稿の本斁E��E- `posts/[ID]-[slug]_editable.yaml`: 投稿のメタチE�Eタ。このファイルを編雁E��ることで、以下�E頁E��を変更できます、E    - `title`, `slug`, `status`, `date`, `excerpt` など、E    - `editMode`: `markdown` また�E `html` を指定します。`_content.md` ファイルの冁E��をどちらとして扱ぁE��めE`posts sync` 時に決定します、E      - `posts sync` で初めて投稿をキャチE��ュする際、サーバ�Eの `_md_source` カスタムフィールド�E有無に応じて自動設定されます、E      - こ�E値めE`html` から `markdown` に変更すると、次囁E`posts sync` 時に `_content.md` の冁E��がMarkdownとして扱われます、E    - `categories` めE`tags` には、IDだけでなく、`categories/` めE`tags/` チE��レクトリ冁E��存在する名前めE��ラチE��で持E��できます、E    - **注愁E** ローカルで新しい投稿ファイルセチE��を作�Eして `posts sync` を実行しても、サーバ�Eに新規投稿として作�Eすることはできません。新規投稿は `posts create` コマンドを使用してください、E
+**注愁E** `_editable.yaml` から頁E���E�侁E `slug:` の行）を削除した場合、その頁E��は**更新対象から外れめE*だけで、サーバ�E上�E値が空になるわけではありません。値を空にしたぁE��合�E `slug: ''` のように明示皁E��空の値を設定してください、E
+## 出力形弁E`--format table|json|raw` で刁E��替え可能です。省略時�E `table`、E
+## ドキュメント表示
+`wpai docs` また�E `wpai --help` で、このREADMEファイルの冁E��が表示されます、E
+## トラブルシューチE��ング
+- 「No connections registered、E `wpai connections add` で接続を登録してください、E- `rest_forbidden_context` などの 401/403 エラー: ト�Eクンに忁E��な権限が無ぁE��また�E期限刁E��です。新しいト�Eクンで接続を再登録してください、E- `media upload` で「このファイルタイプをアチE�Eロードする権限がありません」エラー: WordPressのセキュリチE��プラグインめE��ーマ、�Eルチサイト設定などで、アチE�Eロード可能なファイルの種類が制限されてぁE��可能性があります、E- `posts sync` で「Cache path is not configured」エラー: `wpai connections update <name> --cache-path <PATH>` でキャチE��ュチE��レクトリを設定してください、E
+## 補完スクリプト
+```
+# PowerShell
+wpai completion --shell powershell | Out-String | Invoke-Expression
+
+# Bash
+wpai completion --shell bash > /etc/bash_completion.d/wpai
+
+# Zsh
+wpai completion --shell zsh > ~/.zfunc/_wpai
+```
+対応シェル: bash / zsh / PowerShell、E
+
