@@ -165,7 +165,7 @@ public class SyncService
             }
         }
 
-        // 2. Pull all media from server
+        // 2. Pull top-N media from server
         var allMedia = await _wpService.ListMediaAsync(perPage: syncLimit, page: 1, cancellationToken);
         foreach (var media in allMedia)
         {
@@ -182,6 +182,41 @@ public class SyncService
                 Console.Error.WriteLine($"Failed to sync media item {media.Id}: {ex.Message}");
                 report.MediaConflicts.Add(media.Id);
             }
+        }
+
+        // 3. For locally present media not included in top-N, if local metadata is unmodified
+        //    and server returns 404 (deleted), remove local cache.
+        try
+        {
+            var serverIds = new HashSet<int>(allMedia.Select(m => m.Id));
+
+            var localMediaMetas = _cacheService.ReadLocalMediaMetadata();
+            foreach (var (mediaId, metadata) in localMediaMetas)
+            {
+                if (serverIds.Contains(mediaId)) continue; // within top-N, handled above
+
+                var yamlContent = SerializeToYaml(metadata);
+                var currentHash = _cacheService.ComputeSha256Hash(yamlContent);
+                var previousHash = _cacheService.GetMediaMetadataHash(mediaId);
+
+                var isUnmodified = previousHash != null && previousHash == currentHash;
+                if (!isUnmodified) continue; // keep locally if edited
+
+                try
+                {
+                    // Probe server existence
+                    var _ = await _wpService.GetMediaAsync(mediaId, cancellationToken);
+                }
+                catch (WordPressApiException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+                {
+                    _cacheService.DeleteMediaFromCache(mediaId);
+                    report.DeletedMediaFromLocal.Add(mediaId);
+                }
+            }
+        }
+        catch
+        {
+            // Best-effort cleanup; ignore failures and continue.
         }
 
         return report;

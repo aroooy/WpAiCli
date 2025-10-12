@@ -103,15 +103,16 @@ public class Program
                         services.GetRequiredService<CacheService>()
                     );
                 case "categories":
-                    return await HandleCategoriesAsync(commandArgs, services.GetRequiredService<WordPressService>());
+                    return await HandleCategoriesAsync(commandArgs, services.GetRequiredService<WordPressService>(), services.GetRequiredService<CacheService>());
                 case "tags":
-                    return await HandleTagsAsync(commandArgs, services.GetRequiredService<WordPressService>());
+                    return await HandleTagsAsync(commandArgs, services.GetRequiredService<WordPressService>(), services.GetRequiredService<CacheService>());
                 case "media":
                     return await HandleMediaAsync(
                         commandArgs,
                         services.GetRequiredService<WordPressService>(),
                         services.GetRequiredService<SyncService>(),
-                        services.GetRequiredService<ConnectionProfile>()
+                        services.GetRequiredService<ConnectionProfile>(),
+                        services.GetRequiredService<CacheService>()
                         );
                 case "resolve":
                     return await HandleResolveAsync(commandArgs, services.GetRequiredService<SyncService>(), services.GetRequiredService<ConnectionProfile>());
@@ -459,7 +460,7 @@ public class Program
         Console.WriteLine("-------------------");
     }
 
-    static async Task<int> HandleCategoriesAsync(string[] args, WordPressService service)
+    static async Task<int> HandleCategoriesAsync(string[] args, WordPressService service, CacheService cacheService)
     {
         if (args.Length == 0)
         {
@@ -544,8 +545,20 @@ public class Program
                 }
 
                 var force = parsed.GetBool("force", defaultValue: true);
-                var response = await service.DeleteCategoryAsync(id.Value, force, ct).ConfigureAwait(false);
-                OutputFormatter.WriteDeleteResponse(response, format, Console.Out);
+                try
+                {
+                    var response = await service.DeleteCategoryAsync(id.Value, force, ct).ConfigureAwait(false);
+                    OutputFormatter.WriteDeleteResponse(response, format, Console.Out);
+                    if (response.Deleted)
+                    {
+                        cacheService.DeleteCategoryFromCache(id.Value);
+                    }
+                }
+                catch (WpAiCli.WordPress.WordPressApiException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+                {
+                    cacheService.DeleteCategoryFromCache(id.Value);
+                    OutputFormatter.WriteDeleteResponse(new WordPressDeleteResponse { Deleted = true }, format, Console.Out);
+                }
 
                 return (int)ExitCode.Success;
             }
@@ -555,7 +568,7 @@ public class Program
         }
     }
 
-    static async Task<int> HandleTagsAsync(string[] args, WordPressService service)
+    static async Task<int> HandleTagsAsync(string[] args, WordPressService service, CacheService cacheService)
     {
         if (args.Length == 0)
         {
@@ -621,8 +634,20 @@ public class Program
                 }
 
                 var force = parsed.GetBool("force", defaultValue: true);
-                var response = await service.DeleteTagAsync(id.Value, force, ct).ConfigureAwait(false);
-                OutputFormatter.WriteDeleteResponse(response, format, Console.Out);
+                try
+                {
+                    var response = await service.DeleteTagAsync(id.Value, force, ct).ConfigureAwait(false);
+                    OutputFormatter.WriteDeleteResponse(response, format, Console.Out);
+                    if (response.Deleted)
+                    {
+                        cacheService.DeleteTagFromCache(id.Value);
+                    }
+                }
+                catch (WpAiCli.WordPress.WordPressApiException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+                {
+                    cacheService.DeleteTagFromCache(id.Value);
+                    OutputFormatter.WriteDeleteResponse(new WordPressDeleteResponse { Deleted = true }, format, Console.Out);
+                }
 
                 return (int)ExitCode.Success;
             }
@@ -632,7 +657,7 @@ public class Program
         }
     }
 
-    static async Task<int> HandleMediaAsync(string[] args, WordPressService service, SyncService syncService, ConnectionProfile profile)
+    static async Task<int> HandleMediaAsync(string[] args, WordPressService service, SyncService syncService, ConnectionProfile profile, CacheService cacheService)
     {
         if (args.Length == 0)
         {
@@ -687,8 +712,20 @@ public class Program
                 }
 
                 var force = parsed.GetBool("force", defaultValue: true);
-                var response = await service.DeleteMediaAsync(id.Value, force, ct).ConfigureAwait(false);
-                OutputFormatter.WriteDeleteResponse(response, format, Console.Out);
+                try
+                {
+                    var response = await service.DeleteMediaAsync(id.Value, force, ct).ConfigureAwait(false);
+                    OutputFormatter.WriteDeleteResponse(response, format, Console.Out);
+                    if (response.Deleted)
+                    {
+                        cacheService.DeleteMediaFromCache(id.Value);
+                    }
+                }
+                catch (WpAiCli.WordPress.WordPressApiException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+                {
+                    cacheService.DeleteMediaFromCache(id.Value);
+                    OutputFormatter.WriteDeleteResponse(new WordPressDeleteResponse { Deleted = true }, format, Console.Out);
+                }
 
                 return (int)ExitCode.Success;
             }
