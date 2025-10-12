@@ -65,8 +65,8 @@ AI など機械連携では JSON モード (`--format json`) を推奨します�
   - `wpai posts get 123`
 - `create`: 新しい投稿を作成します。
   - `wpai posts create --title <TITLE> [--content <CONTENT> | --content-file <PATH>] [--status <STATUS>] [--edit-mode <markdown|html>] [--categories <IDs>] [--tags <IDs>] [--featured-media <ID>]`
-- `update <id>`: 既存の投稿を更新します。
-  - `wpai posts update 123 [--title <TITLE>] [--content <CONTENT> | --content-file <PATH>] [--status <STATUS>] [--edit-mode <markdown|html>] [--categories <IDs>] [--tags <IDs>] [--featured-media <ID>]`
+- `push <id>`: ローカルキャッシュの変更（本文、メタデータ）をサーバーに一括で反映（プッシュ）します。
+  - `wpai posts push 123`
 - `delete <id>`: 投稿を削除します。
   - `wpai posts delete 123 [--force]`
 - `revisions <id>`: 指定した投稿のリビジョン一覧を取得します。
@@ -79,8 +79,8 @@ AI など機械連携では JSON モード (`--format json`) を推奨します�
 - `get <id>`: 指定したIDのカテゴリを1件取得します。
 - `create`: 新しいカテゴリを作成します。
   - `wpai categories create --name <NAME> [--slug <SLUG>] [--description <DESC>]`
-- `update <id>`: 既存のカテゴリを更新します。
-  - `wpai categories update <ID> [--name <NAME>] [--slug <SLUG>] [--description <DESC>]`
+- `push <id>`: ローカルキャッシュ（YAMLファイル）の変更をサーバーに反映（プッシュ）します。
+  - `wpai categories push 45`
 - `delete <id>`: カテゴリを削除します。
 
 ### タグ (`tags`)
@@ -88,18 +88,19 @@ AI など機械連携では JSON モード (`--format json`) を推奨します�
 - `create`: 新しいタグを作成します。
   - `wpai tags create --name <NAME> [--slug <SLUG>] [--description <DESC>]`
 - `get <id>`: 指定したIDのタグを1件取得します。
-- `update <id>`: 既存のタグを更新します。
-  - `wpai tags update <ID> [--name <NAME>] [--slug <SLUG>] [--description <DESC>]`
+- `push <id>`: ローカルキャッシュ（YAMLファイル）の変更をサーバーに反映（プッシュ）します。
+  - `wpai tags push 67`
 - `delete <id>`: タグを削除します。
 
 ### メディア (`media`)
 - `sync`: ローカルキャッシュとサーバー上のメディアを同期します。
 - `list`: メディアライブラリの項目を一覧表示します。
   - `wpai media list [--per-page <NUM>] [--page <NUM>]`
-- `upload <file-path>`: ファイルをメディアライブラリにアップロードします。
-  - `wpai media upload <PATH> [--title <TITLE>] [--description <DESC>]`
-- `delete <id>`: メディアを削除します。
-  - `wpai media delete 123 [--force]`
+    - `upload <file-path>`: ファイルをメディアライブラリにアップロードします。
+      - `wpai media upload <PATH> [--title <TITLE>] [--description <DESC>]`
+    - `push <id>`: ローカルキャッシュ（YAMLファイル）のメタデータ変更（タイトル、代替テキスト等）をサーバーに反映（プッシュ）します。
+      - `wpai media push 89`
+    - `delete <id>`: メディアを削除します。  - `wpai media delete 123 [--force]`
 
 ### 競合の解決 (`resolve`)
 `posts sync` を実行した際に競合が検出された場合、このコマンドを使って手動で競合を解決します。
@@ -167,8 +168,12 @@ wpai connections update "MyBlog" --cache-path ./my-blog-cache
 - ローカルで `posts/` ディレクトリ内の投稿ファイルを編集してから `posts sync` を実行すると、変更がサーバーにプッシュされます。
 - サーバー側で投稿が変更された場合、`posts sync` を実行するとローカルのファイルが更新されます。
 - ローカルとサーバーの両方で同じ投稿が変更されていた場合、コンフリクト（競合）が検出され、安全のためその同期はスキップされます。レポートに表示される案内に従って `resolve` コマンドで手動解決が必要です。
+- **キャッシュの自動クリーンアップ:** `posts sync` や `media sync` を実行した際、同期対象の上限（`--sync-limit`）に含まれない古いキャッシュファイルが、サーバー上で既に削除されており（404 Not Found）、かつローカルでも変更されていない場合、そのローカルキャッシュファイルは自動的に削除されます。
 
-- **個別コマンドとキャッシュ同期:** `posts`, `categories`, `tags`, `media`の各個別コマンド (`create`, `update`, `delete`など) は、サーバー上のデータを直接変更しますが、ローカルキャッシュは更新**しません**。サーバー上で行った変更をローカルキャッシュに反映させるには、必ず `posts sync` または `media sync` を実行してください。
+- **コマンド実行とキャッシュの自動更新:**
+      - `create` (posts, categories, tags) や `upload` (media) を実行すると、成功と同時にローカルキャッシュが **自動的に作成されます**。これにより、作成後すぐにローカルで編集を開始し、`push` コマンドで変更を反映できます。
+      - `delete` (posts, categories, tags, media) を実行すると、サーバーでの削除成功時にローカルキャッシュも **自動的に削除されます**。サーバー上で対象が既に存在しない（404）場合も、ローカルキャッシュはクリーンアップされます。
+      - ローカルファイルの編集内容をサーバーに反映するには `push <id>` を、サーバー側の変更をローカルに取り込むには `sync` を使用します。
 
 ### ローカルで編集可能なファイル
 
