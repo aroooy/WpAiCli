@@ -248,6 +248,16 @@ public class Program
                 }
 
                 var post = await service.CreatePostAsync(request, ct).ConfigureAwait(false);
+                // Immediately materialize cache for the newly created post
+                try
+                {
+                    cacheService.SavePostToCache(post);
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"Warning: Failed to write cache for the new post (ID {post.Id}): {ex.Message}");
+                }
+
                 OutputFormatter.WritePost(post, format, Console.Out);
 
                 return (int)ExitCode.Success;
