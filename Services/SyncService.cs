@@ -51,6 +51,52 @@ public class SyncService
         _cacheService = cacheService;
     }
 
+    // Push a single post using local cache (content.md + editable.yaml)
+    public async Task<WordPressPostDetail> PushPostAsync(int id, ConnectionProfile profile, CancellationToken cancellationToken)
+    {
+        var localEditableMeta = _cacheService.ReadEditableMetadata(id)
+            ?? throw new InvalidOperationException($"Could not read local metadata for post {id}. Cannot push local changes.");
+        var localContent = _cacheService.ReadLocalContent(id);
+
+        var request = new WordPressUpdatePostRequest();
+
+        // Handle content based on edit mode
+        var editMode = localEditableMeta.EditMode ?? "html";
+        var conversion = profile.MarkdownConversion ?? "client";
+
+        if (editMode == "markdown")
+        {
+            request.Meta = new Dictionary<string, object> { { "_md_source", localContent } };
+            request.Content = conversion == "client" ? Markdown.ToHtml(localContent) : localContent;
+        }
+        else // html mode
+        {
+            request.Content = localContent;
+        }
+
+        // Apply all editable metadata fields
+        request.Title = localEditableMeta.Title;
+        request.Slug = localEditableMeta.Slug;
+        request.Status = localEditableMeta.Status;
+        request.Date = localEditableMeta.Date;
+        request.Excerpt = localEditableMeta.Excerpt;
+        request.FeaturedMedia = localEditableMeta.FeaturedMedia;
+        request.CommentStatus = localEditableMeta.CommentStatus;
+        request.PingStatus = localEditableMeta.PingStatus;
+
+        if (!TryResolveTaxonomyIds(localEditableMeta.Categories, _cacheService.FindCategoryId, out var categoryIds) ||
+            !TryResolveTaxonomyIds(localEditableMeta.Tags, _cacheService.FindTagId, out var tagIds))
+        {
+            throw new InvalidOperationException($"Failed to resolve taxonomy IDs for post {id}. Please check the category and tag names in the local file.");
+        }
+        request.Categories = categoryIds;
+        request.Tags = tagIds;
+
+        var updatedPost = await _wpService.UpdatePostAsync(id, request, cancellationToken);
+        _cacheService.SavePostToCache(updatedPost);
+        return updatedPost;
+    }
+
     public async Task<SyncReport> SynchronizePostsAsync(ConnectionProfile profile, int syncLimit, CancellationToken cancellationToken)
     {
         var report = new SyncReport();

@@ -32,7 +32,7 @@ AI など機械連携では JSON モーチE(`--format json`) を推奨します�
 - `list`: 投稿を一覧表示します、E  - `wpai posts list [--status <STATUS>] [--per-page <NUM>] [--page <NUM>]`
 - `get <id>`: 持E��したIDの投稿めE件取得します、E  - `wpai posts get 123`
 - `create`: 新しい投稿を作�Eします、E  - `wpai posts create --title <TITLE> [--content <CONTENT> | --content-file <PATH>] [--status <STATUS>] [--edit-mode <markdown|html>] [--categories <IDs>] [--tags <IDs>] [--featured-media <ID>]`
-- `update <id>`: 既存�E投稿を更新します、E  - `wpai posts update 123 [--title <TITLE>] [--content <CONTENT> | --content-file <PATH>] [--status <STATUS>] [--edit-mode <markdown|html>] [--categories <IDs>] [--tags <IDs>] [--featured-media <ID>]`
+- `update <id>`: 既存�E投稿を更新します、E  - `wpai posts push 123 [--title <TITLE>] [--content <CONTENT> | --content-file <PATH>] [--status <STATUS>] [--edit-mode <markdown|html>] [--categories <IDs>] [--tags <IDs>] [--featured-media <ID>]`
 - `delete <id>`: 投稿を削除します、E  - `wpai posts delete 123 [--force]`
 - `revisions <id>`: 持E��した投稿のリビジョン一覧を取得します、E  - `wpai posts revisions 123`
 - `revision <post-id> <revision-id>`: 特定�Eリビジョンの詳細を取得します、E  - `wpai posts revision 123 456`
@@ -112,4 +112,5 @@ wpai completion --shell bash > /etc/bash_completion.d/wpai
 wpai completion --shell zsh > ~/.zfunc/_wpai
 ```
 対応シェル: bash / zsh / PowerShell、E
+
 

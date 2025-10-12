@@ -150,7 +150,7 @@ public class Program
     {
         if (args.Length == 0)
         {
-            Console.Error.WriteLine("Specify posts subcommand (list|get|create|update|delete|revisions|revision).");
+            Console.Error.WriteLine("Specify posts subcommand (list|get|create|push|delete|revisions|revision).");
             return (int)ExitCode.InvalidArguments;
         }
 
@@ -263,7 +263,7 @@ public class Program
                 return (int)ExitCode.Success;
             }
 
-            case "update":
+            case "push":
             {
                 var id = ResolveId(parsed, defaultValue: parsed.Positionals.FirstOrDefault());
                 if (id is null)
@@ -272,54 +272,8 @@ public class Program
                     return (int)ExitCode.InvalidArguments;
                 }
 
-                var content = parsed.GetString("content");
-                var contentFile = ToFileInfo(parsed.GetString("content-file"));
-                var categories = parsed.GetIntArray("categories");
-                var tags = parsed.GetIntArray("tags");
-                var featured = parsed.GetInt("featured-media");
-                var editMode = parsed.GetString("edit-mode") ?? "html"; // Default to html for updates
-
-                if (editMode != "markdown" && editMode != "html")
-                {
-                    Console.Error.WriteLine("Invalid value for --edit-mode. Must be 'markdown' or 'html'.");
-                    return (int)ExitCode.InvalidArguments;
-                }
-
-                var rawContent = ContentLoader.ReadContent(content, contentFile);
-
-                var request = new WordPressUpdatePostRequest
-                {
-                    Title = parsed.GetString("title"),
-                    Status = parsed.GetString("status"),
-                    Categories = categories,
-                    Tags = tags,
-                    FeaturedMedia = featured
-                };
-
-                if (rawContent != null)
-                {
-                    var conversion = profile.MarkdownConversion ?? "client";
-                    if (editMode == "markdown")
-                    {
-                        request.Meta = new Dictionary<string, object> { { "_md_source", rawContent } };
-                        if (conversion == "client")
-                        {
-                            request.Content = Markdown.ToHtml(rawContent);
-                        }
-                        else // server conversion
-                        {
-                            request.Content = rawContent;
-                        }
-                    }
-                    else // html mode
-                    {
-                        request.Content = rawContent;
-                    }
-                }
-
-                var post = await service.UpdatePostAsync(id.Value, request, ct).ConfigureAwait(false);
-                OutputFormatter.WritePost(post, format, Console.Out);
-
+                var updated = await syncService.PushPostAsync(id.Value, profile, ct);
+                OutputFormatter.WritePost(updated, format, Console.Out);
                 return (int)ExitCode.Success;
             }
 
