@@ -728,18 +728,6 @@ public class CacheService
         var normalized = nameOrSlug.Trim();
         var allCategories = _db.Categories.ToList();
 
-        // --- Start Debugging Output ---
-        Console.Error.WriteLine($"--- DEBUG: FindCategoryId ---");
-        Console.Error.WriteLine($"Searching for term: '{normalized}'");
-        Console.Error.WriteLine($"Total categories in cache: {allCategories.Count}");
-        foreach (var cat in allCategories)
-        {
-            bool isMatch = string.Equals(cat.Name, normalized, StringComparison.InvariantCultureIgnoreCase);
-            Console.Error.WriteLine($"  - Comparing with: '{cat.Name}' (Slug: {cat.Slug}) | Match: {isMatch}");
-        }
-        Console.Error.WriteLine($"--- END DEBUG ---");
-        // --- End Debugging Output ---
-
         var category = allCategories.FirstOrDefault(c => 
             string.Equals(c.Name, normalized, StringComparison.InvariantCultureIgnoreCase) || 
             string.Equals(c.Slug, normalized, StringComparison.InvariantCultureIgnoreCase));
