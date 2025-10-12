@@ -1,106 +1,210 @@
 # WpAiCli Usage Guide
 
-## 讎りｦ・WpAiCli 縺ｯ WordPress REST API 縺ｨ騾｣謳ｺ縺吶ｋ縺溘ａ縺ｮ繧ｯ繝ｭ繧ｹ繝励Λ繝・ヨ繝輔か繝ｼ繝 CLI 縺ｧ縺吶よ兜遞ｿ縲√き繝・ざ繝ｪ縲√ち繧ｰ縲√Γ繝・ぅ繧｢縺ｮ邂｡逅・↓蜉縺医※縲∬､・焚繧ｵ繧､繝医・謗･邯壽ュ蝣ｱ繧貞ｮ牙・縺ｫ蛻・ｊ譖ｿ縺医↑縺後ｉ蛻ｩ逕ｨ縺ｧ縺阪∪縺吶・
-荳ｻ縺ｪ迚ｹ蠕ｴ:
-- Windows Credential Manager 縺ｾ縺溘・ macOS/Linux 縺ｮ Secret-Tool 縺ｫ Bearer 繝医・繧ｯ繝ｳ繧剃ｿ晏ｭ・- 謗･邯壹・繝ｭ繝輔ぃ繧､繝ｫ縺ｮ逋ｻ骭ｲ / 荳隕ｧ / 蜑企勁 / 譖ｴ譁ｰ繧・CLI 縺九ｉ螳溯｡・- 謚慕ｨｿ縲√き繝・ざ繝ｪ縲√ち繧ｰ縲√Γ繝・ぅ繧｢縺ｮ菴懈・縲∝叙蠕励∵峩譁ｰ縲∝炎髯､縺ｮ蜷・さ繝槭Φ繝峨ｒ繧ｵ繝昴・繝・- 謚慕ｨｿ縺ｮ繝ｭ繝ｼ繧ｫ繝ｫ繧ｭ繝｣繝・す繝･縺ｨ蜿梧婿蜷大酔譛溘↓蟇ｾ蠢・- 謚慕ｨｿ繝ｪ繝薙ず繝ｧ繝ｳ縺ｮ蜿門ｾ励↓繧ょｯｾ蠢・- 繝｡繝・ぅ繧｢・育判蜒上↑縺ｩ・峨・繧｢繝・・繝ｭ繝ｼ繝画ｩ溯・繧呈政霈・- `--format table|json|raw` 縺ｧ蜃ｺ蜉帛ｽ｢蠑上ｒ蛻・ｊ譖ｿ縺・
-## 繧ｰ繝ｭ繝ｼ繝舌Ν繧ｪ繝励す繝ｧ繝ｳ
-- `--connection <name>`: 迚ｹ螳壹・謗･邯壹・繝ｭ繝輔ぃ繧､繝ｫ繧呈欠螳壹＠縺ｦ繧ｳ繝槭Φ繝峨ｒ螳溯｡後＠縺ｾ縺吶・- `--version`, `-V`: 繝舌・繧ｸ繝ｧ繝ｳ諠・ｱ繧定｡ｨ遉ｺ縺励∪縺吶・- `--help`, `-h`: 繝倥Ν繝励ｒ陦ｨ遉ｺ縺励∪縺吶・
-## 蛻晄悄險ｭ螳・莉･荳九・謇矩・ｒ縺翫☆縺吶ａ縺励∪縺吶・
-### 1. 謗･邯壽ュ蝣ｱ繧堤匳骭ｲ
+## 概要
+WpAiCli は WordPress REST API と連携するためのクロスプラットフォーム CLI です。投稿、カテゴリ、タグ、メディアの管理に加えて、複数サイトの接続情報を安全に切り替えながら利用できます。
+
+主な特徴:
+- Windows Credential Manager または macOS/Linux の Secret-Tool に Bearer トークンを保存
+- 接続プロファイルの登録 / 一覧 / 削除 / 更新を CLI から実行
+- 投稿、カテゴリ、タグ、メディアの作成、取得、更新、削除の各コマンドをサポート
+- 投稿のローカルキャッシュと双方向同期に対応
+- 投稿リビジョンの取得にも対応
+- メディア（画像など）のアップロード機能を搭載
+- `--format table|json|raw` で出力形式を切り替え
+
+## グローバルオプション
+- `--connection <name>`: 特定の接続プロファイルを指定してコマンドを実行します。
+- `--version`, `-V`: バージョン情報を表示します。
+- `--help`, `-h`: ヘルプを表示します。
+
+## 初期設定
+以下の手順をおすすめします。
+
+### 1. 接続情報を登録
 ```
 wpai connections add --name "BlogName" --base-url "https://example.com/?rest_route=/wp/v2/" --token <BearerToken>
 ```
-- `--name`: 莉ｻ諢上・陦ｨ遉ｺ蜷・(謗･邯壼・繧頑崛縺域凾縺ｫ菴ｿ逕ｨ)
-- `--base-url`: WordPress REST API 縺ｮ繝吶・繧ｹ URL (`?rest_route=/wp/v2/` 蠖｢蠑上′縺翫☆縺吶ａ)
-- `--token`: WordPress 縺ｧ逋ｺ陦後＠縺・Bearer 繝医・繧ｯ繝ｳ縲０S縺ｮ雉・ｼ諠・ｱ繧ｹ繝医い縺ｫ螳牙・縺ｫ菫晏ｭ倥＆繧後∪縺吶・- `--cache-path <PATH>`: (莉ｻ諢・ 蜷梧悄讖溯・縺ｧ蛻ｩ逕ｨ縺吶ｋ繝ｭ繝ｼ繧ｫ繝ｫ繧ｭ繝｣繝・す繝･縺ｮ菫晏ｭ伜・繝・ぅ繝ｬ繧ｯ繝医Μ繧呈欠螳壹＠縺ｾ縺吶・- `--sync-limit <NUMBER>`: (莉ｻ諢・ 荳蠎ｦ縺ｮ蜷梧悄縺ｧ繝√ぉ繝・け縺吶ｋ譛螟ｧ謚慕ｨｿ謨ｰ繧呈欠螳壹＠縺ｾ縺・(繝・ヵ繧ｩ繝ｫ繝・ 30)縲・- `--markdown-conversion <client|server>`: (莉ｻ諢・ Markdown縺九ｉHTML縺ｸ縺ｮ螟画鋤繧偵←縺薙〒陦後≧縺九ｒ謖・ｮ壹＠縺ｾ縺・(繝・ヵ繧ｩ繝ｫ繝・ `client`)縲・  - `client`: CLI繝・・繝ｫ蛛ｴ縺ｧ螟画鋤縺励∪縺吶・  - `server`: 繧ｵ繝ｼ繝舌・蛛ｴ縺ｮ繝励Λ繧ｰ繧､繝ｳ(Jetpack縺ｪ縺ｩ)縺ｧ縺ｮ螟画鋤繧呈悄蠕・＠縲｀arkdown蜴滓枚繧偵◎縺ｮ縺ｾ縺ｾ騾∽ｿ｡縺励∪縺吶・
-### 2. 謗･邯壹・遒ｺ隱・```
+- `--name`: 任意の表示名 (接続切り替え時に使用)
+- `--base-url`: WordPress REST API のベース URL (`?rest_route=/wp/v2/` 形式がおすすめ)
+- `--token`: WordPress で発行した Bearer トークン。OSの資格情報ストアに安全に保存されます。
+- `--cache-path <PATH>`: (任意) 同期機能で利用するローカルキャッシュの保存先ディレクトリを指定します。
+- `--sync-limit <NUMBER>`: (任意) 一度の同期でチェックする最大投稿数を指定します (デフォルト: 30)。
+- `--markdown-conversion <client|server>`: (任意) MarkdownからHTMLへの変換をどこで行うかを指定します (デフォルト: `client`)。
+  - `client`: CLIツール側で変換します。
+  - `server`: サーバー側のプラグイン(Jetpackなど)での変換を期待し、Markdown原文をそのまま送信します。
+
+### 2. 接続の確認
+```
 wpai connections list
 ```
-逋ｻ骭ｲ貂医∩繝励Ο繝輔ぃ繧､繝ｫ縺檎分蜿ｷ莉倥″縺ｧ陦ｨ遉ｺ縺輔ｌ縲～*` 縺梧怙蠕後↓蛻ｩ逕ｨ縺励◆謗･邯壹ｒ遉ｺ縺励∪縺吶・
-### 3. 謚慕ｨｿ荳隕ｧ繧貞叙蠕・```
+登録済みプロファイルが番号付きで表示され、`*` が最後に利用した接続を示します。
+
+### 3. 投稿一覧を取得
+```
 wpai posts list --status publish --format table
 ```
-`--connection <name>` 繧剃ｻ倥￠繧九→迚ｹ螳壹・謗･邯壹ｒ逶ｴ謗･謖・ｮ壹〒縺阪∪縺吶ら怐逡･譎ゅ・譛蠕後↓菴ｿ逕ｨ縺励◆謗･邯壹′蛻ｩ逕ｨ縺輔ｌ縺ｾ縺吶・
-## 繧ｳ繝槭Φ繝我ｸ隕ｧ
-AI 縺ｪ縺ｩ讖滓｢ｰ騾｣謳ｺ縺ｧ縺ｯ JSON 繝｢繝ｼ繝・(`--format json`) 繧呈耳螂ｨ縺励∪縺吶ゅユ繧ｭ繧ｹ繝亥・蜉帙ｈ繧翫ｂ繧ｨ繝ｳ繧ｳ繝ｼ繝・ぅ繝ｳ繧ｰ・剰ｧ｣譫宣擇縺ｧ謇ｱ縺・ｄ縺吶￥縲∵枚蟄怜喧縺代ｂ驕ｿ縺代ｉ繧後∪縺吶・
-### 謗･邯夂ｮ｡逅・(`connections`)
-- `list`: 逋ｻ骭ｲ貂医∩謗･邯壹・荳隕ｧ繧定｡ｨ遉ｺ縺励∪縺吶・- `add`: 譁ｰ縺励＞謗･邯壹ｒ逋ｻ骭ｲ縺励∪縺吶・  - `wpai connections add --name <蜷咲ｧｰ> --base-url <URL> --token <Bearer> [--cache-path <PATH>] [--sync-limit <NUMBER>] [--markdown-conversion <client|server>]`
-- `update <name>`: 譌｢蟄倥・謗･邯壽ュ蝣ｱ繧呈峩譁ｰ縺励∪縺吶・  - `wpai connections update "BlogName" --cache-path ./new-cache --sync-limit 50 --markdown-conversion server`
-- `remove`: 蟇ｾ隧ｱ蠖｢蠑上〒譌｢蟄倥・謗･邯壹ｒ蜑企勁縺励∪縺吶・
-### 謚慕ｨｿ (`posts`)
-- `sync`: 繝ｭ繝ｼ繧ｫ繝ｫ繧ｭ繝｣繝・す繝･縺ｨ繧ｵ繝ｼ繝舌・荳翫・謚慕ｨｿ繧貞曙譁ｹ蜷代〒蜷梧悄縺励∪縺吶・  - `wpai posts sync`
-- `list`: 謚慕ｨｿ繧剃ｸ隕ｧ陦ｨ遉ｺ縺励∪縺吶・  - `wpai posts list [--status <STATUS>] [--per-page <NUM>] [--page <NUM>]`
-- `get <id>`: 謖・ｮ壹＠縺櫑D縺ｮ謚慕ｨｿ繧・莉ｶ蜿門ｾ励＠縺ｾ縺吶・  - `wpai posts get 123`
-- `create`: 譁ｰ縺励＞謚慕ｨｿ繧剃ｽ懈・縺励∪縺吶・  - `wpai posts create --title <TITLE> [--content <CONTENT> | --content-file <PATH>] [--status <STATUS>] [--edit-mode <markdown|html>] [--categories <IDs>] [--tags <IDs>] [--featured-media <ID>]`
-- `update <id>`: 譌｢蟄倥・謚慕ｨｿ繧呈峩譁ｰ縺励∪縺吶・  - `wpai posts update 123 [--title <TITLE>] [--content <CONTENT> | --content-file <PATH>] [--status <STATUS>] [--edit-mode <markdown|html>] [--categories <IDs>] [--tags <IDs>] [--featured-media <ID>]`
-- `delete <id>`: 謚慕ｨｿ繧貞炎髯､縺励∪縺吶・  - `wpai posts delete 123 [--force]`
-- `revisions <id>`: 謖・ｮ壹＠縺滓兜遞ｿ縺ｮ繝ｪ繝薙ず繝ｧ繝ｳ荳隕ｧ繧貞叙蠕励＠縺ｾ縺吶・  - `wpai posts revisions 123`
-- `revision <post-id> <revision-id>`: 迚ｹ螳壹・繝ｪ繝薙ず繝ｧ繝ｳ縺ｮ隧ｳ邏ｰ繧貞叙蠕励＠縺ｾ縺吶・  - `wpai posts revision 123 456`
+`--connection <name>` を付けると特定の接続を直接指定できます。省略時は最後に使用した接続が利用されます。
 
-### 繧ｫ繝・ざ繝ｪ (`categories`)
-- `list`: 繧ｫ繝・ざ繝ｪ繧剃ｸ隕ｧ陦ｨ遉ｺ縺励∪縺吶・- `get <id>`: 謖・ｮ壹＠縺櫑D縺ｮ繧ｫ繝・ざ繝ｪ繧・莉ｶ蜿門ｾ励＠縺ｾ縺吶・- `create`: 譁ｰ縺励＞繧ｫ繝・ざ繝ｪ繧剃ｽ懈・縺励∪縺吶・  - `wpai categories create --name <NAME> [--slug <SLUG>] [--description <DESC>]`
-- `update <id>`: 譌｢蟄倥・繧ｫ繝・ざ繝ｪ繧呈峩譁ｰ縺励∪縺吶・  - `wpai categories update <ID> [--name <NAME>] [--slug <SLUG>] [--description <DESC>]`
-- `delete <id>`: 繧ｫ繝・ざ繝ｪ繧貞炎髯､縺励∪縺吶・
-### 繧ｿ繧ｰ (`tags`)
-- `list`: 繧ｿ繧ｰ繧剃ｸ隕ｧ陦ｨ遉ｺ縺励∪縺吶・- `create`: 譁ｰ縺励＞繧ｿ繧ｰ繧剃ｽ懈・縺励∪縺吶・  - `wpai tags create --name <NAME> [--slug <SLUG>] [--description <DESC>]`
-- `get <id>`: 謖・ｮ壹＠縺櫑D縺ｮ繧ｿ繧ｰ繧・莉ｶ蜿門ｾ励＠縺ｾ縺吶・- `update <id>`: 譌｢蟄倥・繧ｿ繧ｰ繧呈峩譁ｰ縺励∪縺吶・  - `wpai tags update <ID> [--name <NAME>] [--slug <SLUG>] [--description <DESC>]`
-- `delete <id>`: 繧ｿ繧ｰ繧貞炎髯､縺励∪縺吶・
-### 繝｡繝・ぅ繧｢ (`media`)
-- `sync`: 繝ｭ繝ｼ繧ｫ繝ｫ繧ｭ繝｣繝・す繝･縺ｨ繧ｵ繝ｼ繝舌・荳翫・繝｡繝・ぅ繧｢繧貞酔譛溘＠縺ｾ縺吶・- `list`: 繝｡繝・ぅ繧｢繝ｩ繧､繝悶Λ繝ｪ縺ｮ鬆・岼繧剃ｸ隕ｧ陦ｨ遉ｺ縺励∪縺吶・  - `wpai media list [--per-page <NUM>] [--page <NUM>]`
-- `upload <file-path>`: 繝輔ぃ繧､繝ｫ繧偵Γ繝・ぅ繧｢繝ｩ繧､繝悶Λ繝ｪ縺ｫ繧｢繝・・繝ｭ繝ｼ繝峨＠縺ｾ縺吶・  - `wpai media upload <PATH> [--title <TITLE>] [--description <DESC>]`
-- `delete <id>`: 繝｡繝・ぅ繧｢繧貞炎髯､縺励∪縺吶・  - `wpai media delete 123 [--force]`
+## コマンド一覧
+AI など機械連携では JSON モード (`--format json`) を推奨します。テキスト出力よりもエンコーディング／解析面で扱いやすく、文字化けも避けられます。
 
-### 遶ｶ蜷医・隗｣豎ｺ (`resolve`)
-`posts sync` 繧貞ｮ溯｡後＠縺滄圀縺ｫ遶ｶ蜷医′讀懷・縺輔ｌ縺溷ｴ蜷医√％縺ｮ繧ｳ繝槭Φ繝峨ｒ菴ｿ縺｣縺ｦ謇句虚縺ｧ遶ｶ蜷医ｒ隗｣豎ｺ縺励∪縺吶・
-- `resolve <type> <id> --strategy <strategy>`: 遶ｶ蜷医ｒ隗｣豎ｺ縺励∪縺吶・  - `<type>`: 遶ｶ蜷医＠縺溘さ繝ｳ繝・Φ繝・・遞ｮ鬘・(`post`, `category`, `tag`)縲・  - `<id>`: 遶ｶ蜷医＠縺溘い繧､繝・Β縺ｮID縲・  - `--strategy <strategy>`: 蠢・医ゆｻ･荳九・縺・★繧後°縺ｮ隗｣豎ｺ謌ｦ逡･繧呈欠螳壹＠縺ｾ縺吶・    - `local-wins`: 繝ｭ繝ｼ繧ｫ繝ｫ縺ｮ螟画峩繧呈ｭ｣縺ｨ縺励√し繝ｼ繝舌・縺ｮ迥ｶ諷九ｒ繝ｭ繝ｼ繧ｫ繝ｫ縺ｮ迥ｶ諷九〒荳頑嶌縺阪＠縺ｾ縺吶・    - `server-wins`: 繧ｵ繝ｼ繝舌・縺ｮ螟画峩繧呈ｭ｣縺ｨ縺励√Ο繝ｼ繧ｫ繝ｫ縺ｮ迥ｶ諷九ｒ繧ｵ繝ｼ繝舌・縺ｮ迥ｶ諷九〒荳頑嶌縺阪＠縺ｾ縺吶・
-  **螳溯｡御ｾ・**
+### 接続管理 (`connections`)
+- `list`: 登録済み接続の一覧を表示します。
+- `add`: 新しい接続を登録します。
+  - `wpai connections add --name <名称> --base-url <URL> --token <Bearer> [--cache-path <PATH>] [--sync-limit <NUMBER>] [--markdown-conversion <client|server>]`
+- `update <name>`: 既存の接続情報を更新します。
+  - `wpai connections update "BlogName" --cache-path ./new-cache --sync-limit 50 --markdown-conversion server`
+- `remove`: 対話形式で既存の接続を削除します。
+
+### 投稿 (`posts`)
+- `sync`: ローカルキャッシュとサーバー上の投稿を双方向で同期します。
+  - `wpai posts sync`
+- `list`: 投稿を一覧表示します。
+  - `wpai posts list [--status <STATUS>] [--per-page <NUM>] [--page <NUM>]`
+- `get <id>`: 指定したIDの投稿を1件取得します。
+  - `wpai posts get 123`
+- `create`: 新しい投稿を作成します。
+  - `wpai posts create --title <TITLE> [--content <CONTENT> | --content-file <PATH>] [--status <STATUS>] [--edit-mode <markdown|html>] [--categories <IDs>] [--tags <IDs>] [--featured-media <ID>]`
+- `update <id>`: 既存の投稿を更新します。
+  - `wpai posts update 123 [--title <TITLE>] [--content <CONTENT> | --content-file <PATH>] [--status <STATUS>] [--edit-mode <markdown|html>] [--categories <IDs>] [--tags <IDs>] [--featured-media <ID>]`
+- `delete <id>`: 投稿を削除します。
+  - `wpai posts delete 123 [--force]`
+- `revisions <id>`: 指定した投稿のリビジョン一覧を取得します。
+  - `wpai posts revisions 123`
+- `revision <post-id> <revision-id>`: 特定のリビジョンの詳細を取得します。
+  - `wpai posts revision 123 456`
+
+### カテゴリ (`categories`)
+- `list`: カテゴリを一覧表示します。
+- `get <id>`: 指定したIDのカテゴリを1件取得します。
+- `create`: 新しいカテゴリを作成します。
+  - `wpai categories create --name <NAME> [--slug <SLUG>] [--description <DESC>]`
+- `update <id>`: 既存のカテゴリを更新します。
+  - `wpai categories update <ID> [--name <NAME>] [--slug <SLUG>] [--description <DESC>]`
+- `delete <id>`: カテゴリを削除します。
+
+### タグ (`tags`)
+- `list`: タグを一覧表示します。
+- `create`: 新しいタグを作成します。
+  - `wpai tags create --name <NAME> [--slug <SLUG>] [--description <DESC>]`
+- `get <id>`: 指定したIDのタグを1件取得します。
+- `update <id>`: 既存のタグを更新します。
+  - `wpai tags update <ID> [--name <NAME>] [--slug <SLUG>] [--description <DESC>]`
+- `delete <id>`: タグを削除します。
+
+### メディア (`media`)
+- `sync`: ローカルキャッシュとサーバー上のメディアを同期します。
+- `list`: メディアライブラリの項目を一覧表示します。
+  - `wpai media list [--per-page <NUM>] [--page <NUM>]`
+- `upload <file-path>`: ファイルをメディアライブラリにアップロードします。
+  - `wpai media upload <PATH> [--title <TITLE>] [--description <DESC>]`
+- `delete <id>`: メディアを削除します。
+  - `wpai media delete 123 [--force]`
+
+### 競合の解決 (`resolve`)
+`posts sync` を実行した際に競合が検出された場合、このコマンドを使って手動で競合を解決します。
+
+- `resolve <type> <id> --strategy <strategy>`: 競合を解決します。
+  - `<type>`: 競合したコンテンツの種類 (`post`, `category`, `tag`)。
+  - `<id>`: 競合したアイテムのID。
+  - `--strategy <strategy>`: 必須。以下のいずれかの解決戦略を指定します。
+    - `local-wins`: ローカルの変更を正とし、サーバーの状態をローカルの状態で上書きします。
+    - `server-wins`: サーバーの変更を正とし、ローカルの状態をサーバーの状態で上書きします。
+
+  **実行例:**
   ```bash
-  # 謚慕ｨｿID 123 縺ｮ遶ｶ蜷医ｒ縲√Ο繝ｼ繧ｫ繝ｫ縺ｮ螟画峩繧貞━蜈医＠縺ｦ隗｣豎ｺ
+  # 投稿ID 123 の競合を、ローカルの変更を優先して解決
   wpai resolve post 123 --strategy local-wins
 
-  # 繧ｫ繝・ざ繝ｪID 45 縺ｮ遶ｶ蜷医ｒ縲√し繝ｼ繝舌・縺ｮ螟画峩繧貞━蜈医＠縺ｦ隗｣豎ｺ
+  # カテゴリID 45 の競合を、サーバーの変更を優先して解決
   wpai resolve category 45 --strategy server-wins
   ```
 
-  **豕ｨ諢・ Markdown縺ｮ `server` 螟画鋤繝｢繝ｼ繝峨↓縺翫￠繧狗ｫｶ蜷域､懷・**
+  **注意: Markdownの `server` 変換モードにおける競合検出**
 
-  Markdown縺ｮ螟画鋤險ｭ螳・(`--markdown-conversion`) 繧・`server` 縺ｫ險ｭ螳壹＠縺ｦ縺・ｋ蝣ｴ蜷医∝酔譛溘・遶ｶ蜷域､懷・縺ｯ繧ｵ繝ｼ繝舌・荳翫・ `_md_source` 縺ｨ縺・≧迚ｹ蛻･縺ｪ繝｡繧ｿ繝輔ぅ繝ｼ繝ｫ繝峨∈縺ｮ螟画峩縺ｫ萓晏ｭ倥＠縺ｾ縺吶・
-  縺薙ｌ縺ｯ縲仝ordPress縺ｮ邂｡逅・判髱｢縺ｧ騾壼ｸｸ縺ｮ繝薙ず繝･繧｢繝ｫ繧ｨ繝・ぅ繧ｿ繧・さ繝ｼ繝峨お繝・ぅ繧ｿ繧剃ｽｿ縺｣縺ｦ謚慕ｨｿ繧堤ｷｨ髮・＠縺ｦ繧ゅ√％縺ｮ `_md_source` 繝輔ぅ繝ｼ繝ｫ繝峨・譖ｴ譁ｰ縺輔ｌ縺ｪ縺・％縺ｨ繧呈э蜻ｳ縺励∪縺吶ゅ◎縺ｮ邨先棡縲・*邂｡逅・判髱｢縺九ｉ縺ｮ邱ｨ髮・・繧ｵ繝ｼ繝舌・蛛ｴ縺ｮ螟画峩縺ｨ縺励※讀懷・縺輔ｌ縺壹∫ｫｶ蜷医′逋ｺ逕溘＠縺ｾ縺帙ｓ縲・* 繝ｭ繝ｼ繧ｫ繝ｫ縺ｮ螟画峩縺後し繝ｼ繝舌・縺ｮ螟画峩繧剃ｸ頑嶌縺阪＠縺ｦ縺励∪縺・∪縺吶・
-  `server` 繝｢繝ｼ繝峨〒豁｣縺励￥遶ｶ蜷医ｒ讀懷・縺輔○繧九↓縺ｯ縲√し繝ｼ繝舌・蛛ｴ縺ｧ繧３EST API邨檎罰縺ｧ `_md_source` 繝｡繧ｿ繝輔ぅ繝ｼ繝ｫ繝峨ｒ譖ｴ譁ｰ縺吶ｋ蠢・ｦ√′縺ゅｊ縺ｾ縺吶・
-## 蜷梧悄讖溯・
+  Markdownの変換設定 (`--markdown-conversion`) を `server` に設定している場合、同期の競合検出はサーバー上の `_md_source` という特別なメタフィールドへの変更に依存します。
 
-`posts sync` 縺翫ｈ縺ｳ `media sync` 繧ｳ繝槭Φ繝峨・縲√Ο繝ｼ繧ｫ繝ｫ縺ｮ繝輔ぃ繧､繝ｫ繧ｷ繧ｹ繝・Β縺ｨWordPress繧ｵ繝ｼ繝舌・荳翫・繧ｳ繝ｳ繝・Φ繝・ｼ域兜遞ｿ縲√Γ繝・ぅ繧｢縲√き繝・ざ繝ｪ縲√ち繧ｰ・峨ｒ蜷梧悄縺吶ｋ讖溯・縺ｧ縺吶・
-### 險ｭ螳・
-蜷梧悄繧呈怏蜉ｹ縺ｫ縺吶ｋ縺ｫ縺ｯ縲√∪縺壽磁邯壽ュ蝣ｱ縺ｫ繧ｭ繝｣繝・す繝･繝・ぅ繝ｬ繧ｯ繝医Μ縺ｮ繝代せ繧定ｨｭ螳壹☆繧句ｿ・ｦ√′縺ゅｊ縺ｾ縺吶・```
-# 譁ｰ隕乗磁邯壽凾縺ｫ險ｭ螳・wpai connections add --name "MyBlog" --base-url <URL> --token <TOKEN> --cache-path ./my-blog-cache
+  これは、WordPressの管理画面で通常のビジュアルエディタやコードエディタを使って投稿を編集しても、この `_md_source` フィールドは更新されないことを意味します。その結果、**管理画面からの編集はサーバー側の変更として検出されず、競合が発生しません。** ローカルの変更がサーバーの変更を上書きしてしまいます。
 
-# 譌｢蟄倥・謗･邯壹ｒ譖ｴ譁ｰ
+  `server` モードで正しく競合を検出させるには、サーバー側でもREST API経由で `_md_source` メタフィールドを更新する必要があります。
+
+## 同期機能
+
+`posts sync` および `media sync` コマンドは、ローカルのファイルシステムとWordPressサーバー上のコンテンツ（投稿、メディア、カテゴリ、タグ）を同期する機能です。
+
+### 設定
+
+同期を有効にするには、まず接続情報にキャッシュディレクトリのパスを設定する必要があります。
+```
+# 新規接続時に設定
+wpai connections add --name "MyBlog" --base-url <URL> --token <TOKEN> --cache-path ./my-blog-cache
+
+# 既存の接続を更新
 wpai connections update "MyBlog" --cache-path ./my-blog-cache
 ```
 
-### 蜷梧悄縺ｮ螳溯｡後→繧ｭ繝｣繝・す繝･繝・ぅ繝ｬ繧ｯ繝医Μ讒矩
+### 同期の実行とキャッシュディレクトリ構造
 
-險ｭ螳壼ｾ後～posts sync` 縺ｾ縺溘・ `media sync` 繧貞ｮ溯｡後☆繧九→蜷梧悄縺碁幕蟋九＆繧後∪縺吶ゅく繝｣繝・す繝･繝・ぅ繝ｬ繧ｯ繝医Μ縺ｮ蝓ｺ譛ｬ逧・↑讒矩縺ｯ莉･荳九・騾壹ｊ縺ｧ縺吶・
-1.  **謗･邯壹＃縺ｨ縺ｮ繧ｵ繝悶ョ繧｣繝ｬ繧ｯ繝医Μ**: `--cache-path` 縺ｧ謖・ｮ壹＠縺溘Ν繝ｼ繝医ョ繧｣繝ｬ繧ｯ繝医Μ蜀・↓縲∵磁邯壹・繝ｭ繝輔ぃ繧､繝ｫ蜷阪・繧ｵ繝悶ョ繧｣繝ｬ繧ｯ繝医Μ縺御ｽ懈・縺輔ｌ縺ｾ縺・(萓・ `wp-cache/my-blog/`)縲ゅ％繧後↓繧医ｊ縲∬､・焚縺ｮ繝悶Ο繧ｰ縺ｮ繧ｭ繝｣繝・す繝･縺御ｺ偵＞縺ｫ蟷ｲ貂峨☆繧九％縺ｨ縺ｪ縺冗ｮ｡逅・＆繧後∪縺吶・2.  **繧ｭ繝｣繝・す繝･繝輔ぃ繧､繝ｫ縺ｮ逕滓・**: 蜷・磁邯壹・繧ｵ繝悶ョ繧｣繝ｬ繧ｯ繝医Μ蜀・↓縲∽ｻ･荳九・繝輔ぃ繧､繝ｫ縺ｨ繝・ぅ繝ｬ繧ｯ繝医Μ縺檎函謌舌＆繧後∪縺吶・
-    -   `wp-ai-cache.db`: 繧ｳ繝ｳ繝・Φ繝・・繝｡繧ｿ諠・ｱ繧堤ｮ｡逅・☆繧鬼QLite繝・・繧ｿ繝吶・繧ｹ繝輔ぃ繧､繝ｫ縺ｧ縺吶ゅ％縺ｮ繝輔ぃ繧､繝ｫ縺ｯ繧｢繝励Μ繧ｱ繝ｼ繧ｷ繝ｧ繝ｳ縺悟・驛ｨ逧・↓菴ｿ逕ｨ縺励∪縺吶・*繝ｦ繝ｼ繧ｶ繝ｼ縺檎峩謗･邱ｨ髮・＠縺ｪ縺・〒縺上□縺輔＞縲・*
-    -   `categories/` 繝・ぅ繝ｬ繧ｯ繝医Μ: **邱ｨ髮・庄閭ｽ縺ｪ**繧ｫ繝・ざ繝ｪ縺ｮYAML繝輔ぃ繧､繝ｫ縺悟句挨縺ｫ菫晏ｭ倥＆繧後∪縺・(`[ID]-[蜷榊燕].yaml`)縲・    -   `tags/` 繝・ぅ繝ｬ繧ｯ繝医Μ: **邱ｨ髮・庄閭ｽ縺ｪ**繧ｿ繧ｰ縺ｮYAML繝輔ぃ繧､繝ｫ縺悟句挨縺ｫ菫晏ｭ倥＆繧後∪縺・(`[ID]-[蜷榊燕].yaml`)縲・    -   `posts/` 繝・ぅ繝ｬ繧ｯ繝医Μ:
-        -   `[ID]-[slug]_content.md`: 邱ｨ髮・庄閭ｽ縺ｪ謚慕ｨｿ縺ｮ譛ｬ譁・〒縺吶・        -   `[ID]-[slug]_editable.yaml`: 邱ｨ髮・庄閭ｽ縺ｪ謚慕ｨｿ縺ｮ繝｡繧ｿ繝・・繧ｿ縺ｧ縺吶・    -   `media/` 繝・ぅ繝ｬ繧ｯ繝医Μ:
-        -   `[ID]-[繝輔ぃ繧､繝ｫ蜷江.[諡｡蠑ｵ蟄疹`: 繝｡繝・ぅ繧｢繝輔ぃ繧､繝ｫ縺ｮ譛ｬ菴薙〒縺吶・        -   `[ID]-[繝輔ぃ繧､繝ｫ蜷江.yaml`: 邱ｨ髮・庄閭ｽ縺ｪ繝｡繝・ぅ繧｢縺ｮ繝｡繧ｿ繝・・繧ｿ縺ｧ縺吶・
-### 蜷梧悄縺ｮ繝ｫ繝ｼ繝ｫ
+設定後、`posts sync` または `media sync` を実行すると同期が開始されます。キャッシュディレクトリの基本的な構造は以下の通りです。
 
-- **謚慕ｨｿ縺ｨ繧ｿ繧ｯ繧ｽ繝弱Α:** `posts sync` 繧貞ｮ溯｡後☆繧九→縲√∪縺壹Ο繝ｼ繧ｫ繝ｫ縺ｮ `categories/` 縺ｨ `tags/` 繝・ぅ繝ｬ繧ｯ繝医Μ蜀・↓縺ゅｋYAML繝輔ぃ繧､繝ｫ縺ｮ螟画峩・亥錐蜑阪ｄ繧ｹ繝ｩ繝・げ縺ｮ邱ｨ髮・ｼ峨′繧ｵ繝ｼ繝舌・縺ｫ繝励ャ繧ｷ繝･縺輔ｌ縺ｾ縺吶ゅ◎縺ｮ蠕後√し繝ｼ繝舌・縺九ｉ譛譁ｰ縺ｮ謚慕ｨｿ縺ｨ繧ｿ繧ｯ繧ｽ繝弱Α繝ｼ縺ｮ諠・ｱ縺悟叙蠕励＆繧後√Ο繝ｼ繧ｫ繝ｫ縺ｮ繝輔ぃ繧､繝ｫ (`.md`, `.yaml`) 縺ｨ繝・・繧ｿ繝吶・繧ｹ (`cache.db`) 縺梧峩譁ｰ縺輔ｌ縺ｾ縺吶・- **繝｡繝・ぅ繧｢:** `media sync` 繧貞ｮ溯｡後☆繧九→縲√∪縺壹Ο繝ｼ繧ｫ繝ｫ縺ｮ `media/` 繝・ぅ繝ｬ繧ｯ繝医Μ蜀・↓縺ゅｋYAML繝輔ぃ繧､繝ｫ縺ｮ螟画峩・医ち繧､繝医Ν縲∽ｻ｣譖ｿ繝・く繧ｹ繝医√く繝｣繝励す繝ｧ繝ｳ縲∬ｪｬ譏趣ｼ峨′繧ｵ繝ｼ繝舌・縺ｫ繝励ャ繧ｷ繝･縺輔ｌ縺ｾ縺吶ゅ◎縺ｮ蠕後√し繝ｼ繝舌・縺九ｉ繝｡繝・ぅ繧｢縺ｮ諠・ｱ縺ｨ繝輔ぃ繧､繝ｫ譛ｬ菴薙′繝繧ｦ繝ｳ繝ｭ繝ｼ繝峨＆繧後√Ο繝ｼ繧ｫ繝ｫ繧ｭ繝｣繝・す繝･縺梧峩譁ｰ縺輔ｌ縺ｾ縺吶・- 繝ｭ繝ｼ繧ｫ繝ｫ縺ｧ `posts/` 繝・ぅ繝ｬ繧ｯ繝医Μ蜀・・謚慕ｨｿ繝輔ぃ繧､繝ｫ繧堤ｷｨ髮・＠縺ｦ縺九ｉ `posts sync` 繧貞ｮ溯｡後☆繧九→縲∝､画峩縺後し繝ｼ繝舌・縺ｫ繝励ャ繧ｷ繝･縺輔ｌ縺ｾ縺吶・- 繧ｵ繝ｼ繝舌・蛛ｴ縺ｧ謚慕ｨｿ縺悟､画峩縺輔ｌ縺溷ｴ蜷医～posts sync` 繧貞ｮ溯｡後☆繧九→繝ｭ繝ｼ繧ｫ繝ｫ縺ｮ繝輔ぃ繧､繝ｫ縺梧峩譁ｰ縺輔ｌ縺ｾ縺吶・- 繝ｭ繝ｼ繧ｫ繝ｫ縺ｨ繧ｵ繝ｼ繝舌・縺ｮ荳｡譁ｹ縺ｧ蜷後§謚慕ｨｿ縺悟､画峩縺輔ｌ縺ｦ縺・◆蝣ｴ蜷医√さ繝ｳ繝輔Μ繧ｯ繝茨ｼ育ｫｶ蜷茨ｼ峨′讀懷・縺輔ｌ縲∝ｮ牙・縺ｮ縺溘ａ縺昴・蜷梧悄縺ｯ繧ｹ繧ｭ繝・・縺輔ｌ縺ｾ縺吶ゅΞ繝昴・繝医↓陦ｨ遉ｺ縺輔ｌ繧区｡亥・縺ｫ蠕薙▲縺ｦ `resolve` 繧ｳ繝槭Φ繝峨〒謇句虚隗｣豎ｺ縺悟ｿ・ｦ√〒縺吶・
-- **蛟句挨繧ｳ繝槭Φ繝峨→繧ｭ繝｣繝・す繝･蜷梧悄:** `posts`, `categories`, `tags`, `media`縺ｮ蜷・句挨繧ｳ繝槭Φ繝・(`create`, `update`, `delete`縺ｪ縺ｩ) 縺ｯ縲√し繝ｼ繝舌・荳翫・繝・・繧ｿ繧堤峩謗･螟画峩縺励∪縺吶′縲√Ο繝ｼ繧ｫ繝ｫ繧ｭ繝｣繝・す繝･縺ｯ譖ｴ譁ｰ**縺励∪縺帙ｓ**縲ゅし繝ｼ繝舌・荳翫〒陦後▲縺溷､画峩繧偵Ο繝ｼ繧ｫ繝ｫ繧ｭ繝｣繝・す繝･縺ｫ蜿肴丐縺輔○繧九↓縺ｯ縲∝ｿ・★ `posts sync` 縺ｾ縺溘・ `media sync` 繧貞ｮ溯｡後＠縺ｦ縺上□縺輔＞縲・
-### 繝ｭ繝ｼ繧ｫ繝ｫ縺ｧ邱ｨ髮・庄閭ｽ縺ｪ繝輔ぃ繧､繝ｫ
+1.  **接続ごとのサブディレクトリ**: `--cache-path` で指定したルートディレクトリ内に、接続プロファイル名のサブディレクトリが作成されます (例: `wp-cache/my-blog/`)。これにより、複数のブログのキャッシュが互いに干渉することなく管理されます。
+2.  **キャッシュファイルの生成**: 各接続のサブディレクトリ内に、以下のファイルとディレクトリが生成されます。
 
-繝ｦ繝ｼ繧ｶ繝ｼ縺檎峩謗･邱ｨ髮・☆繧九・縺ｯ莉･荳九・繝輔ぃ繧､繝ｫ縺ｧ縺吶・
-- `categories/[ID]-[蜷榊燕].yaml`: 繧ｫ繝・ざ繝ｪ縺ｮ `name`, `slug`, `description` 繧貞､画峩縺ｧ縺阪∪縺吶・  - **譁ｰ隕丈ｽ懈・:** 縺薙・繝・ぅ繝ｬ繧ｯ繝医Μ縺ｫ譁ｰ縺励＞YAML繝輔ぃ繧､繝ｫ繧定ｿｽ蜉縺暦ｼ・id`縺ｯ`0`縺区悴謖・ｮ夲ｼ峨～posts sync`繧貞ｮ溯｡後☆繧九→縲√し繝ｼ繝舌・縺ｫ譁ｰ縺励＞繧ｫ繝・ざ繝ｪ縺御ｽ懈・縺輔ｌ縺ｾ縺吶・  - **蜑企勁:** 縺薙・繝輔ぃ繧､繝ｫ繧貞炎髯､縺励※繧ゅ√し繝ｼ繝舌・荳翫・繧ｫ繝・ざ繝ｪ縺ｯ蜑企勁縺輔ｌ縺ｾ縺帙ｓ縲ょ炎髯､縺ｯ `categories delete <id>` 繧ｳ繝槭Φ繝峨ｒ菴ｿ逕ｨ縺励※縺上□縺輔＞縲・- `tags/[ID]-[蜷榊燕].yaml`: 繧ｿ繧ｰ縺ｮ `name`, `slug`, `description` 繧貞､画峩縺ｧ縺阪∪縺吶・  - **譁ｰ隕丈ｽ懈・:** `categories` 縺ｨ蜷梧ｧ倥・謇矩・〒譁ｰ縺励＞繧ｿ繧ｰ繧剃ｽ懈・縺ｧ縺阪∪縺吶・  - **蜑企勁:** 縺薙・繝輔ぃ繧､繝ｫ繧貞炎髯､縺励※繧ゅ√し繝ｼ繝舌・荳翫・繧ｿ繧ｰ縺ｯ蜑企勁縺輔ｌ縺ｾ縺帙ｓ縲ょ炎髯､縺ｯ `tags delete <id>` 繧ｳ繝槭Φ繝峨ｒ菴ｿ逕ｨ縺励※縺上□縺輔＞縲・- `media/[ID]-[繝輔ぃ繧､繝ｫ蜷江.yaml`: 繝｡繝・ぅ繧｢縺ｮ `title`, `alt_text`, `caption`, `description` 繧貞､画峩縺ｧ縺阪∪縺吶・- `posts/[ID]-[slug]_content.md`: 謚慕ｨｿ縺ｮ譛ｬ譁・・- `posts/[ID]-[slug]_editable.yaml`: 謚慕ｨｿ縺ｮ繝｡繧ｿ繝・・繧ｿ縲ゅ％縺ｮ繝輔ぃ繧､繝ｫ繧堤ｷｨ髮・☆繧九％縺ｨ縺ｧ縲∽ｻ･荳九・鬆・岼繧貞､画峩縺ｧ縺阪∪縺吶・    - `title`, `slug`, `status`, `date`, `excerpt` 縺ｪ縺ｩ縲・    - `editMode`: `markdown` 縺ｾ縺溘・ `html` 繧呈欠螳壹＠縺ｾ縺吶Ａ_content.md` 繝輔ぃ繧､繝ｫ縺ｮ蜀・ｮｹ繧偵←縺｡繧峨→縺励※謇ｱ縺・°繧・`posts sync` 譎ゅ↓豎ｺ螳壹＠縺ｾ縺吶・      - `posts sync` 縺ｧ蛻昴ａ縺ｦ謚慕ｨｿ繧偵く繝｣繝・す繝･縺吶ｋ髫帙√し繝ｼ繝舌・縺ｮ `_md_source` 繧ｫ繧ｹ繧ｿ繝繝輔ぅ繝ｼ繝ｫ繝峨・譛臥┌縺ｫ蠢懊§縺ｦ閾ｪ蜍戊ｨｭ螳壹＆繧後∪縺吶・      - 縺薙・蛟､繧・`html` 縺九ｉ `markdown` 縺ｫ螟画峩縺吶ｋ縺ｨ縲∵ｬ｡蝗・`posts sync` 譎ゅ↓ `_content.md` 縺ｮ蜀・ｮｹ縺勲arkdown縺ｨ縺励※謇ｱ繧上ｌ縺ｾ縺吶・    - `categories` 繧・`tags` 縺ｫ縺ｯ縲！D縺縺代〒縺ｪ縺上～categories/` 繧・`tags/` 繝・ぅ繝ｬ繧ｯ繝医Μ蜀・↓蟄伜惠縺吶ｋ蜷榊燕繧・せ繝ｩ繝・げ縺ｧ謖・ｮ壹〒縺阪∪縺吶・    - **豕ｨ諢・** 繝ｭ繝ｼ繧ｫ繝ｫ縺ｧ譁ｰ縺励＞謚慕ｨｿ繝輔ぃ繧､繝ｫ繧ｻ繝・ヨ繧剃ｽ懈・縺励※ `posts sync` 繧貞ｮ溯｡後＠縺ｦ繧ゅ√し繝ｼ繝舌・縺ｫ譁ｰ隕乗兜遞ｿ縺ｨ縺励※菴懈・縺吶ｋ縺薙→縺ｯ縺ｧ縺阪∪縺帙ｓ縲よ眠隕乗兜遞ｿ縺ｯ `posts create` 繧ｳ繝槭Φ繝峨ｒ菴ｿ逕ｨ縺励※縺上□縺輔＞縲・
-**豕ｨ諢・** `_editable.yaml` 縺九ｉ鬆・岼・井ｾ・ `slug:` 縺ｮ陦鯉ｼ峨ｒ蜑企勁縺励◆蝣ｴ蜷医√◎縺ｮ鬆・岼縺ｯ**譖ｴ譁ｰ蟇ｾ雎｡縺九ｉ螟悶ｌ繧・*縺縺代〒縲√し繝ｼ繝舌・荳翫・蛟､縺檎ｩｺ縺ｫ縺ｪ繧九ｏ縺代〒縺ｯ縺ゅｊ縺ｾ縺帙ｓ縲ょ､繧堤ｩｺ縺ｫ縺励◆縺・ｴ蜷医・ `slug: ''` 縺ｮ繧医≧縺ｫ譏守､ｺ逧・↓遨ｺ縺ｮ蛟､繧定ｨｭ螳壹＠縺ｦ縺上□縺輔＞縲・
-## 蜃ｺ蜉帛ｽ｢蠑・`--format table|json|raw` 縺ｧ蛻・ｊ譖ｿ縺亥庄閭ｽ縺ｧ縺吶ら怐逡･譎ゅ・ `table`縲・
-## 繝峨く繝･繝｡繝ｳ繝郁｡ｨ遉ｺ
-`wpai docs` 縺ｾ縺溘・ `wpai --help` 縺ｧ縲√％縺ｮREADME繝輔ぃ繧､繝ｫ縺ｮ蜀・ｮｹ縺瑚｡ｨ遉ｺ縺輔ｌ縺ｾ縺吶・
-## 繝医Λ繝悶Ν繧ｷ繝･繝ｼ繝・ぅ繝ｳ繧ｰ
-- 縲君o connections registered縲・ `wpai connections add` 縺ｧ謗･邯壹ｒ逋ｻ骭ｲ縺励※縺上□縺輔＞縲・- `rest_forbidden_context` 縺ｪ縺ｩ縺ｮ 401/403 繧ｨ繝ｩ繝ｼ: 繝医・繧ｯ繝ｳ縺ｫ蠢・ｦ√↑讓ｩ髯舌′辟｡縺・√∪縺溘・譛滄剞蛻・ｌ縺ｧ縺吶よ眠縺励＞繝医・繧ｯ繝ｳ縺ｧ謗･邯壹ｒ蜀咲匳骭ｲ縺励※縺上□縺輔＞縲・- `media upload` 縺ｧ縲後％縺ｮ繝輔ぃ繧､繝ｫ繧ｿ繧､繝励ｒ繧｢繝・・繝ｭ繝ｼ繝峨☆繧区ｨｩ髯舌′縺ゅｊ縺ｾ縺帙ｓ縲阪お繝ｩ繝ｼ: WordPress縺ｮ繧ｻ繧ｭ繝･繝ｪ繝・ぅ繝励Λ繧ｰ繧､繝ｳ繧・ユ繝ｼ繝槭√・繝ｫ繝√し繧､繝郁ｨｭ螳壹↑縺ｩ縺ｧ縲√い繝・・繝ｭ繝ｼ繝牙庄閭ｽ縺ｪ繝輔ぃ繧､繝ｫ縺ｮ遞ｮ鬘槭′蛻ｶ髯舌＆繧後※縺・ｋ蜿ｯ閭ｽ諤ｧ縺後≠繧翫∪縺吶・- `posts sync` 縺ｧ縲靴ache path is not configured縲阪お繝ｩ繝ｼ: `wpai connections update <name> --cache-path <PATH>` 縺ｧ繧ｭ繝｣繝・す繝･繝・ぅ繝ｬ繧ｯ繝医Μ繧定ｨｭ螳壹＠縺ｦ縺上□縺輔＞縲・
-## 陬懷ｮ後せ繧ｯ繝ｪ繝励ヨ
+    -   `wp-ai-cache.db`: コンテンツのメタ情報を管理するSQLiteデータベースファイルです。このファイルはアプリケーションが内部的に使用します。**ユーザーが直接編集しないでください。**
+    -   `categories/` ディレクトリ: **編集可能な**カテゴリのYAMLファイルが個別に保存されます (`[ID]-[名前].yaml`)。
+    -   `tags/` ディレクトリ: **編集可能な**タグのYAMLファイルが個別に保存されます (`[ID]-[名前].yaml`)。
+    -   `posts/` ディレクトリ:
+        -   `[ID]-[slug]_content.md`: 編集可能な投稿の本文です。
+        -   `[ID]-[slug]_editable.yaml`: 編集可能な投稿のメタデータです。
+    -   `media/` ディレクトリ:
+        -   `[ID]-[ファイル名].[拡張子]`: メディアファイルの本体です。
+        -   `[ID]-[ファイル名].yaml`: 編集可能なメディアのメタデータです。
+
+### 同期のルール
+
+- **投稿とタクソノミ:** `posts sync` を実行すると、まずローカルの `categories/` と `tags/` ディレクトリ内にあるYAMLファイルの変更（名前やスラッグの編集）がサーバーにプッシュされます。その後、サーバーから最新の投稿とタクソノミーの情報が取得され、ローカルのファイル (`.md`, `.yaml`) とデータベース (`cache.db`) が更新されます。
+- **メディア:** `media sync` を実行すると、まずローカルの `media/` ディレクトリ内にあるYAMLファイルの変更（タイトル、代替テキスト、キャプション、説明）がサーバーにプッシュされます。その後、サーバーからメディアの情報とファイル本体がダウンロードされ、ローカルキャッシュが更新されます。
+- ローカルで `posts/` ディレクトリ内の投稿ファイルを編集してから `posts sync` を実行すると、変更がサーバーにプッシュされます。
+- サーバー側で投稿が変更された場合、`posts sync` を実行するとローカルのファイルが更新されます。
+- ローカルとサーバーの両方で同じ投稿が変更されていた場合、コンフリクト（競合）が検出され、安全のためその同期はスキップされます。レポートに表示される案内に従って `resolve` コマンドで手動解決が必要です。
+
+- **個別コマンドとキャッシュ同期:** `posts`, `categories`, `tags`, `media`の各個別コマンド (`create`, `update`, `delete`など) は、サーバー上のデータを直接変更しますが、ローカルキャッシュは更新**しません**。サーバー上で行った変更をローカルキャッシュに反映させるには、必ず `posts sync` または `media sync` を実行してください。
+
+### ローカルで編集可能なファイル
+
+ユーザーが直接編集するのは以下のファイルです。
+
+- `categories/[ID]-[名前].yaml`: カテゴリの `name`, `slug`, `description` を変更できます。
+  - **新規作成:** このディレクトリに新しいYAMLファイルを追加し（`id`は`0`か未指定）、`posts sync`を実行すると、サーバーに新しいカテゴリが作成されます。
+  - **削除:** このファイルを削除しても、サーバー上のカテゴリは削除されません。削除は `categories delete <id>` コマンドを使用してください。
+- `tags/[ID]-[名前].yaml`: タグの `name`, `slug`, `description` を変更できます。
+  - **新規作成:** `categories` と同様の手順で新しいタグを作成できます。
+  - **削除:** このファイルを削除しても、サーバー上のタグは削除されません。削除は `tags delete <id>` コマンドを使用してください。
+- `media/[ID]-[ファイル名].yaml`: メディアの `title`, `alt_text`, `caption`, `description` を変更できます。
+- `posts/[ID]-[slug]_content.md`: 投稿の本文。
+- `posts/[ID]-[slug]_editable.yaml`: 投稿のメタデータ。このファイルを編集することで、以下の項目を変更できます。
+    - `title`, `slug`, `status`, `date`, `excerpt` など。
+    - `editMode`: `markdown` または `html` を指定します。`_content.md` ファイルの内容をどちらとして扱うかを `posts sync` 時に決定します。
+      - `posts sync` で初めて投稿をキャッシュする際、サーバーの `_md_source` カスタムフィールドの有無に応じて自動設定されます。
+      - この値を `html` から `markdown` に変更すると、次回 `posts sync` 時に `_content.md` の内容がMarkdownとして扱われます。
+    - `categories` や `tags` には、IDだけでなく、`categories/` や `tags/` ディレクトリ内に存在する名前やスラッグで指定できます。
+    - **注意:** ローカルで新しい投稿ファイルセットを作成して `posts sync` を実行しても、サーバーに新規投稿として作成することはできません。新規投稿は `posts create` コマンドを使用してください。
+
+**注意:** `_editable.yaml` から項目（例: `slug:` の行）を削除した場合、その項目は**更新対象から外れる**だけで、サーバー上の値が空になるわけではありません。値を空にしたい場合は `slug: ''` のように明示的に空の値を設定してください。
+
+## 出力形式
+`--format table|json|raw` で切り替え可能です。省略時は `table`。
+
+## ドキュメント表示
+`wpai docs` または `wpai --help` で、このREADMEファイルの内容が表示されます。
+
+## トラブルシューティング
+- 「No connections registered」: `wpai connections add` で接続を登録してください。
+- `rest_forbidden_context` などの 401/403 エラー: トークンに必要な権限が無い、または期限切れです。新しいトークンで接続を再登録してください。
+- `media upload` で「このファイルタイプをアップロードする権限がありません」エラー: WordPressのセキュリティプラグインやテーマ、マルチサイト設定などで、アップロード可能なファイルの種類が制限されている可能性があります。
+- `posts sync` で「Cache path is not configured」エラー: `wpai connections update <name> --cache-path <PATH>` でキャッシュディレクトリを設定してください。
+
+## 補完スクリプト
 ```
 # PowerShell
 wpai completion --shell powershell | Out-String | Invoke-Expression
@@ -111,5 +215,5 @@ wpai completion --shell bash > /etc/bash_completion.d/wpai
 # Zsh
 wpai completion --shell zsh > ~/.zfunc/_wpai
 ```
-蟇ｾ蠢懊す繧ｧ繝ｫ: bash / zsh / PowerShell縲・
+対応シェル: bash / zsh / PowerShell。
 
