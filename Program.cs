@@ -98,7 +98,8 @@ public class Program
                         commandArgs,
                         services.GetRequiredService<WordPressService>(),
                         services.GetRequiredService<SyncService>(),
-                        services.GetRequiredService<ConnectionProfile>()
+                        services.GetRequiredService<ConnectionProfile>(),
+                        services.GetRequiredService<CacheService>()
                     );
                 case "categories":
                     return await HandleCategoriesAsync(commandArgs, services.GetRequiredService<WordPressService>());
@@ -143,7 +144,7 @@ public class Program
         }
     }
 
-    static async Task<int> HandlePostsAsync(string[] args, WordPressService service, SyncService syncService, ConnectionProfile profile)
+    static async Task<int> HandlePostsAsync(string[] args, WordPressService service, SyncService syncService, ConnectionProfile profile, CacheService cacheService)
     {
         if (args.Length == 0)
         {
@@ -322,6 +323,12 @@ public class Program
                 var force = parsed.GetBool("force", defaultValue: true);
                 var response = await service.DeletePostAsync(id.Value, force, ct).ConfigureAwait(false);
                 OutputFormatter.WriteDeleteResponse(response, format, Console.Out);
+
+                // Also remove local cache files for this post when server deletion succeeds
+                if (response.Deleted)
+                {
+                    cacheService.DeletePostFromCache(id.Value);
+                }
 
                 return (int)ExitCode.Success;
             }
