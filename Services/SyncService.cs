@@ -472,16 +472,12 @@ public class SyncService
         {
             var localContent = _cacheService.ReadLocalContent(id);
             var localEditableMeta = _cacheService.ReadEditableMetadata(id);
-
-            if (localEditableMeta == null)
-            {
-                throw new InvalidOperationException($"Could not read local metadata for post {id}. Cannot push local changes.");
-            }
+            var meta = localEditableMeta ?? throw new InvalidOperationException($"Could not read local metadata for post {id}. Cannot push local changes.");
 
             var request = new WordPressUpdatePostRequest();
 
             // Handle content based on edit mode
-            var editMode = localEditableMeta?.EditMode ?? "html";
+            var editMode = meta.EditMode ?? "html";
             var conversion = profile.MarkdownConversion ?? "client";
 
             if (editMode == "markdown")
@@ -501,17 +497,17 @@ public class SyncService
                 request.Content = localContent;
             }
 
-            request.Title = localEditableMeta.Title;
-            request.Slug = localEditableMeta.Slug;
-            request.Status = localEditableMeta.Status;
-            request.Date = localEditableMeta.Date;
-            request.Excerpt = localEditableMeta.Excerpt;
-            request.FeaturedMedia = localEditableMeta.FeaturedMedia;
-            request.CommentStatus = localEditableMeta.CommentStatus;
-            request.PingStatus = localEditableMeta.PingStatus;
+            request.Title = meta.Title;
+            request.Slug = meta.Slug;
+            request.Status = meta.Status;
+            request.Date = meta.Date;
+            request.Excerpt = meta.Excerpt;
+            request.FeaturedMedia = meta.FeaturedMedia;
+            request.CommentStatus = meta.CommentStatus;
+            request.PingStatus = meta.PingStatus;
 
-            if (!TryResolveTaxonomyIds(localEditableMeta.Categories, _cacheService.FindCategoryId, out var categoryIds) ||
-                !TryResolveTaxonomyIds(localEditableMeta.Tags, _cacheService.FindTagId, out var tagIds))
+            if (!TryResolveTaxonomyIds(meta.Categories, _cacheService.FindCategoryId, out var categoryIds) ||
+                !TryResolveTaxonomyIds(meta.Tags, _cacheService.FindTagId, out var tagIds))
             {
                 throw new InvalidOperationException($"Failed to resolve taxonomy IDs for post {id}. Please check the category and tag names in the local file.");
             }
