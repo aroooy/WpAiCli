@@ -1,210 +1,210 @@
 # WpAiCli Usage Guide
 
-## �T�v
-WpAiCli �� WordPress REST API �ƘA�g���邽�߂̃N���X�v���b�g�t�H�[�� CLI �ł��B���e�A�J�e�S���A�^�O�A���f�B�A�̊Ǘ��ɉ����āA�����T�C�g�̐ڑ��������S�ɐ؂�ւ��Ȃ��痘�p�ł��܂��B
+## 概要
+WpAiCli は WordPress REST API と連携するためのクロスプラットフォーム CLI です。投稿、カテゴリ、タグ、メディアの管理に加えて、複数サイトの接続情報を安全に切り替えながら利用できます。
 
-��ȓ���:
-- Windows Credential Manager �܂��� macOS/Linux �� Secret-Tool �� Bearer �g�[�N����ۑ�
-- �ڑ��v���t�@�C���̓o�^ / �ꗗ / �폜 / �X�V�� CLI ������s
-- ���e�A�J�e�S���A�^�O�A���f�B�A�̍쐬�A�擾�A�X�V�A�폜�̊e�R�}���h���T�|�[�g
-- ���e�̃��[�J���L���b�V���Ƒo���������ɑΉ�
-- ���e���r�W�����̎擾�ɂ��Ή�
-- ���f�B�A�i�摜�Ȃǁj�̃A�b�v���[�h�@�\�𓋍�
-- `--format table|json|raw` �ŏo�͌`����؂�ւ�
+主な特徴:
+- Windows Credential Manager または macOS/Linux の Secret-Tool に Bearer トークンを保存
+- 接続プロファイルの登録 / 一覧 / 削除 / 更新を CLI から実行
+- 投稿、カテゴリ、タグ、メディアの作成、取得、更新、削除の各コマンドをサポート
+- 投稿のローカルキャッシュと双方向同期に対応
+- 投稿リビジョンの取得にも対応
+- メディア（画像など）のアップロード機能を搭載
+- `--format table|json|raw` で出力形式を切り替え
 
-## �O���[�o���I�v�V����
-- `--connection <name>`: ����̐ڑ��v���t�@�C�����w�肵�ăR�}���h�����s���܂��B
-- `--version`, `-V`: �o�[�W��������\�����܂��B
-- `--help`, `-h`: �w���v��\�����܂��B
+## グローバルオプション
+- `--connection <name>`: 特定の接続プロファイルを指定してコマンドを実行します。
+- `--version`, `-V`: バージョン情報を表示します。
+- `--help`, `-h`: ヘルプを表示します。
 
-## �����ݒ�
-�ȉ��̎菇���������߂��܂��B
+## 初期設定
+以下の手順をおすすめします。
 
-### 1. �ڑ�����o�^
+### 1. 接続情報を登録
 ```
 wpai connections add --name "BlogName" --base-url "https://example.com/?rest_route=/wp/v2/" --token <BearerToken>
 ```
-- `--name`: �C�ӂ̕\���� (�ڑ��؂�ւ����Ɏg�p)
-- `--base-url`: WordPress REST API �̃x�[�X URL (`?rest_route=/wp/v2/` �`������������)
-- `--token`: WordPress �Ŕ��s���� Bearer �g�[�N���BOS�̎��i���X�g�A�Ɉ��S�ɕۑ�����܂��B
-- `--cache-path <PATH>`: (�C��) �����@�\�ŗ��p���郍�[�J���L���b�V���̕ۑ���f�B���N�g�����w�肵�܂��B
-- `--sync-limit <NUMBER>`: (�C��) ��x�̓����Ń`�F�b�N����ő哊�e�����w�肵�܂� (�f�t�H���g: 30)�B
-- `--markdown-conversion <client|server>`: (�C��) Markdown����HTML�ւ̕ϊ����ǂ��ōs�������w�肵�܂� (�f�t�H���g: `client`)�B
-  - `client`: CLI�c�[�����ŕϊ����܂��B
-  - `server`: �T�[�o�[���̃v���O�C��(Jetpack�Ȃ�)�ł̕ϊ������҂��AMarkdown���������̂܂ܑ��M���܂��B
+- `--name`: 任意の表示名 (接続切り替え時に使用)
+- `--base-url`: WordPress REST API のベース URL (`?rest_route=/wp/v2/` 形式がおすすめ)
+- `--token`: WordPress で発行した Bearer トークン。OSの資格情報ストアに安全に保存されます。
+- `--cache-path <PATH>`: (任意) 同期機能で利用するローカルキャッシュの保存先ディレクトリを指定します。
+- `--sync-limit <NUMBER>`: (任意) 一度の同期でチェックする最大投稿数を指定します (デフォルト: 30)。
+- `--markdown-conversion <client|server>`: (任意) MarkdownからHTMLへの変換をどこで行うかを指定します (デフォルト: `client`)。
+  - `client`: CLIツール側で変換します。
+  - `server`: サーバー側のプラグイン(Jetpackなど)での変換を期待し、Markdown原文をそのまま送信します。
 
-### 2. �ڑ��̊m�F
+### 2. 接続の確認
 ```
 wpai connections list
 ```
-�o�^�ς݃v���t�@�C�����ԍ��t���ŕ\������A`*` ���Ō�ɗ��p�����ڑ��������܂��B
+登録済みプロファイルが番号付きで表示され、`*` が最後に利用した接続を示します。
 
-### 3. ���e�ꗗ���擾
+### 3. 投稿一覧を取得
 ```
 wpai posts list --status publish --format table
 ```
-`--connection <name>` ��t����Ɠ���̐ڑ��𒼐ڎw��ł��܂��B�ȗ����͍Ō�Ɏg�p�����ڑ������p����܂��B
+`--connection <name>` を付けると特定の接続を直接指定できます。省略時は最後に使用した接続が利用されます。
 
-## �R�}���h�ꗗ
-AI �Ȃǋ@�B�A�g�ł� JSON ���[�h (`--format json`) �𐄏����܂��B�e�L�X�g�o�͂����G���R�[�f�B���O�^��͖ʂň����₷���A�����������������܂��B
+## コマンド一覧
+AI など機械連携では JSON モード (`--format json`) を推奨します。テキスト出力よりもエンコーディング／解析面で扱いやすく、文字化けも避けられます。
 
-### �ڑ��Ǘ� (`connections`)
-- `list`: �o�^�ςݐڑ��̈ꗗ��\�����܂��B
-- `add`: �V�����ڑ���o�^���܂��B
-  - `wpai connections add --name <����> --base-url <URL> --token <Bearer> [--cache-path <PATH>] [--sync-limit <NUMBER>] [--markdown-conversion <client|server>]`
-- `update <name>`: �����̐ڑ������X�V���܂��B
+### 接続管理 (`connections`)
+- `list`: 登録済み接続の一覧を表示します。
+- `add`: 新しい接続を登録します。
+  - `wpai connections add --name <名称> --base-url <URL> --token <Bearer> [--cache-path <PATH>] [--sync-limit <NUMBER>] [--markdown-conversion <client|server>]`
+- `update <name>`: 既存の接続情報を更新します。
   - `wpai connections update "BlogName" --cache-path ./new-cache --sync-limit 50 --markdown-conversion server`
-- `remove`: �Θb�`���Ŋ����̐ڑ����폜���܂��B
+- `remove`: 対話形式で既存の接続を削除します。
 
-### ���e (`posts`)
-- `sync`: ���[�J���L���b�V���ƃT�[�o�[��̓��e��o�����œ������܂��B
+### 投稿 (`posts`)
+- `sync`: ローカルキャッシュとサーバー上の投稿を双方向で同期します。
   - `wpai posts sync`
-- `list`: ���e���ꗗ�\�����܂��B
+- `list`: 投稿を一覧表示します。
   - `wpai posts list [--status <STATUS>] [--per-page <NUM>] [--page <NUM>]`
-- `get <id>`: �w�肵��ID�̓��e��1���擾���܂��B
+- `get <id>`: 指定したIDの投稿を1件取得します。
   - `wpai posts get 123`
-- `create`: �V�������e���쐬���܂��B
+- `create`: 新しい投稿を作成します。
   - `wpai posts create --title <TITLE> [--content <CONTENT> | --content-file <PATH>] [--status <STATUS>] [--edit-mode <markdown|html>] [--categories <IDs>] [--tags <IDs>] [--featured-media <ID>]`
-- `update <id>`: �����̓��e���X�V���܂��B
+- `update <id>`: 既存の投稿を更新します。
   - `wpai posts update 123 [--title <TITLE>] [--content <CONTENT> | --content-file <PATH>] [--status <STATUS>] [--edit-mode <markdown|html>] [--categories <IDs>] [--tags <IDs>] [--featured-media <ID>]`
-- `delete <id>`: ���e���폜���܂��B
+- `delete <id>`: 投稿を削除します。
   - `wpai posts delete 123 [--force]`
-- `revisions <id>`: �w�肵�����e�̃��r�W�����ꗗ���擾���܂��B
+- `revisions <id>`: 指定した投稿のリビジョン一覧を取得します。
   - `wpai posts revisions 123`
-- `revision <post-id> <revision-id>`: ����̃��r�W�����̏ڍׂ��擾���܂��B
+- `revision <post-id> <revision-id>`: 特定のリビジョンの詳細を取得します。
   - `wpai posts revision 123 456`
 
-### �J�e�S�� (`categories`)
-- `list`: �J�e�S�����ꗗ�\�����܂��B
-- `get <id>`: �w�肵��ID�̃J�e�S����1���擾���܂��B
-- `create`: �V�����J�e�S�����쐬���܂��B
+### カテゴリ (`categories`)
+- `list`: カテゴリを一覧表示します。
+- `get <id>`: 指定したIDのカテゴリを1件取得します。
+- `create`: 新しいカテゴリを作成します。
   - `wpai categories create --name <NAME> [--slug <SLUG>] [--description <DESC>]`
-- `update <id>`: �����̃J�e�S�����X�V���܂��B
+- `update <id>`: 既存のカテゴリを更新します。
   - `wpai categories update <ID> [--name <NAME>] [--slug <SLUG>] [--description <DESC>]`
-- `delete <id>`: �J�e�S�����폜���܂��B
+- `delete <id>`: カテゴリを削除します。
 
-### �^�O (`tags`)
-- `list`: �^�O���ꗗ�\�����܂��B
-- `create`: �V�����^�O���쐬���܂��B
+### タグ (`tags`)
+- `list`: タグを一覧表示します。
+- `create`: 新しいタグを作成します。
   - `wpai tags create --name <NAME> [--slug <SLUG>] [--description <DESC>]`
-- `get <id>`: �w�肵��ID�̃^�O��1���擾���܂��B
-- `update <id>`: �����̃^�O���X�V���܂��B
+- `get <id>`: 指定したIDのタグを1件取得します。
+- `update <id>`: 既存のタグを更新します。
   - `wpai tags update <ID> [--name <NAME>] [--slug <SLUG>] [--description <DESC>]`
-- `delete <id>`: �^�O���폜���܂��B
+- `delete <id>`: タグを削除します。
 
-### ���f�B�A (`media`)
-- `sync`: ���[�J���L���b�V���ƃT�[�o�[��̃��f�B�A�𓯊����܂��B
-- `list`: ���f�B�A���C�u�����̍��ڂ��ꗗ�\�����܂��B
+### メディア (`media`)
+- `sync`: ローカルキャッシュとサーバー上のメディアを同期します。
+- `list`: メディアライブラリの項目を一覧表示します。
   - `wpai media list [--per-page <NUM>] [--page <NUM>]`
-- `upload <file-path>`: �t�@�C�������f�B�A���C�u�����ɃA�b�v���[�h���܂��B
+- `upload <file-path>`: ファイルをメディアライブラリにアップロードします。
   - `wpai media upload <PATH> [--title <TITLE>] [--description <DESC>]`
-- `delete <id>`: ���f�B�A���폜���܂��B
+- `delete <id>`: メディアを削除します。
   - `wpai media delete 123 [--force]`
 
-### �����̉��� (`resolve`)
-`posts sync` �����s�����ۂɋ��������o���ꂽ�ꍇ�A���̃R�}���h���g���Ď蓮�ŋ������������܂��B
+### 競合の解決 (`resolve`)
+`posts sync` を実行した際に競合が検出された場合、このコマンドを使って手動で競合を解決します。
 
-- `resolve <type> <id> --strategy <strategy>`: �������������܂��B
-  - `<type>`: ���������R���e���c�̎�� (`post`, `category`, `tag`)�B
-  - `<id>`: ���������A�C�e����ID�B
-  - `--strategy <strategy>`: �K�{�B�ȉ��̂����ꂩ�̉����헪���w�肵�܂��B
-    - `local-wins`: ���[�J���̕ύX�𐳂Ƃ��A�T�[�o�[�̏�Ԃ����[�J���̏�Ԃŏ㏑�����܂��B
-    - `server-wins`: �T�[�o�[�̕ύX�𐳂Ƃ��A���[�J���̏�Ԃ��T�[�o�[�̏�Ԃŏ㏑�����܂��B
+- `resolve <type> <id> --strategy <strategy>`: 競合を解決します。
+  - `<type>`: 競合したコンテンツの種類 (`post`, `category`, `tag`)。
+  - `<id>`: 競合したアイテムのID。
+  - `--strategy <strategy>`: 必須。以下のいずれかの解決戦略を指定します。
+    - `local-wins`: ローカルの変更を正とし、サーバーの状態をローカルの状態で上書きします。
+    - `server-wins`: サーバーの変更を正とし、ローカルの状態をサーバーの状態で上書きします。
 
-  **���s��:**
+  **実行例:**
   ```bash
-  # ���eID 123 �̋������A���[�J���̕ύX��D�悵�ĉ���
+  # 投稿ID 123 の競合を、ローカルの変更を優先して解決
   wpai resolve post 123 --strategy local-wins
 
-  # �J�e�S��ID 45 �̋������A�T�[�o�[�̕ύX��D�悵�ĉ���
+  # カテゴリID 45 の競合を、サーバーの変更を優先して解決
   wpai resolve category 45 --strategy server-wins
   ```
 
-  **����: Markdown�� `server` �ϊ����[�h�ɂ����鋣�����o**
+  **注意: Markdownの `server` 変換モードにおける競合検出**
 
-  Markdown�̕ϊ��ݒ� (`--markdown-conversion`) �� `server` �ɐݒ肵�Ă���ꍇ�A�����̋������o�̓T�[�o�[��� `_md_source` �Ƃ������ʂȃ��^�t�B�[���h�ւ̕ύX�Ɉˑ����܂��B
+  Markdownの変換設定 (`--markdown-conversion`) を `server` に設定している場合、同期の競合検出はサーバー上の `_md_source` という特別なメタフィールドへの変更に依存します。
 
-  ����́AWordPress�̊Ǘ���ʂŒʏ�̃r�W���A���G�f�B�^��R�[�h�G�f�B�^���g���ē��e��ҏW���Ă��A���� `_md_source` �t�B�[���h�͍X�V����Ȃ����Ƃ��Ӗ����܂��B���̌��ʁA**�Ǘ���ʂ���̕ҏW�̓T�[�o�[���̕ύX�Ƃ��Č��o���ꂸ�A�������������܂���B** ���[�J���̕ύX���T�[�o�[�̕ύX���㏑�����Ă��܂��܂��B
+  これは、WordPressの管理画面で通常のビジュアルエディタやコードエディタを使って投稿を編集しても、この `_md_source` フィールドは更新されないことを意味します。その結果、**管理画面からの編集はサーバー側の変更として検出されず、競合が発生しません。** ローカルの変更がサーバーの変更を上書きしてしまいます。
 
-  `server` ���[�h�Ő��������������o������ɂ́A�T�[�o�[���ł�REST API�o�R�� `_md_source` ���^�t�B�[���h���X�V����K�v������܂��B
+  `server` モードで正しく競合を検出させるには、サーバー側でもREST API経由で `_md_source` メタフィールドを更新する必要があります。
 
-## �����@�\
+## 同期機能
 
-`posts sync` ����� `media sync` �R�}���h�́A���[�J���̃t�@�C���V�X�e����WordPress�T�[�o�[��̃R���e���c�i���e�A���f�B�A�A�J�e�S���A�^�O�j�𓯊�����@�\�ł��B
+`posts sync` および `media sync` コマンドは、ローカルのファイルシステムとWordPressサーバー上のコンテンツ（投稿、メディア、カテゴリ、タグ）を同期する機能です。
 
-### �ݒ�
+### 設定
 
-������L���ɂ���ɂ́A�܂��ڑ����ɃL���b�V���f�B���N�g���̃p�X��ݒ肷��K�v������܂��B
+同期を有効にするには、まず接続情報にキャッシュディレクトリのパスを設定する必要があります。
 ```
-# �V�K�ڑ����ɐݒ�
+# 新規接続時に設定
 wpai connections add --name "MyBlog" --base-url <URL> --token <TOKEN> --cache-path ./my-blog-cache
 
-# �����̐ڑ����X�V
+# 既存の接続を更新
 wpai connections update "MyBlog" --cache-path ./my-blog-cache
 ```
 
-### �����̎��s�ƃL���b�V���f�B���N�g���\��
+### 同期の実行とキャッシュディレクトリ構造
 
-�ݒ��A`posts sync` �܂��� `media sync` �����s����Ɠ������J�n����܂��B�L���b�V���f�B���N�g���̊�{�I�ȍ\���͈ȉ��̒ʂ�ł��B
+設定後、`posts sync` または `media sync` を実行すると同期が開始されます。キャッシュディレクトリの基本的な構造は以下の通りです。
 
-1.  **�ڑ����Ƃ̃T�u�f�B���N�g��**: `--cache-path` �Ŏw�肵�����[�g�f�B���N�g�����ɁA�ڑ��v���t�@�C�����̃T�u�f�B���N�g�����쐬����܂� (��: `wp-cache/my-blog/`)�B����ɂ��A�����̃u���O�̃L���b�V�����݂��Ɋ����邱�ƂȂ��Ǘ�����܂��B
-2.  **�L���b�V���t�@�C���̐���**: �e�ڑ��̃T�u�f�B���N�g�����ɁA�ȉ��̃t�@�C���ƃf�B���N�g������������܂��B
+1.  **接続ごとのサブディレクトリ**: `--cache-path` で指定したルートディレクトリ内に、接続プロファイル名のサブディレクトリが作成されます (例: `wp-cache/my-blog/`)。これにより、複数のブログのキャッシュが互いに干渉することなく管理されます。
+2.  **キャッシュファイルの生成**: 各接続のサブディレクトリ内に、以下のファイルとディレクトリが生成されます。
 
-    -   `wp-ai-cache.db`: �R���e���c�̃��^�����Ǘ�����SQLite�f�[�^�x�[�X�t�@�C���ł��B���̃t�@�C���̓A�v���P�[�V�����������I�Ɏg�p���܂��B**���[�U�[�����ڕҏW���Ȃ��ł��������B**
-    -   `categories/` �f�B���N�g��: **�ҏW�\��**�J�e�S����YAML�t�@�C�����ʂɕۑ�����܂� (`[ID]-[���O].yaml`)�B
-    -   `tags/` �f�B���N�g��: **�ҏW�\��**�^�O��YAML�t�@�C�����ʂɕۑ�����܂� (`[ID]-[���O].yaml`)�B
-    -   `posts/` �f�B���N�g��:
-        -   `[ID]-[slug]_content.md`: �ҏW�\�ȓ��e�̖{���ł��B
-        -   `[ID]-[slug]_editable.yaml`: �ҏW�\�ȓ��e�̃��^�f�[�^�ł��B
-    -   `media/` �f�B���N�g��:
-        -   `[ID]-[�t�@�C����].[�g���q]`: ���f�B�A�t�@�C���̖{�̂ł��B
-        -   `[ID]-[�t�@�C����].yaml`: �ҏW�\�ȃ��f�B�A�̃��^�f�[�^�ł��B
+    -   `wp-ai-cache.db`: コンテンツのメタ情報を管理するSQLiteデータベースファイルです。このファイルはアプリケーションが内部的に使用します。**ユーザーが直接編集しないでください。**
+    -   `categories/` ディレクトリ: **編集可能な**カテゴリのYAMLファイルが個別に保存されます (`[ID]-[名前].yaml`)。
+    -   `tags/` ディレクトリ: **編集可能な**タグのYAMLファイルが個別に保存されます (`[ID]-[名前].yaml`)。
+    -   `posts/` ディレクトリ:
+        -   `[ID]-[slug]_content.md`: 編集可能な投稿の本文です。
+        -   `[ID]-[slug]_editable.yaml`: 編集可能な投稿のメタデータです。
+    -   `media/` ディレクトリ:
+        -   `[ID]-[ファイル名].[拡張子]`: メディアファイルの本体です。
+        -   `[ID]-[ファイル名].yaml`: 編集可能なメディアのメタデータです。
 
-### �����̃��[��
+### 同期のルール
 
-- **���e�ƃ^�N�\�m�~:** `posts sync` �����s����ƁA�܂����[�J���� `categories/` �� `tags/` �f�B���N�g�����ɂ���YAML�t�@�C���̕ύX�i���O��X���b�O�̕ҏW�j���T�[�o�[�Ƀv�b�V������܂��B���̌�A�T�[�o�[����ŐV�̓��e�ƃ^�N�\�m�~�[�̏�񂪎擾����A���[�J���̃t�@�C�� (`.md`, `.yaml`) �ƃf�[�^�x�[�X (`cache.db`) ���X�V����܂��B
-- **���f�B�A:** `media sync` �����s����ƁA�܂����[�J���� `media/` �f�B���N�g�����ɂ���YAML�t�@�C���̕ύX�i�^�C�g���A��փe�L�X�g�A�L���v�V�����A�����j���T�[�o�[�Ƀv�b�V������܂��B���̌�A�T�[�o�[���烁�f�B�A�̏��ƃt�@�C���{�̂��_�E�����[�h����A���[�J���L���b�V�����X�V����܂��B
-- ���[�J���� `posts/` �f�B���N�g�����̓��e�t�@�C����ҏW���Ă��� `posts sync` �����s����ƁA�ύX���T�[�o�[�Ƀv�b�V������܂��B
-- �T�[�o�[���œ��e���ύX���ꂽ�ꍇ�A`posts sync` �����s����ƃ��[�J���̃t�@�C�����X�V����܂��B
-- ���[�J���ƃT�[�o�[�̗����œ������e���ύX����Ă����ꍇ�A�R���t���N�g�i�����j�����o����A���S�̂��߂��̓����̓X�L�b�v����܂��B���|�[�g�ɕ\�������ē��ɏ]���� `resolve` �R�}���h�Ŏ蓮�������K�v�ł��B
+- **投稿とタクソノミ:** `posts sync` を実行すると、まずローカルの `categories/` と `tags/` ディレクトリ内にあるYAMLファイルの変更（名前やスラッグの編集）がサーバーにプッシュされます。その後、サーバーから最新の投稿とタクソノミーの情報が取得され、ローカルのファイル (`.md`, `.yaml`) とデータベース (`cache.db`) が更新されます。
+- **メディア:** `media sync` を実行すると、まずローカルの `media/` ディレクトリ内にあるYAMLファイルの変更（タイトル、代替テキスト、キャプション、説明）がサーバーにプッシュされます。その後、サーバーからメディアの情報とファイル本体がダウンロードされ、ローカルキャッシュが更新されます。
+- ローカルで `posts/` ディレクトリ内の投稿ファイルを編集してから `posts sync` を実行すると、変更がサーバーにプッシュされます。
+- サーバー側で投稿が変更された場合、`posts sync` を実行するとローカルのファイルが更新されます。
+- ローカルとサーバーの両方で同じ投稿が変更されていた場合、コンフリクト（競合）が検出され、安全のためその同期はスキップされます。レポートに表示される案内に従って `resolve` コマンドで手動解決が必要です。
 
-- **�ʃR�}���h�ƃL���b�V������:** `posts`, `categories`, `tags`, `media`�̊e�ʃR�}���h (`create`, `update`, `delete`�Ȃ�) �́A�T�[�o�[��̃f�[�^�𒼐ڕύX���܂����A���[�J���L���b�V���͍X�V**���܂���**�B�T�[�o�[��ōs�����ύX�����[�J���L���b�V���ɔ��f������ɂ́A�K�� `posts sync` �܂��� `media sync` �����s���Ă��������B
+- **個別コマンドとキャッシュ同期:** `posts`, `categories`, `tags`, `media`の各個別コマンド (`create`, `update`, `delete`など) は、サーバー上のデータを直接変更しますが、ローカルキャッシュは更新**しません**。サーバー上で行った変更をローカルキャッシュに反映させるには、必ず `posts sync` または `media sync` を実行してください。
 
-### ���[�J���ŕҏW�\�ȃt�@�C��
+### ローカルで編集可能なファイル
 
-���[�U�[�����ڕҏW����͈̂ȉ��̃t�@�C���ł��B
+ユーザーが直接編集するのは以下のファイルです。
 
-- `categories/[ID]-[���O].yaml`: �J�e�S���� `name`, `slug`, `description` ��ύX�ł��܂��B
-  - **�V�K�쐬:** ���̃f�B���N�g���ɐV����YAML�t�@�C����ǉ����i`id`��`0`�����w��j�A`posts sync`�����s����ƁA�T�[�o�[�ɐV�����J�e�S�����쐬����܂��B
-  - **�폜:** ���̃t�@�C�����폜���Ă��A�T�[�o�[��̃J�e�S���͍폜����܂���B�폜�� `categories delete <id>` �R�}���h���g�p���Ă��������B
-- `tags/[ID]-[���O].yaml`: �^�O�� `name`, `slug`, `description` ��ύX�ł��܂��B
-  - **�V�K�쐬:** `categories` �Ɠ��l�̎菇�ŐV�����^�O���쐬�ł��܂��B
-  - **�폜:** ���̃t�@�C�����폜���Ă��A�T�[�o�[��̃^�O�͍폜����܂���B�폜�� `tags delete <id>` �R�}���h���g�p���Ă��������B
-- `media/[ID]-[�t�@�C����].yaml`: ���f�B�A�� `title`, `alt_text`, `caption`, `description` ��ύX�ł��܂��B
-- `posts/[ID]-[slug]_content.md`: ���e�̖{���B
-- `posts/[ID]-[slug]_editable.yaml`: ���e�̃��^�f�[�^�B���̃t�@�C����ҏW���邱�ƂŁA�ȉ��̍��ڂ�ύX�ł��܂��B
-    - `title`, `slug`, `status`, `date`, `excerpt` �ȂǁB
-    - `editMode`: `markdown` �܂��� `html` ���w�肵�܂��B`_content.md` �t�@�C���̓��e���ǂ���Ƃ��Ĉ������� `posts sync` ���Ɍ��肵�܂��B
-      - `posts sync` �ŏ��߂ē��e���L���b�V������ہA�T�[�o�[�� `_md_source` �J�X�^���t�B�[���h�̗L���ɉ����Ď����ݒ肳��܂��B
-      - ���̒l�� `html` ���� `markdown` �ɕύX����ƁA���� `posts sync` ���� `_content.md` �̓��e��Markdown�Ƃ��Ĉ����܂��B
-    - `categories` �� `tags` �ɂ́AID�����łȂ��A`categories/` �� `tags/` �f�B���N�g�����ɑ��݂��閼�O��X���b�O�Ŏw��ł��܂��B
-    - **����:** ���[�J���ŐV�������e�t�@�C���Z�b�g���쐬���� `posts sync` �����s���Ă��A�T�[�o�[�ɐV�K���e�Ƃ��č쐬���邱�Ƃ͂ł��܂���B�V�K���e�� `posts create` �R�}���h���g�p���Ă��������B
+- `categories/[ID]-[名前].yaml`: カテゴリの `name`, `slug`, `description` を変更できます。
+  - **新規作成:** このディレクトリに新しいYAMLファイルを追加し（`id`は`0`か未指定）、`posts sync`を実行すると、サーバーに新しいカテゴリが作成されます。
+  - **削除:** このファイルを削除しても、サーバー上のカテゴリは削除されません。削除は `categories delete <id>` コマンドを使用してください。
+- `tags/[ID]-[名前].yaml`: タグの `name`, `slug`, `description` を変更できます。
+  - **新規作成:** `categories` と同様の手順で新しいタグを作成できます。
+  - **削除:** このファイルを削除しても、サーバー上のタグは削除されません。削除は `tags delete <id>` コマンドを使用してください。
+- `media/[ID]-[ファイル名].yaml`: メディアの `title`, `alt_text`, `caption`, `description` を変更できます。
+- `posts/[ID]-[slug]_content.md`: 投稿の本文。
+- `posts/[ID]-[slug]_editable.yaml`: 投稿のメタデータ。このファイルを編集することで、以下の項目を変更できます。
+    - `title`, `slug`, `status`, `date`, `excerpt` など。
+    - `editMode`: `markdown` または `html` を指定します。`_content.md` ファイルの内容をどちらとして扱うかを `posts sync` 時に決定します。
+      - `posts sync` で初めて投稿をキャッシュする際、サーバーの `_md_source` カスタムフィールドの有無に応じて自動設定されます。
+      - この値を `html` から `markdown` に変更すると、次回 `posts sync` 時に `_content.md` の内容がMarkdownとして扱われます。
+    - `categories` や `tags` には、IDだけでなく、`categories/` や `tags/` ディレクトリ内に存在する名前やスラッグで指定できます。
+    - **注意:** ローカルで新しい投稿ファイルセットを作成して `posts sync` を実行しても、サーバーに新規投稿として作成することはできません。新規投稿は `posts create` コマンドを使用してください。
 
-**����:** `_editable.yaml` ���獀�ځi��: `slug:` �̍s�j���폜�����ꍇ�A���̍��ڂ�**�X�V�Ώۂ���O���**�����ŁA�T�[�o�[��̒l����ɂȂ�킯�ł͂���܂���B�l����ɂ������ꍇ�� `slug: ''` �̂悤�ɖ����I�ɋ�̒l��ݒ肵�Ă��������B
+**注意:** `_editable.yaml` から項目（例: `slug:` の行）を削除した場合、その項目は**更新対象から外れる**だけで、サーバー上の値が空になるわけではありません。値を空にしたい場合は `slug: ''` のように明示的に空の値を設定してください。
 
-## �o�͌`��
-`--format table|json|raw` �Ő؂�ւ��\�ł��B�ȗ����� `table`�B
+## 出力形式
+`--format table|json|raw` で切り替え可能です。省略時は `table`。
 
-## �h�L�������g�\��
-`wpai docs` �܂��� `wpai --help` �ŁA����README�t�@�C���̓��e���\������܂��B
+## ドキュメント表示
+`wpai docs` または `wpai --help` で、このREADMEファイルの内容が表示されます。
 
-## �g���u���V���[�e�B���O
-- �uNo connections registered�v: `wpai connections add` �Őڑ���o�^���Ă��������B
-- `rest_forbidden_context` �Ȃǂ� 401/403 �G���[: �g�[�N���ɕK�v�Ȍ����������A�܂��͊����؂�ł��B�V�����g�[�N���Őڑ����ēo�^���Ă��������B
-- `media upload` �Łu���̃t�@�C���^�C�v���A�b�v���[�h���錠��������܂���v�G���[: WordPress�̃Z�L�����e�B�v���O�C����e�[�}�A�}���`�T�C�g�ݒ�ȂǂŁA�A�b�v���[�h�\�ȃt�@�C���̎�ނ���������Ă���\��������܂��B
-- `posts sync` �ŁuCache path is not configured�v�G���[: `wpai connections update <name> --cache-path <PATH>` �ŃL���b�V���f�B���N�g����ݒ肵�Ă��������B
+## トラブルシューティング
+- 「No connections registered」: `wpai connections add` で接続を登録してください。
+- `rest_forbidden_context` などの 401/403 エラー: トークンに必要な権限が無い、または期限切れです。新しいトークンで接続を再登録してください。
+- `media upload` で「このファイルタイプをアップロードする権限がありません」エラー: WordPressのセキュリティプラグインやテーマ、マルチサイト設定などで、アップロード可能なファイルの種類が制限されている可能性があります。
+- `posts sync` で「Cache path is not configured」エラー: `wpai connections update <name> --cache-path <PATH>` でキャッシュディレクトリを設定してください。
 
-## �⊮�X�N���v�g
+## 補完スクリプト
 ```
 # PowerShell
 wpai completion --shell powershell | Out-String | Invoke-Expression
@@ -215,5 +215,5 @@ wpai completion --shell bash > /etc/bash_completion.d/wpai
 # Zsh
 wpai completion --shell zsh > ~/.zfunc/_wpai
 ```
-�Ή��V�F��: bash / zsh / PowerShell�B
+対応シェル: bash / zsh / PowerShell。
 
