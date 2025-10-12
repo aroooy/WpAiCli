@@ -14,6 +14,7 @@ using WpAiCli.Parsing;
 using WpAiCli.Services;
 using WpAiCli.WordPress.Models;
 using Markdig;
+using System.Net;
 
 public class Program
 {
@@ -321,13 +322,23 @@ public class Program
                 }
 
                 var force = parsed.GetBool("force", defaultValue: true);
-                var response = await service.DeletePostAsync(id.Value, force, ct).ConfigureAwait(false);
-                OutputFormatter.WriteDeleteResponse(response, format, Console.Out);
-
-                // Also remove local cache files for this post when server deletion succeeds
-                if (response.Deleted)
+                try
                 {
+                    var response = await service.DeletePostAsync(id.Value, force, ct).ConfigureAwait(false);
+                    OutputFormatter.WriteDeleteResponse(response, format, Console.Out);
+
+                    // Also remove local cache files for this post when server deletion succeeds
+                    if (response.Deleted)
+                    {
+                        cacheService.DeletePostFromCache(id.Value);
+                    }
+                }
+                catch (WpAiCli.WordPress.WordPressApiException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+                {
+                    // If the post is already gone on the server, remove local cache as well
                     cacheService.DeletePostFromCache(id.Value);
+                    // Report as deleted for UX consistency
+                    OutputFormatter.WriteDeleteResponse(new WordPressDeleteResponse { Deleted = true }, format, Console.Out);
                 }
 
                 return (int)ExitCode.Success;
