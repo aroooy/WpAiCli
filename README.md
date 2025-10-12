@@ -114,3 +114,10 @@ wpai completion --shell zsh > ~/.zfunc/_wpai
 対応シェル: bash / zsh / PowerShell、E
 
 
+
+## Notes on Cache and Sync
+- `posts create` writes the new post to cache immediately (content.md + editable.yaml).
+- Delete commands remove cache immediately (posts/categories/tags/media). If the server returns 404 (already deleted), the cache is also removed.
+- `posts sync` cleans unmodified local posts not in top-N when they are 404 on server; `media sync` does the same for media.
+- `posts push <id>` applies the local cache (content + editable metadata) to a single post in one go.
+- Creating a new post by placing files in the cache folder is not supported. Use `posts create`.
