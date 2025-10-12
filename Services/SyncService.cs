@@ -97,6 +97,58 @@ public class SyncService
         return updatedPost;
     }
 
+    public async Task<WordPressCategory> PushCategoryAsync(int id, CancellationToken cancellationToken)
+    {
+        var local = await _cacheService.GetLocalTaxonomyTermAsync<EditableCategory>("category", id)
+            ?? throw new InvalidOperationException($"Could not find local category with ID {id}.");
+        var request = new WordPressUpdateCategoryRequest
+        {
+            Name = local.Name,
+            Slug = local.Slug,
+            Description = local.Description
+        };
+        var updated = await _wpService.UpdateCategoryAsync(id, request, cancellationToken);
+        await _cacheService.UpdateLocalTaxonomyTermAsync(updated, updateHashOnly: true);
+        return updated;
+    }
+
+    public async Task<WordPressTag> PushTagAsync(int id, CancellationToken cancellationToken)
+    {
+        var local = await _cacheService.GetLocalTaxonomyTermAsync<EditableTag>("tag", id)
+            ?? throw new InvalidOperationException($"Could not find local tag with ID {id}.");
+        var request = new WordPressUpdateTagRequest
+        {
+            Name = local.Name,
+            Slug = local.Slug,
+            Description = local.Description
+        };
+        var updated = await _wpService.UpdateTagAsync(id, request, cancellationToken);
+        await _cacheService.UpdateLocalTaxonomyTermAsync(updated, updateHashOnly: true);
+        return updated;
+    }
+
+    public async Task<WordPressMedia> PushMediaAsync(int id, CancellationToken cancellationToken)
+    {
+        // Read local YAML metadata
+        var all = _cacheService.ReadLocalMediaMetadata();
+        var entry = all.FirstOrDefault(x => x.MediaId == id);
+        if (entry.MediaId == 0)
+        {
+            throw new InvalidOperationException($"Could not find local media metadata for ID {id}.");
+        }
+
+        var req = new WordPressUpdateMediaRequest
+        {
+            Title = entry.Metadata.Title,
+            Description = entry.Metadata.Description,
+            Caption = entry.Metadata.Caption,
+            AltText = entry.Metadata.AltText
+        };
+        var updated = await _wpService.UpdateMediaAsync(id, req, cancellationToken);
+        _cacheService.UpdateMediaMetadataOnly(updated);
+        return updated;
+    }
+
     public async Task<SyncReport> SynchronizePostsAsync(ConnectionProfile profile, int syncLimit, CancellationToken cancellationToken)
     {
         var report = new SyncReport();

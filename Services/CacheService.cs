@@ -642,6 +642,53 @@ public class CacheService
         _db.SaveChanges();
     }
 
+    // Update only the media metadata YAML and DB hash without touching the binary file
+    public void UpdateMediaMetadataOnly(WordPressMedia media)
+    {
+        var mediaDir = Path.Combine(_cachePath, "media");
+        Directory.CreateDirectory(mediaDir);
+
+        // Prepare editable metadata
+        var editableMeta = new EditableMediaMetadata
+        {
+            Title = media.Title?.Raw,
+            AltText = media.AltText,
+            Caption = media.Caption?.Raw,
+            Description = media.Description?.Raw
+        };
+        var yamlContent = SerializeToYaml(editableMeta);
+
+        // Find existing YAML file for this media ID or create a new name
+        var existingYaml = Directory.Exists(mediaDir) ? Directory.GetFiles(mediaDir, $"{media.Id}-*.yaml").FirstOrDefault() : null;
+        string yamlPath;
+        if (!string.IsNullOrEmpty(existingYaml))
+        {
+            yamlPath = existingYaml!;
+        }
+        else
+        {
+            // Derive from SourceUrl if available; otherwise fallback to generic name
+            var baseName = !string.IsNullOrEmpty(media.SourceUrl)
+                ? Path.GetFileNameWithoutExtension(new Uri(media.SourceUrl).LocalPath)
+                : $"media-{media.Id}";
+            yamlPath = Path.Combine(mediaDir, $"{media.Id}-{baseName}.yaml");
+        }
+
+        File.WriteAllText(yamlPath, yamlContent);
+        var editableMetaHash = ComputeSha256Hash(yamlContent);
+
+        // Update DB row if present
+        var mediaInDb = _db.Media.FirstOrDefault(m => m.MediaId == media.Id);
+        if (mediaInDb != null)
+        {
+            mediaInDb.MetadataHash = editableMetaHash;
+            mediaInDb.RawMediaJson = JsonSerializer.Serialize(media, SerializerOptions);
+            mediaInDb.LastModified = DateTime.UtcNow;
+            _db.Media.Update(mediaInDb);
+            _db.SaveChanges();
+        }
+    }
+
     public string ComputeSha256Hash(string rawData)
     {
         using (SHA256 sha256Hash = SHA256.Create())

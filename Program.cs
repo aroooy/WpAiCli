@@ -103,9 +103,9 @@ public class Program
                         services.GetRequiredService<CacheService>()
                     );
                 case "categories":
-                    return await HandleCategoriesAsync(commandArgs, services.GetRequiredService<WordPressService>(), services.GetRequiredService<CacheService>());
+                    return await HandleCategoriesAsync(commandArgs, services.GetRequiredService<WordPressService>(), services.GetRequiredService<CacheService>(), services.GetRequiredService<SyncService>());
                 case "tags":
-                    return await HandleTagsAsync(commandArgs, services.GetRequiredService<WordPressService>(), services.GetRequiredService<CacheService>());
+                    return await HandleTagsAsync(commandArgs, services.GetRequiredService<WordPressService>(), services.GetRequiredService<CacheService>(), services.GetRequiredService<SyncService>());
                 case "media":
                     return await HandleMediaAsync(
                         commandArgs,
@@ -424,7 +424,7 @@ public class Program
         Console.WriteLine("-------------------");
     }
 
-    static async Task<int> HandleCategoriesAsync(string[] args, WordPressService service, CacheService cacheService)
+    static async Task<int> HandleCategoriesAsync(string[] args, WordPressService service, CacheService cacheService, SyncService syncService)
     {
         if (args.Length == 0)
         {
@@ -476,7 +476,20 @@ public class Program
                 };
 
                 var category = await service.CreateCategoryAsync(request, ct).ConfigureAwait(false);
+                try { cacheService.SaveCategoryToCache(category); } catch (Exception ex) { Console.Error.WriteLine($"Warning: failed to write category cache: {ex.Message}"); }
                 OutputFormatter.WriteCategory(category, format, Console.Out);
+                return (int)ExitCode.Success;
+            }
+            case "push":
+            {
+                var id = ResolveId(parsed, defaultValue: parsed.Positionals.FirstOrDefault());
+                if (id is null)
+                {
+                    Console.Error.WriteLine("Provide a category ID.");
+                    return (int)ExitCode.InvalidArguments;
+                }
+                var updated = await syncService.PushCategoryAsync(id.Value, ct);
+                OutputFormatter.WriteCategory(updated, format, Console.Out);
                 return (int)ExitCode.Success;
             }
             case "update":
@@ -532,7 +545,7 @@ public class Program
         }
     }
 
-    static async Task<int> HandleTagsAsync(string[] args, WordPressService service, CacheService cacheService)
+    static async Task<int> HandleTagsAsync(string[] args, WordPressService service, CacheService cacheService, SyncService syncService)
     {
         if (args.Length == 0)
         {
@@ -570,8 +583,21 @@ public class Program
                 };
 
                 var tag = await service.CreateTagAsync(request, ct).ConfigureAwait(false);
+                try { cacheService.SaveTagToCache(tag); } catch (Exception ex) { Console.Error.WriteLine($"Warning: failed to write tag cache: {ex.Message}"); }
                 OutputFormatter.WriteTag(tag, format, Console.Out);
-
+                
+                return (int)ExitCode.Success;
+            }
+            case "push":
+            {
+                var id = ResolveId(parsed, defaultValue: parsed.Positionals.FirstOrDefault());
+                if (id is null)
+                {
+                    Console.Error.WriteLine("Provide a tag ID.");
+                    return (int)ExitCode.InvalidArguments;
+                }
+                var updated = await syncService.PushTagAsync(id.Value, ct);
+                OutputFormatter.WriteTag(updated, format, Console.Out);
                 return (int)ExitCode.Success;
             }
             case "get":
@@ -662,8 +688,32 @@ public class Program
                 var description = parsed.GetString("description");
 
                 var mediaItem = await service.UploadMediaAsync(filePath, title, description, ct).ConfigureAwait(false);
+                try
+                {
+                    if (!string.IsNullOrEmpty(mediaItem.SourceUrl))
+                    {
+                        var bytes = await service.DownloadMediaFileAsync(mediaItem.SourceUrl!, ct).ConfigureAwait(false);
+                        cacheService.SaveMediaToCache(mediaItem, bytes);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"Warning: failed to cache uploaded media: {ex.Message}");
+                }
                 OutputFormatter.WriteMediaItem(mediaItem, format, Console.Out);
 
+                return (int)ExitCode.Success;
+            }
+            case "push":
+            {
+                var id = ResolveId(parsed, defaultValue: parsed.Positionals.FirstOrDefault());
+                if (id is null)
+                {
+                    Console.Error.WriteLine("Provide a media ID.");
+                    return (int)ExitCode.InvalidArguments;
+                }
+                var updated = await syncService.PushMediaAsync(id.Value, ct);
+                OutputFormatter.WriteMediaItem(updated, format, Console.Out);
                 return (int)ExitCode.Success;
             }
             case "delete":
