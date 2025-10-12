@@ -110,21 +110,28 @@ public class SyncService
                 var localEditableMetaYaml = _cacheService.SerializeToYaml(localEditableMeta ?? new EditablePostMetadata());
                 var localEditableMetaHash = _cacheService.ComputeSha256Hash(localEditableMetaYaml);
 
-                if (localContentHash != localMeta!.ContentHash || localEditableMetaHash != localMeta.EditableMetaHash)
+                var isLocalChanged = localContentHash != localMeta!.ContentHash || localEditableMetaHash != localMeta.EditableMetaHash;
+
+                try
                 {
-                    try
+                    // Check the server for existence regardless of local changes.
+                    // - If it exists and local changed: reconcile via CompareAndSyncAsync
+                    // - If it does not exist (404): delete local cache if local is unchanged
+                    var remotePost = await _wpService.GetPostAsync(id, cancellationToken);
+                    if (remotePost != null && isLocalChanged)
                     {
-                        var remotePost = await _wpService.GetPostAsync(id, cancellationToken);
-                        if (remotePost != null)
-                        {
-                            await CompareAndSyncAsync(id, localMeta!, remotePost, profile, report, cancellationToken);
-                        }
+                        await CompareAndSyncAsync(id, localMeta!, remotePost, profile, report, cancellationToken);
                     }
-                    catch (WordPressApiException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+                }
+                catch (WordPressApiException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+                {
+                    // Server-side post no longer exists. Delete local cache only if user hasn't edited locally.
+                    if (!isLocalChanged)
                     {
                         _cacheService.DeletePostFromCache(id);
                         report.DeletedFromLocal.Add(id);
                     }
+                    // If there are local edits, keep local to avoid data loss; user can resolve manually.
                 }
             }
         }
