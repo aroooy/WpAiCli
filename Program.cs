@@ -492,26 +492,6 @@ public class Program
                 OutputFormatter.WriteCategory(updated, format, Console.Out);
                 return (int)ExitCode.Success;
             }
-            case "update":
-            {
-                var id = ResolveId(parsed, defaultValue: parsed.Positionals.FirstOrDefault());
-                if (id is null)
-                {
-                    Console.Error.WriteLine("Provide a category ID.");
-                    return (int)ExitCode.InvalidArguments;
-                }
-
-                var request = new WordPressUpdateCategoryRequest
-                {
-                    Name = parsed.GetString("name"),
-                    Slug = parsed.GetString("slug"),
-                    Description = parsed.GetString("description")
-                };
-
-                var category = await service.UpdateCategoryAsync(id.Value, request, ct).ConfigureAwait(false);
-                OutputFormatter.WriteCategory(category, format, Console.Out);
-                return (int)ExitCode.Success;
-            }
             case "delete":
             {
                 var id = ResolveId(parsed, defaultValue: parsed.Positionals.FirstOrDefault());

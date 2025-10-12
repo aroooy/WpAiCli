@@ -45,6 +45,20 @@ wpai posts list --status publish --format table
 ```
 `--connection <name>` を付けると特定の接続を直接指定できます。省略時は最後に使用した接続が利用されます。
 
+## 一般的な使い方（ワークフロー例）
+
+### 1. 新規投稿を作成し、公開する
+1. `wpai posts create --title "新しい記事" --status draft` で下書きを作成します。
+   - この時点でローカルにキャッシュファイルが自動生成されます。
+2. 生成された `posts/123-new-article_content.md` と `_editable.yaml` をエディタで編集します。
+3. `wpai posts push 123` を実行し、編集内容をサーバーに反映します。
+4. 記事を公開するには、`_editable.yaml` の `status` を `publish` に変更し、再度 `wpai posts push 123` を実行します。
+
+### 2. 既存の投稿を編集する
+1. `wpai posts sync` を実行し、サーバーから最新の状態を取得します。
+2. 編集したい記事のローカルファイルを編集します。
+3. `wpai posts push <ID>` を実行し、変更をサーバーに反映します。
+
 ## コマンド一覧
 AI など機械連携では JSON モード (`--format json`) を推奨します。テキスト出力よりもエンコーディング／解析面で扱いやすく、文字化けも避けられます。
 
@@ -57,50 +71,51 @@ AI など機械連携では JSON モード (`--format json`) を推奨します�
 - `remove`: 対話形式で既存の接続を削除します。
 
 ### 投稿 (`posts`)
-- `sync`: ローカルキャッシュとサーバー上の投稿を双方向で同期します。
+- `sync`: ローカルキャッシュとサーバー上の投稿を双方向で同期します。 `[キャッシュへの影響: サーバー変更を反映]`
   - `wpai posts sync`
-- `list`: 投稿を一覧表示します。
+- `list`: 投稿を一覧表示します。 `[キャッシュへの影響: なし]`
   - `wpai posts list [--status <STATUS>] [--per-page <NUM>] [--page <NUM>]`
-- `get <id>`: 指定したIDの投稿を1件取得します。
+- `get <id>`: 指定したIDの投稿を1件取得します。 `[キャッシュへの影響: なし]`
   - `wpai posts get 123`
-- `create`: 新しい投稿を作成します。
+- `create`: 新しい投稿を作成します。 `[キャッシュへの影響: 即時作成]`
   - `wpai posts create --title <TITLE> [--content <CONTENT> | --content-file <PATH>] [--status <STATUS>] [--edit-mode <markdown|html>] [--categories <IDs>] [--tags <IDs>] [--featured-media <ID>]`
-- `push <id>`: ローカルキャッシュの変更（本文、メタデータ）をサーバーに一括で反映（プッシュ）します。
+- `push <id>`: ローカルキャッシュの変更（本文、メタデータ）をサーバーに一括で反映（プッシュ）します。 `[キャッシュへの影響: サーバー反映後に更新]`
   - `wpai posts push 123`
-- `delete <id>`: 投稿を削除します。
+- `delete <id>`: 投稿を削除します。 `[キャッシュへの影響: 即時削除]`
   - `wpai posts delete 123 [--force]`
-- `revisions <id>`: 指定した投稿のリビジョン一覧を取得します。
+- `revisions <id>`: 指定した投稿のリビジョン一覧を取得します。 `[キャッシュへの影響: なし]`
   - `wpai posts revisions 123`
-- `revision <post-id> <revision-id>`: 特定のリビジョンの詳細を取得します。
+- `revision <post-id> <revision-id>`: 特定のリビジョンの詳細を取得します。 `[キャッシュへの影響: なし]`
   - `wpai posts revision 123 456`
 
 ### カテゴリ (`categories`)
-- `list`: カテゴリを一覧表示します。
-- `get <id>`: 指定したIDのカテゴリを1件取得します。
-- `create`: 新しいカテゴリを作成します。
+- `list`: カテゴリを一覧表示します。 `[キャッシュへの影響: なし]`
+- `get <id>`: 指定したIDのカテゴリを1件取得します。 `[キャッシュへの影響: なし]`
+- `create`: 新しいカテゴリを作成します。 `[キャッシュへの影響: 即時作成]`
   - `wpai categories create --name <NAME> [--slug <SLUG>] [--description <DESC>]`
-- `push <id>`: ローカルキャッシュ（YAMLファイル）の変更をサーバーに反映（プッシュ）します。
+- `push <id>`: ローカルキャッシュ（YAMLファイル）の変更をサーバーに反映（プッシュ）します。 `[キャッシュへの影響: サーバー反映後にハッシュのみ更新]`
   - `wpai categories push 45`
-- `delete <id>`: カテゴリを削除します。
+- `delete <id>`: カテゴリを削除します。 `[キャッシュへの影響: 即時削除]`
 
 ### タグ (`tags`)
-- `list`: タグを一覧表示します。
-- `create`: 新しいタグを作成します。
+- `list`: タグを一覧表示します。 `[キャッシュへの影響: なし]`
+- `create`: 新しいタグを作成します。 `[キャッシュへの影響: 即時作成]`
   - `wpai tags create --name <NAME> [--slug <SLUG>] [--description <DESC>]`
-- `get <id>`: 指定したIDのタグを1件取得します。
-- `push <id>`: ローカルキャッシュ（YAMLファイル）の変更をサーバーに反映（プッシュ）します。
+- `get <id>`: 指定したIDのタグを1件取得します。 `[キャッシュへの影響: なし]`
+- `push <id>`: ローカルキャッシュ（YAMLファイル）の変更をサーバーに反映（プッシュ）します。 `[キャッシュへの影響: サーバー反映後にハッシュのみ更新]`
   - `wpai tags push 67`
-- `delete <id>`: タグを削除します。
+- `delete <id>`: タグを削除します。 `[キャッシュへの影響: 即時削除]`
 
 ### メディア (`media`)
-- `sync`: ローカルキャッシュとサーバー上のメディアを同期します。
-- `list`: メディアライブラリの項目を一覧表示します。
+- `sync`: ローカルキャッシュとサーバー上のメディアを同期します。 `[キャッシュへの影響: サーバー変更を反映]`
+- `list`: メディアライブラリの項目を一覧表示します。 `[キャッシュへの影響: なし]`
   - `wpai media list [--per-page <NUM>] [--page <NUM>]`
-    - `upload <file-path>`: ファイルをメディアライブラリにアップロードします。
-      - `wpai media upload <PATH> [--title <TITLE>] [--description <DESC>]`
-    - `push <id>`: ローカルキャッシュ（YAMLファイル）のメタデータ変更（タイトル、代替テキスト等）をサーバーに反映（プッシュ）します。
-      - `wpai media push 89`
-    - `delete <id>`: メディアを削除します。  - `wpai media delete 123 [--force]`
+- `upload <file-path>`: ファイルをメディアライブラリにアップロードします。 `[キャッシュへの影響: 即時作成]`
+  - `wpai media upload <PATH> [--title <TITLE>] [--description <DESC>]`
+- `push <id>`: ローカルキャッシュ（YAMLファイル）のメタデータ変更（タイトル、代替テキスト等）をサーバーに反映（プッシュ）します。 `[キャッシュへの影響: サーバー反映後にメタデータのみ更新]`
+  - `wpai media push 89`
+- `delete <id>`: メディアを削除します。 `[キャッシュへの影響: 即時削除]`
+  - `wpai media delete 123 [--force]`
 
 ### 競合の解決 (`resolve`)
 `posts sync` を実行した際に競合が検出された場合、このコマンドを使って手動で競合を解決します。
@@ -130,6 +145,11 @@ AI など機械連携では JSON モード (`--format json`) を推奨します�
   `server` モードで正しく競合を検出させるには、サーバー側でもREST API経由で `_md_source` メタフィールドを更新する必要があります。
 
 ## 同期機能
+
+本ツールにおける「同期」には、役割の異なる2つの主要なコマンドがあります。
+
+- **`push <id>`**: **ローカル → サーバー**への単方向同期。指定した一つのアイテムのローカルでの変更（MarkdownやYAMLファイルの編集結果）をサーバーに反映します。
+- **`sync`**: **サーバー ⇔ ローカル**の双方向同期。主にサーバー上の変更をローカルに反映（プル）し、ローカルとサーバーの差分を検出します。ローカルで編集したYAMLファイル（カテゴリ・タグ）の変更点もこのタイミングでプッシュされます。
 
 `posts sync` および `media sync` コマンドは、ローカルのファイルシステムとWordPressサーバー上のコンテンツ（投稿、メディア、カテゴリ、タグ）を同期する機能です。
 
