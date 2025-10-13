@@ -434,10 +434,9 @@ public class SyncService
             var localContentHash = _cacheService.ComputeSha256Hash(localContent);
             var isLocalContentChanged = localContentHash != localMeta.ContentHash;
 
-            var localEditableMeta = _cacheService.ReadEditableMetadata(id);
-            var localEditableMetaYaml = _cacheService.SerializeToYaml(localEditableMeta ?? new EditablePostMetadata());
-            var localEditableMetaHash = _cacheService.ComputeSha256Hash(localEditableMetaYaml);
-            var isLocalMetaChanged = localEditableMetaHash != localMeta.EditableMetaHash;
+            var localEditableMeta = _cacheService.ReadEditableMetadata(id); // Read full meta for potential push
+            var currentLocalMetaHash = _cacheService.GetLocalEditableMetaRawHash(id); // Get raw hash for comparison
+            var isLocalMetaChanged = currentLocalMetaHash != localMeta.EditableMetaHash;
 
             // 2. Check for remote changes
             bool isServerContentChanged;
@@ -469,7 +468,7 @@ public class SyncService
             var serverEditableMeta = new EditablePostMetadata
             {
                 EditMode = hasMarkdownMeta ? "markdown" : "html",
-                Title = remotePost.Title?.Raw,
+                // Title = remotePost.Title?.Raw, // This is now in the markdown file
                 Slug = remotePost.Slug,
                 Status = remotePost.Status,
                 Date = remotePost.Date,

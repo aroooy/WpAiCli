@@ -202,15 +202,38 @@ public class Program
 
             case "create":
             {
-                var title = parsed.GetString("title");
-                if (string.IsNullOrWhiteSpace(title))
+                var contentFile = ToFileInfo(parsed.GetString("content-file"));
+                if (contentFile == null || !contentFile.Exists)
                 {
-                    Console.Error.WriteLine("Provide --title.");
+                    Console.Error.WriteLine("Error: A valid --content-file is required.");
                     return (int)ExitCode.InvalidArguments;
                 }
 
-                var content = parsed.GetString("content");
-                var contentFile = ToFileInfo(parsed.GetString("content-file"));
+                var rawFileContent = File.ReadAllText(contentFile.FullName);
+                string title;
+                string bodyContent;
+
+                using (var reader = new StringReader(rawFileContent))
+                {
+                    var firstLine = reader.ReadLine();
+                    if (firstLine != null && firstLine.StartsWith("# "))
+                    {
+                        title = firstLine.Substring(2).Trim();
+                        bodyContent = reader.ReadToEnd().TrimStart();
+                    }
+                    else
+                    {
+                        Console.Error.WriteLine("Error: The first line of the content file must be the title, formatted as an H1 (e.g., '# My Post Title').");
+                        return (int)ExitCode.InvalidArguments;
+                    }
+                }
+
+                if (string.IsNullOrWhiteSpace(title))
+                {
+                    Console.Error.WriteLine("Error: Title extracted from H1 tag in content file cannot be empty.");
+                    return (int)ExitCode.InvalidArguments;
+                }
+
                 var status = parsed.GetString("status") ?? "draft";
                 var categories = parsed.GetIntArray("categories");
                 var tags = parsed.GetIntArray("tags");
@@ -220,14 +243,6 @@ public class Program
                 if (editMode != "markdown" && editMode != "html")
                 {
                     Console.Error.WriteLine("Invalid value for --edit-mode. Must be 'markdown' or 'html'.");
-                    return (int)ExitCode.InvalidArguments;
-                }
-
-                var rawContent = ContentLoader.ReadContent(content, contentFile) ?? string.Empty;
-
-                if (string.IsNullOrWhiteSpace(rawContent))
-                {
-                    Console.Error.WriteLine("Error: --content or --content-file is required and cannot be empty or whitespace.");
                     return (int)ExitCode.InvalidArguments;
                 }
 
@@ -244,19 +259,18 @@ public class Program
 
                 if (editMode == "markdown")
                 {
-                    request.Meta = new Dictionary<string, object> { { "_md_source", rawContent } };
+                    request.Meta = new Dictionary<string, object> { { "_md_source", bodyContent } };
                     if (conversion == "client")
-                    {
-                        request.Content = Markdown.ToHtml(rawContent);
+                    {                        request.Content = Markdown.ToHtml(bodyContent);
                     }
                     else // server conversion
                     {
-                        request.Content = rawContent;
+                        request.Content = bodyContent;
                     }
                 }
                 else // html mode
                 {
-                    request.Content = rawContent;
+                    request.Content = bodyContent;
                 }
 
                 var post = await service.CreatePostAsync(request, ct).ConfigureAwait(false);

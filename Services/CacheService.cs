@@ -99,6 +99,26 @@ public class CacheService
         .IgnoreUnmatchedProperties()
         .Build();
 
+    // Cache for parsed content (Title, Content) to avoid re-reading files
+    private readonly Dictionary<int, (string? Title, string Content)> _postContentCache = new();
+
+    private (string? Title, string Content) ParseContentFile(string filePath)
+    {
+        if (!File.Exists(filePath)) return (null, string.Empty);
+
+        var lines = File.ReadAllLines(filePath);
+        if (lines.Length > 0 && lines[0].StartsWith("# "))
+        {
+            var title = lines[0].Substring(2).Trim();
+            var content = string.Join("\n", lines.Skip(1)).TrimStart();
+            return (title, content);
+        }
+
+        // Fallback for files without a title line
+        return (null, File.ReadAllText(filePath));
+    }
+
+
     public CacheService(string rootCachePath, string connectionName)
     {
         _cachePath = Path.Combine(rootCachePath, connectionName);
@@ -156,11 +176,11 @@ public class CacheService
             contentForHash = htmlFromServer;
         }
 
-        // 2. Handle editable.yaml
+        // 2. Handle editable.yaml (Title is now in content.md)
         var editableMeta = new EditablePostMetadata
         {
             EditMode = hasMarkdownMeta ? "markdown" : "html",
-            Title = post.Title?.Raw,
+            // Title = post.Title?.Raw, // Removed from YAML
             Slug = post.Slug,
             Status = post.Status,
             Date = post.Date,
@@ -176,9 +196,12 @@ public class CacheService
         File.WriteAllText(editableMetaFilePath, yamlContent);
         var editableMetaHash = ComputeSha256Hash(yamlContent);
 
-        // 3. Handle content.md
+        // 3. Handle content.md (with Title as H1)
+        var finalContentToSave = $"# {post.Title?.Raw}\n\n{contentToSave}";
         var contentFilePath = Path.Combine(postsDir, $"{fileBaseName}_content.md");
-        File.WriteAllText(contentFilePath, contentToSave);
+        File.WriteAllText(contentFilePath, finalContentToSave);
+        
+        // The hash should be of the content *without* the title, to match the server's source.
         var contentHash = ComputeSha256Hash(contentForHash);
 
         // 3. Save metadata to database
@@ -319,24 +342,59 @@ public class CacheService
         return metadataList;
     }
 
+    private (string? Title, string Content) GetOrReadPostContent(int postId)
+    {
+        if (_postContentCache.TryGetValue(postId, out var cachedContent))
+        {
+            return cachedContent;
+        }
+
+        var contentFile = FindFileByPattern($"{postId}-*_content.md");
+        if (string.IsNullOrEmpty(contentFile) || !File.Exists(contentFile))
+        {
+            return (null, string.Empty);
+        }
+
+        var parsedContent = ParseContentFile(contentFile);
+        _postContentCache[postId] = parsedContent;
+        return parsedContent;
+    }
+
     public string ReadLocalContent(int postId)
     {
-        var contentFile = FindFileByPattern($"{postId}-*_content.md");
-        if (File.Exists(contentFile))
+        return GetOrReadPostContent(postId).Content;
+    }
+
+    public string? GetLocalEditableMetaRawHash(int postId)
+    {
+        var editableFile = FindFileByPattern($"{postId}-*_editable.yaml");
+        if (File.Exists(editableFile))
         {
-            return File.ReadAllText(contentFile);
+            return ComputeSha256Hash(File.ReadAllText(editableFile));
         }
-        return string.Empty;
+        return null;
     }
     
     public EditablePostMetadata? ReadEditableMetadata(int postId)
     {
         var editableFile = FindFileByPattern($"{postId}-*_editable.yaml");
+        EditablePostMetadata? metadata;
         if (File.Exists(editableFile))
         {
-            return DeserializeFromYaml<EditablePostMetadata>(File.ReadAllText(editableFile));
+            metadata = DeserializeFromYaml<EditablePostMetadata>(File.ReadAllText(editableFile));
         }
-        return null;
+        else
+        {
+            metadata = new EditablePostMetadata();
+        }
+
+        // Overwrite title with the one from the content file, if it's not already set (e.g. from create command)
+        if (metadata.Title == null)
+        {
+            metadata.Title = GetOrReadPostContent(postId).Title;
+        }
+
+        return metadata;
     }
 
     public (List<CachedCategory> Categories, List<CachedTag> Tags) GetTaxonomies()
