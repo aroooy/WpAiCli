@@ -114,6 +114,8 @@ public class Program
                         services.GetRequiredService<ConnectionProfile>(),
                         services.GetRequiredService<CacheService>()
                         );
+                case "taxonomies":
+                    return await HandleTaxonomiesAsync(commandArgs, services.GetRequiredService<SyncService>());
                 case "resolve":
                     return await HandleResolveAsync(commandArgs, services.GetRequiredService<SyncService>(), services.GetRequiredService<ConnectionProfile>());
                 default:
@@ -163,7 +165,11 @@ public class Program
         switch (subcommand)
         {
             case "sync":
-                return await HandlePostsSyncAsync(syncService, profile);
+                Console.WriteLine("Starting posts synchronization...");
+                var syncLimit = profile.SyncItemsLimit ?? 30;
+                var report = await syncService.SynchronizePostsAsync(profile, syncLimit, ct);
+                PrintSyncReport(report);
+                return (int)ExitCode.Success;
 
             case "list":
             {
@@ -218,6 +224,12 @@ public class Program
                 }
 
                 var rawContent = ContentLoader.ReadContent(content, contentFile) ?? string.Empty;
+
+                if (string.IsNullOrWhiteSpace(rawContent))
+                {
+                    Console.Error.WriteLine("Error: --content or --content-file is required and cannot be empty or whitespace.");
+                    return (int)ExitCode.InvalidArguments;
+                }
 
                 var request = new WordPressCreatePostRequest
                 {
@@ -377,11 +389,16 @@ public class Program
         return (int)ExitCode.Success;
     }
 
-    static async Task<int> HandlePostsSyncAsync(SyncService syncService, ConnectionProfile profile)
+    static async Task<int> HandleTaxonomiesAsync(string[] args, SyncService syncService)
     {
-        Console.WriteLine("Starting synchronization...");
-        var syncLimit = profile.SyncItemsLimit ?? 30;
-        var report = await syncService.SynchronizePostsAsync(profile, syncLimit, CancellationToken.None);
+        if (args.Length == 0 || args[0].ToLowerInvariant() != "sync")
+        {
+            Console.Error.WriteLine("Specify taxonomies subcommand (sync).");
+            return (int)ExitCode.InvalidArguments;
+        }
+
+        Console.WriteLine("Starting taxonomies synchronization...");
+        var report = await syncService.SynchronizeTaxonomiesAsync(CancellationToken.None);
         PrintSyncReport(report);
         return (int)ExitCode.Success;
     }

@@ -149,16 +149,22 @@ public class SyncService
         return updated;
     }
 
-    public async Task<SyncReport> SynchronizePostsAsync(ConnectionProfile profile, int syncLimit, CancellationToken cancellationToken)
+    public async Task<SyncReport> SynchronizeTaxonomiesAsync(CancellationToken cancellationToken)
     {
         var report = new SyncReport();
-
         // 1. Push local taxonomy changes first
         await SynchronizeLocalTaxonomyChangesAsync(report, cancellationToken);
         // 2. Synchronize taxonomies from server (pull changes and update local state)
         var allCategories = await _wpService.ListCategoriesAsync(cancellationToken);
         var allTags = await _wpService.ListTagsAsync(cancellationToken);
         await _cacheService.UpdateTaxonomiesCacheAsync(allCategories, allTags);
+        return report;
+    }
+
+    public async Task<SyncReport> SynchronizePostsAsync(ConnectionProfile profile, int syncLimit, CancellationToken cancellationToken)
+    {
+        var report = new SyncReport();
+
         // 3. Synchronize posts
         var localPosts = _cacheService.ListLocalPostMetadata()
             .ToDictionary(meta => meta.Post.Id, meta => meta);
