@@ -79,7 +79,8 @@ AI など機械連携では JSON モード (`--format json`) を推奨します�
   - `wpai posts get 123`
     - `create`: 新しい投稿を作成します。 `[キャッシュへの影響: 即時作成]`
       - `wpai posts create --title <TITLE> --content <CONTENT> | --content-file <PATH> [--status <STATUS>] [--edit-mode <markdown|html>] [--categories <IDs>] [--tags <IDs>] [--featured-media <ID>]`
-      - **注意:** `--content` または `--content-file` は必須で、内容は空や空白のみにはできません。- `push <id>`: ローカルキャッシュの変更（本文、メタデータ）をサーバーに一括で反映（プッシュ）します。 `[キャッシュへの影響: サーバー反映後に更新]`
+      - **注意:** `--content` または `--content-file` は必須で、内容は空や空白のみにはできません。
+      - **AI利用時のヒント:** 本文に記事タイトルを含めないでください。タイトルは `--title` オプションで別途指定されるため、本文にタイトルを含めると表示が重複します。- `push <id>`: ローカルキャッシュの変更（本文、メタデータ）をサーバーに一括で反映（プッシュ）します。 `[キャッシュへの影響: サーバー反映後に更新]`
   - `wpai posts push 123`
 - `delete <id>`: 投稿を削除します。 `[キャッシュへの影響: 即時削除]`
   - `wpai posts delete 123 [--force]`
