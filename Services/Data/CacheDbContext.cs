@@ -17,6 +17,7 @@ public class CachedPost
     public string ContentHash { get; set; } = string.Empty;
     public string EditableMetaHash { get; set; } = string.Empty;
     public string RawPostJson { get; set; } = string.Empty;
+    public DateTime ServerLastModified { get; set; }
     public DateTime LastModified { get; set; }
 }
 

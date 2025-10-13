@@ -213,6 +213,7 @@ public class CacheService
             existingPost.Slug = post.Slug ?? string.Empty;
             existingPost.Status = post.Status ?? string.Empty;
             existingPost.Date = post.Date.GetValueOrDefault();
+            existingPost.ServerLastModified = post.Modified.GetValueOrDefault();
             existingPost.ContentHash = contentHash;
             existingPost.EditableMetaHash = editableMetaHash;
             existingPost.RawPostJson = JsonSerializer.Serialize(post, SerializerOptions);
@@ -228,6 +229,7 @@ public class CacheService
                 Slug = post.Slug ?? string.Empty,
                 Status = post.Status ?? string.Empty,
                 Date = post.Date.GetValueOrDefault(),
+                ServerLastModified = post.Modified.GetValueOrDefault(),
                 ContentHash = contentHash,
                 EditableMetaHash = editableMetaHash,
                 RawPostJson = JsonSerializer.Serialize(post, SerializerOptions),

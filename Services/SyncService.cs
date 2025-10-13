@@ -438,53 +438,14 @@ public class SyncService
             var currentLocalMetaHash = _cacheService.GetLocalEditableMetaRawHash(id); // Get raw hash for comparison
             var isLocalMetaChanged = currentLocalMetaHash != localMeta.EditableMetaHash;
 
-            // 2. Check for remote changes
-            bool isServerContentChanged;
-            string? remoteMarkdown = null;
-            bool hasMarkdownMeta = remotePost.Meta != null && 
-                                   remotePost.Meta.TryGetValue("_md_source", out var markdownSourceObj) && 
-                                   markdownSourceObj is JsonElement markdownJson && 
-                                   markdownJson.ValueKind == JsonValueKind.String && 
-                                   !string.IsNullOrEmpty(remoteMarkdown = markdownJson.GetString());
-
-            if (localEditableMeta?.EditMode == "markdown")
-            {
-                if (hasMarkdownMeta && remoteMarkdown != null)
-                {
-                    var serverContentHash = _cacheService.ComputeSha256Hash(remoteMarkdown);
-                    isServerContentChanged = serverContentHash != localMeta.ContentHash;
-                }
-                else
-                {
-                    isServerContentChanged = false; 
-                }
-            }
-            else // html mode or mode not set
-            {
-                var serverContentHash = _cacheService.ComputeSha256Hash(remotePost.Content?.Raw ?? string.Empty);
-                isServerContentChanged = serverContentHash != localMeta.ContentHash;
-            }
-
-            var serverEditableMeta = new EditablePostMetadata
-            {
-                EditMode = hasMarkdownMeta ? "markdown" : "html",
-                // Title = remotePost.Title?.Raw, // This is now in the markdown file
-                Slug = remotePost.Slug,
-                Status = remotePost.Status,
-                Date = remotePost.Date,
-                Excerpt = remotePost.Excerpt?.Raw,
-                FeaturedMedia = remotePost.FeaturedMedia,
-                CommentStatus = remotePost.CommentStatus,
-                PingStatus = remotePost.PingStatus,
-                Categories = remotePost.Categories?.Select(c => c.ToString()).ToList(),
-                Tags = remotePost.Tags?.Select(t => t.ToString()).ToList()
-            };
-            var serverEditableMetaYaml = _cacheService.SerializeToYaml(serverEditableMeta);
-            var serverEditableMetaHash = _cacheService.ComputeSha256Hash(serverEditableMetaYaml);
-            var isServerMetaChanged = serverEditableMetaHash != localMeta.EditableMetaHash;
+            // 2. Check for remote changes using modification timestamp
+            var lastSyncServerModified = localMeta.Post.Modified.GetValueOrDefault();
+            var currentServerModified = remotePost.Modified.GetValueOrDefault();
+            // Use a small tolerance (e.g., 1 second) to account for potential precision differences between systems.
+            var isServerChanged = (currentServerModified - lastSyncServerModified).TotalSeconds > 1;
 
             // 3. Determine action
-            if ((isLocalContentChanged || isLocalMetaChanged) && (isServerContentChanged || isServerMetaChanged))
+            if ((isLocalContentChanged || isLocalMetaChanged) && isServerChanged)
             {
                 report.ConflictDetected.Add(id);
             }
@@ -540,7 +501,7 @@ public class SyncService
                 _cacheService.SavePostToCache(updatedPost);
                 report.PushedToServer.Add(id);
             }
-            else if (isServerContentChanged || isServerMetaChanged)
+            else if (isServerChanged)
             {
                 _cacheService.SavePostToCache(remotePost);
                 report.PulledFromServer.Add(id);
