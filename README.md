@@ -48,15 +48,15 @@ wpai posts list --status publish --format table
 ## 一般的な使い方（ワークフロー例）
 
 ### 1. 新規投稿を作成し、公開する
-1. `wpai posts create --title "新しい記事" --status draft` で下書きを作成します。
-   - この時点でローカルにキャッシュファイルが自動生成されます。
-2. 生成された `posts/123-new-article_content.md` と `_editable.yaml` をエディタで編集します。
+1. `wpai posts create --title "新しい記事" --content "ここに本文を記述" --status draft` で下書きを作成します。
+   - この時点でローカルにキャッシュファイル (`.md`) が自動生成されます。
+2. 生成された `posts/123-new-article.md` をエディタで編集します。
 3. `wpai posts push 123` を実行し、編集内容をサーバーに反映します。
-4. 記事を公開するには、`_editable.yaml` の `status` を `publish` に変更し、再度 `wpai posts push 123` を実行します。
+4. 記事を公開するには、ファイル先頭のYAMLフロントマター内の `status` を `publish` に変更し、再度 `wpai posts push 123` を実行します。
 
 ### 2. 既存の投稿を編集する
 1. `wpai posts sync` を実行し、サーバーから最新の状態を取得します。
-2. 編集したい記事のローカルファイルを編集します。
+2. 編集したい記事のローカルファイル (`.md`) を編集します。
 3. `wpai posts push <ID>` を実行し、変更をサーバーに反映します。
 
 ## コマンド一覧
@@ -179,8 +179,7 @@ wpai connections update "MyBlog" --cache-path ./my-blog-cache
     -   `categories/` ディレクトリ: **編集可能な**カテゴリのYAMLファイルが個別に保存されます (`[ID]-[名前].yaml`)。
     -   `tags/` ディレクトリ: **編集可能な**タグのYAMLファイルが個別に保存されます (`[ID]-[名前].yaml`)。
     -   `posts/` ディレクトリ:
-        -   `[ID]-[slug]_content.md`: 編集可能な投稿の本文です。
-        -   `[ID]-[slug]_editable.yaml`: 編集可能な投稿のメタデータです。
+        -   `[ID]-[タイトル].md`: 投稿のすべてを格納する単一のファイルです。ファイルの先頭にはYAMLフロントマターとしてメタデータが、その後には本文が記述されます。
     -   `media/` ディレクトリ:
         -   `[ID]-[ファイル名].[拡張子]`: メディアファイルの本体です。
         -   `[ID]-[ファイル名].yaml`: 編集可能なメディアのメタデータです。
@@ -210,14 +209,11 @@ wpai connections update "MyBlog" --cache-path ./my-blog-cache
   - **新規作成:** `categories` と同様の手順で新しいタグを作成できます。
   - **削除:** このファイルを削除しても、サーバー上のタグは削除されません。削除は `tags delete <id>` コマンドを使用してください。
 - `media/[ID]-[ファイル名].yaml`: メディアの `title`, `alt_text`, `caption`, `description` を変更できます。
-- `posts/[ID]-[slug]_content.md`: 投稿の本文。
-- `posts/[ID]-[slug]_editable.yaml`: 投稿のメタデータ。このファイルを編集することで、以下の項目を変更できます。
-    - `title`, `slug`, `status`, `date`, `excerpt` など。
-    - `editMode`: `markdown` または `html` を指定します。`_content.md` ファイルの内容をどちらとして扱うかを `posts sync` 時に決定します。
-      - `posts sync` で初めて投稿をキャッシュする際、サーバーの `_md_source` カスタムフィールドの有無に応じて自動設定されます。
-      - この値を `html` から `markdown` に変更すると、次回 `posts sync` 時に `_content.md` の内容がMarkdownとして扱われます。
+- `posts/[ID]-[タイトル].md`: 投稿のメタデータと本文を格納する単一のファイルです。このファイルを編集することで、投稿のすべてを変更できます。
+    - **メタデータ:** ファイル先頭の `---` で区切られたYAMLフロントマターブロックを編集します。`title`, `slug`, `status`, `date`, `excerpt`, `editMode` などを変更できます。
+    - **本文:** YAMLフロントマターブロック以降の内容が、投稿の本文となります。
     - `categories` や `tags` には、IDだけでなく、`categories/` や `tags/` ディレクトリ内に存在する名前やスラッグで指定できます。
-    - **注意:** ローカルで新しい投稿ファイルセットを作成して `posts sync` を実行しても、サーバーに新規投稿として作成することはできません。新規投稿は `posts create` コマンドを使用してください。
+    - **注意:** ローカルで新しい投稿ファイルを作成して `posts sync` を実行しても、サーバーに新規投稿として作成することはできません。新規投稿は `posts create` コマンドを使用してください。
 
 **注意:** `_editable.yaml` から項目（例: `slug:` の行）を削除した場合、その項目は**更新対象から外れる**だけで、サーバー上の値が空になるわけではありません。値を空にしたい場合は `slug: ''` のように明示的に空の値を設定してください。
 

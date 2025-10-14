@@ -200,94 +200,201 @@ public class Program
                 return (int)ExitCode.Success;
             }
 
-            case "create":
-            {
-                var contentFile = ToFileInfo(parsed.GetString("content-file"));
-                if (contentFile == null || !contentFile.Exists)
-                {
-                    Console.Error.WriteLine("Error: A valid --content-file is required.");
-                    return (int)ExitCode.InvalidArguments;
-                }
+                        case "create":
 
-                var rawFileContent = File.ReadAllText(contentFile.FullName);
-                string title;
-                string bodyContent;
+                        {
 
-                using (var reader = new StringReader(rawFileContent))
-                {
-                    var firstLine = reader.ReadLine();
-                    if (firstLine != null && firstLine.StartsWith("# "))
-                    {
-                        title = firstLine.Substring(2).Trim();
-                        bodyContent = reader.ReadToEnd().TrimStart();
-                    }
-                    else
-                    {
-                        Console.Error.WriteLine("Error: The first line of the content file must be the title, formatted as an H1 (e.g., '# My Post Title').");
-                        return (int)ExitCode.InvalidArguments;
-                    }
-                }
+                            var title = parsed.GetString("title");
 
-                if (string.IsNullOrWhiteSpace(title))
-                {
-                    Console.Error.WriteLine("Error: Title extracted from H1 tag in content file cannot be empty.");
-                    return (int)ExitCode.InvalidArguments;
-                }
+                            if (string.IsNullOrWhiteSpace(title))
 
-                var status = parsed.GetString("status") ?? "draft";
-                var categories = parsed.GetIntArray("categories");
-                var tags = parsed.GetIntArray("tags");
-                var featured = parsed.GetInt("featured-media");
-                var editMode = parsed.GetString("edit-mode") ?? "markdown";
+                            {
 
-                if (editMode != "markdown" && editMode != "html")
-                {
-                    Console.Error.WriteLine("Invalid value for --edit-mode. Must be 'markdown' or 'html'.");
-                    return (int)ExitCode.InvalidArguments;
-                }
+                                Console.Error.WriteLine("Error: --title is required and cannot be empty.");
 
-                var request = new WordPressCreatePostRequest
-                {
-                    Title = title,
-                    Status = status,
-                    Categories = categories,
-                    Tags = tags,
-                    FeaturedMedia = featured
-                };
+                                return (int)ExitCode.InvalidArguments;
 
-                var conversion = profile.MarkdownConversion ?? "client";
+                            }
 
-                if (editMode == "markdown")
-                {
-                    request.Meta = new Dictionary<string, object> { { "_md_source", bodyContent } };
-                    if (conversion == "client")
-                    {                        request.Content = Markdown.ToHtml(bodyContent);
-                    }
-                    else // server conversion
-                    {
-                        request.Content = bodyContent;
-                    }
-                }
-                else // html mode
-                {
-                    request.Content = bodyContent;
-                }
+            
 
-                var post = await service.CreatePostAsync(request, ct).ConfigureAwait(false);
-                // Immediately materialize cache for the newly created post
-                try
-                {
-                    cacheService.SavePostToCache(post);
-                }
-                catch (Exception ex)
-                {
-                    Console.Error.WriteLine($"Warning: Failed to write cache for the new post (ID {post.Id}): {ex.Message}");
-                }
+                            var bodyContent = parsed.GetString("content");
 
-                OutputFormatter.WritePost(post, format, Console.Out);
+                            var contentFile = ToFileInfo(parsed.GetString("content-file"));
 
-                return (int)ExitCode.Success;
-            }
+            
+
+                            if (string.IsNullOrWhiteSpace(bodyContent) && (contentFile == null || !contentFile.Exists))
+
+                            {
+
+                                Console.Error.WriteLine("Error: Either --content or a valid --content-file is required.");
+
+                                return (int)ExitCode.InvalidArguments;
+
+                            }
+
+            
+
+                            if (contentFile != null && contentFile.Exists)
+
+                            {
+
+                                bodyContent = File.ReadAllText(contentFile.FullName);
+
+                            }
+
+            
+
+                            var status = parsed.GetString("status") ?? "draft";
+
+                            var categories = parsed.GetIntArray("categories");
+
+                            var tags = parsed.GetIntArray("tags");
+
+                            var featured = parsed.GetInt("featured-media");
+
+                            var editMode = parsed.GetString("edit-mode") ?? "markdown";
+
+            
+
+                            if (editMode != "markdown" && editMode != "html")
+
+                            {
+
+                                Console.Error.WriteLine("Invalid value for --edit-mode. Must be 'markdown' or 'html'.");
+
+                                return (int)ExitCode.InvalidArguments;
+
+                            }
+
+            
+
+                            var request = new WordPressCreatePostRequest
+
+                            {
+
+                                Title = title,
+
+                                Status = status,
+
+                                Categories = categories,
+
+                                Tags = tags,
+
+                                FeaturedMedia = featured
+
+                            };
+
+            
+
+                            var conversion = profile.MarkdownConversion ?? "client";
+
+            
+
+                                            if (editMode == "markdown")
+
+            
+
+                                            {
+
+            
+
+                                                request.Meta = new Dictionary<string, object> { { "_md_source", bodyContent ?? string.Empty } };
+
+            
+
+                                                if (conversion == "client")
+
+            
+
+                                                {                        request.Content = Markdown.ToHtml(bodyContent ?? string.Empty);
+
+            
+
+                                                }
+
+            
+
+                                                else // server conversion
+
+            
+
+                                                {
+
+            
+
+                                                    request.Content = bodyContent;
+
+            
+
+                                                }
+
+            
+
+                                            }
+
+            
+
+                                            else // html mode
+
+            
+
+                                            {
+
+            
+
+                                                request.Content = bodyContent;
+
+            
+
+                                            }
+
+            
+
+                            
+
+            
+
+                                            var post = await service.CreatePostAsync(request, ct).ConfigureAwait(false);
+
+            
+
+                                            if (post != null)
+
+            
+
+                                            {
+
+            
+
+                                                if (!string.IsNullOrEmpty(profile.CachePath))
+
+            
+
+                                                {
+
+            
+
+                                                    cacheService.SavePostToCache(post);
+
+            
+
+                                                }
+
+            
+
+                                                OutputFormatter.WritePost(post, format, Console.Out);
+
+            
+
+                                            }
+
+            
+
+                            return (int)ExitCode.Success;
+
+                        }
 
             case "push":
             {

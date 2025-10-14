@@ -54,11 +54,11 @@ public class SyncService
     // Push a single post using local cache (content.md + editable.yaml)
     public async Task<WordPressPostDetail> PushPostAsync(int id, ConnectionProfile profile, CancellationToken cancellationToken)
     {
-        var localEditableMeta = _cacheService.ReadEditableMetadata(id)
-            ?? throw new InvalidOperationException($"Could not read local metadata for post {id}. Cannot push local changes.");
-        var localContent = _cacheService.ReadLocalContent(id);
+        var localPost = _cacheService.ReadLocalPost(id)
+            ?? throw new InvalidOperationException($"Could not read local post data for {id}. Cannot push local changes.");
 
         var request = new WordPressUpdatePostRequest();
+        var localEditableMeta = localPost.Metadata;
 
         // Handle content based on edit mode
         var editMode = localEditableMeta.EditMode ?? "html";
@@ -66,12 +66,12 @@ public class SyncService
 
         if (editMode == "markdown")
         {
-            request.Meta = new Dictionary<string, object> { { "_md_source", localContent } };
-            request.Content = conversion == "client" ? Markdown.ToHtml(localContent) : localContent;
+            request.Meta = new Dictionary<string, object> { { "_md_source", localPost.Content } };
+            request.Content = conversion == "client" ? Markdown.ToHtml(localPost.Content) : localPost.Content;
         }
         else // html mode
         {
-            request.Content = localContent;
+            request.Content = localPost.Content;
         }
 
         // Apply all editable metadata fields
@@ -207,14 +207,12 @@ public class SyncService
             }
             else if (hasLocal && !hasRemoteInTopN)
             {
-                var localContent = _cacheService.ReadLocalContent(id);
-                var localContentHash = _cacheService.ComputeSha256Hash(localContent);
-                
-                var localEditableMeta = _cacheService.ReadEditableMetadata(id);
-                var localEditableMetaYaml = _cacheService.SerializeToYaml(localEditableMeta ?? new EditablePostMetadata());
-                var localEditableMetaHash = _cacheService.ComputeSha256Hash(localEditableMetaYaml);
+                var localPost = _cacheService.ReadLocalPost(id);
+                if (localPost == null) continue; // Should not happen if hasLocal is true
 
-                var isLocalChanged = localContentHash != localMeta!.ContentHash || localEditableMetaHash != localMeta.EditableMetaHash;
+                var fullLocalContent = string.Join("\n", "---", _cacheService.SerializeToYaml(localPost.Metadata), "---", "", localPost.Content);
+                var currentLocalHash = _cacheService.ComputeSha256Hash(fullLocalContent);
+                var isLocalChanged = currentLocalHash != localMeta!.FileHash;
 
                 try
                 {
@@ -393,109 +391,75 @@ public class SyncService
 
     private async Task CompareAndSyncAsync(int id, CachePostMetadata localMeta, WordPressPostDetail remotePost, ConnectionProfile profile, SyncReport report, CancellationToken cancellationToken)
     {
-        var (contentFileExists, editableFileExists) = _cacheService.CheckCacheFileExistence(id);
+        var cacheFileExists = _cacheService.IsPostCacheFilePresent(id);
 
-        if (!contentFileExists || !editableFileExists)
+        if (!cacheFileExists)
         {
-            // Handle incomplete cache files
-            var isLocalContentChanged = false;
-            if (contentFileExists)
-            {
-                var localContent = _cacheService.ReadLocalContent(id);
-                var localContentHash = _cacheService.ComputeSha256Hash(localContent);
-                isLocalContentChanged = localContentHash != localMeta.ContentHash;
-            }
-
-            var isLocalMetaChanged = false;
-            if (editableFileExists)
-            {
-                var localEditableMeta = _cacheService.ReadEditableMetadata(id);
-                var localEditableMetaYaml = _cacheService.SerializeToYaml(localEditableMeta ?? new EditablePostMetadata());
-                var localEditableMetaHash = _cacheService.ComputeSha256Hash(localEditableMetaYaml);
-                isLocalMetaChanged = localEditableMetaHash != localMeta.EditableMetaHash;
-            }
-
-            if (isLocalContentChanged || isLocalMetaChanged)
-            {
-                // Incomplete cache with local modifications is a conflict
-                report.ConflictDetected.Add(id);
-            }
-            else
-            {
-                // Incomplete cache but no local modifications, restore from server
-                _cacheService.SavePostToCache(remotePost);
-                report.PulledFromServer.Add(id);
-            }
+            // If the main cache file doesn't exist, but we have a DB record, it's an incomplete cache.
+            // We can't know if there were local changes, so to be safe, we declare a conflict.
+            report.ConflictDetected.Add(id);
         }
         else
         {
-            // 1. Check for local changes
-            var localContent = _cacheService.ReadLocalContent(id);
-            var localContentHash = _cacheService.ComputeSha256Hash(localContent);
-            var isLocalContentChanged = localContentHash != localMeta.ContentHash;
+            // 1. Check for local changes by comparing hashes
+            var localPost = _cacheService.ReadLocalPost(id);
+            if (localPost == null || localPost.Metadata == null)
+            {
+                // This case should be rare, but if file disappears between check and read, pull from server.
+                _cacheService.SavePostToCache(remotePost);
+                report.PulledFromServer.Add(id);
+                return;
+            }
 
-            var localEditableMeta = _cacheService.ReadEditableMetadata(id); // Read full meta for potential push
-            var currentLocalMetaHash = _cacheService.GetLocalEditableMetaRawHash(id); // Get raw hash for comparison
-            var isLocalMetaChanged = currentLocalMetaHash != localMeta.EditableMetaHash;
+            var fullLocalContent = string.Join("\n", "---", _cacheService.SerializeToYaml(localPost.Metadata), "---", "", localPost.Content);
+            var currentLocalHash = _cacheService.ComputeSha256Hash(fullLocalContent);
+            var isLocalChanged = currentLocalHash != localMeta.FileHash;
 
             // 2. Check for remote changes using modification timestamp
             var lastSyncServerModified = localMeta.Post.Modified.GetValueOrDefault();
             var currentServerModified = remotePost.Modified.GetValueOrDefault();
-            // Use a small tolerance (e.g., 1 second) to account for potential precision differences between systems.
             var isServerChanged = (currentServerModified - lastSyncServerModified).TotalSeconds > 1;
 
             // 3. Determine action
-            if ((isLocalContentChanged || isLocalMetaChanged) && isServerChanged)
+            if (isLocalChanged && isServerChanged)
             {
                 report.ConflictDetected.Add(id);
             }
-            else if (isLocalContentChanged || isLocalMetaChanged)
+            else if (isLocalChanged)
             {
                 var request = new WordPressUpdatePostRequest();
+                var localEditableMeta = localPost.Metadata;
 
-                if (isLocalContentChanged)
+                var editMode = localEditableMeta.EditMode ?? "html";
+                var conversion = profile.MarkdownConversion ?? "client";
+
+                if (editMode == "markdown")
                 {
-                    var editMode = localEditableMeta?.EditMode ?? "html";
-                    var conversion = profile.MarkdownConversion ?? "client";
-
-                    if (editMode == "markdown")
-                    {
-                        request.Meta = new Dictionary<string, object> { { "_md_source", localContent } };
-                        if (conversion == "client")
-                        {
-                            request.Content = Markdown.ToHtml(localContent);
-                        }
-                        else // server conversion
-                        {
-                            request.Content = localContent;
-                        }
-                    }
-                    else // html mode
-                    {
-                        request.Content = localContent;
-                    }
+                    request.Meta = new Dictionary<string, object> { { "_md_source", localPost.Content } };
+                    request.Content = conversion == "client" ? Markdown.ToHtml(localPost.Content) : localPost.Content;
+                }
+                else // html mode
+                {
+                    request.Content = localPost.Content;
                 }
 
-                if (isLocalMetaChanged && localEditableMeta != null)
-                {
-                    request.Title = localEditableMeta.Title;
-                    request.Slug = localEditableMeta.Slug;
-                    request.Status = localEditableMeta.Status;
-                    request.Date = localEditableMeta.Date;
-                    request.Excerpt = localEditableMeta.Excerpt;
-                    request.FeaturedMedia = localEditableMeta.FeaturedMedia;
-                    request.CommentStatus = localEditableMeta.CommentStatus;
-                    request.PingStatus = localEditableMeta.PingStatus;
+                request.Title = localEditableMeta.Title;
+                request.Slug = localEditableMeta.Slug;
+                request.Status = localEditableMeta.Status;
+                request.Date = localEditableMeta.Date;
+                request.Excerpt = localEditableMeta.Excerpt;
+                request.FeaturedMedia = localEditableMeta.FeaturedMedia;
+                request.CommentStatus = localEditableMeta.CommentStatus;
+                request.PingStatus = localEditableMeta.PingStatus;
 
-                    if (!TryResolveTaxonomyIds(localEditableMeta.Categories, _cacheService.FindCategoryId, out var categoryIds) ||
-                        !TryResolveTaxonomyIds(localEditableMeta.Tags, _cacheService.FindTagId, out var tagIds))
-                    {
-                        report.ConflictDetected.Add(id);
-                        return;
-                    }
-                    request.Categories = categoryIds;
-                    request.Tags = tagIds;
+                if (!TryResolveTaxonomyIds(localEditableMeta.Categories, _cacheService.FindCategoryId, out var categoryIds) ||
+                    !TryResolveTaxonomyIds(localEditableMeta.Tags, _cacheService.FindTagId, out var tagIds))
+                {
+                    report.ConflictDetected.Add(id);
+                    return;
                 }
+                request.Categories = categoryIds;
+                request.Tags = tagIds;
 
                 var updatedPost = await _wpService.UpdatePostAsync(id, request, cancellationToken);
                 _cacheService.SavePostToCache(updatedPost);
@@ -576,11 +540,11 @@ public class SyncService
         }
         else if (strategy == "local-wins")
         {
-            var localContent = _cacheService.ReadLocalContent(id);
-            var localEditableMeta = _cacheService.ReadEditableMetadata(id);
-            var meta = localEditableMeta ?? throw new InvalidOperationException($"Could not read local metadata for post {id}. Cannot push local changes.");
+            var localPost = _cacheService.ReadLocalPost(id)
+                ?? throw new InvalidOperationException($"Could not read local post data for {id}. Cannot push local changes.");
 
             var request = new WordPressUpdatePostRequest();
+            var meta = localPost.Metadata;
 
             // Handle content based on edit mode
             var editMode = meta.EditMode ?? "html";
@@ -588,19 +552,12 @@ public class SyncService
 
             if (editMode == "markdown")
             {
-                request.Meta = new Dictionary<string, object> { { "_md_source", localContent } };
-                if (conversion == "client")
-                {
-                    request.Content = Markdown.ToHtml(localContent);
-                }
-                else // server conversion
-                {
-                    request.Content = localContent;
-                }
+                request.Meta = new Dictionary<string, object> { { "_md_source", localPost.Content } };
+                request.Content = conversion == "client" ? Markdown.ToHtml(localPost.Content) : localPost.Content;
             }
             else // html mode
             {
-                request.Content = localContent;
+                request.Content = localPost.Content;
             }
 
             request.Title = meta.Title;

@@ -18,8 +18,13 @@ namespace WpAiCli.Services;
 public class CachePostMetadata
 {
     public WordPressPostDetail Post { get; set; } = null!;
-    public string ContentHash { get; set; } = null!;
-    public string EditableMetaHash { get; set; } = null!;
+    public string FileHash { get; set; } = null!;
+}
+
+public class LocalPost
+{
+    public EditablePostMetadata Metadata { get; set; } = new();
+    public string Content { get; set; } = string.Empty;
 }
 
 public class EditablePostMetadata
@@ -102,21 +107,6 @@ public class CacheService
     // Cache for parsed content (Title, Content) to avoid re-reading files
     private readonly Dictionary<int, (string? Title, string Content)> _postContentCache = new();
 
-    private (string? Title, string Content) ParseContentFile(string filePath)
-    {
-        if (!File.Exists(filePath)) return (null, string.Empty);
-
-        var lines = File.ReadAllLines(filePath);
-        if (lines.Length > 0 && lines[0].StartsWith("# "))
-        {
-            var title = lines[0].Substring(2).Trim();
-            var content = string.Join("\n", lines.Skip(1)).TrimStart();
-            return (title, content);
-        }
-
-        // Fallback for files without a title line
-        return (null, File.ReadAllText(filePath));
-    }
 
 
     public CacheService(string rootCachePath, string connectionName)
@@ -153,34 +143,32 @@ public class CacheService
         var postsDir = Path.Combine(_cachePath, "posts");
         Directory.CreateDirectory(postsDir);
 
-        var sanitizedTitle = SanitizeTitleForFilename(post.Title?.Raw ?? post.Slug ?? string.Empty);
+        var titleForFile = post.Title?.Raw ?? post.Slug;
+        var sanitizedTitle = SanitizeTitleForFilename(titleForFile ?? string.Empty);
         var fileBaseName = $"{post.Id}-{sanitizedTitle}";
+        var filePath = Path.Combine(postsDir, $"{fileBaseName}.md");
 
+        // Clean up any old files for this post ID
         DeletePostFromCache(post.Id);
 
         // 1. Determine content and edit mode from meta field
         string contentToSave;
-        string contentForHash;
         bool hasMarkdownMeta = false;
         if (post.Meta != null && post.Meta.TryGetValue("_md_source", out var markdownSourceObj) && markdownSourceObj is JsonElement markdownJson && markdownJson.ValueKind == JsonValueKind.String && !string.IsNullOrEmpty(markdownJson.GetString()))
         {
-            var markdownFromMeta = markdownJson.GetString()!;
-            contentToSave = markdownFromMeta;
-            contentForHash = markdownFromMeta;
+            contentToSave = markdownJson.GetString()!;
             hasMarkdownMeta = true;
         }
         else
         {
-            var htmlFromServer = post.Content?.Raw ?? string.Empty;
-            contentToSave = htmlFromServer;
-            contentForHash = htmlFromServer;
+            contentToSave = post.Content?.Raw ?? string.Empty;
         }
 
-        // 2. Handle editable.yaml (Title is now in content.md)
+        // 2. Populate all metadata into the EditablePostMetadata object
         var editableMeta = new EditablePostMetadata
         {
+            Title = post.Title?.Raw,
             EditMode = hasMarkdownMeta ? "markdown" : "html",
-            // Title = post.Title?.Raw, // Removed from YAML
             Slug = post.Slug,
             Status = post.Status,
             Date = post.Date,
@@ -192,21 +180,16 @@ public class CacheService
             Tags = post.Tags?.Select(t => t.ToString()).ToList()
         };
         var yamlContent = SerializeToYaml(editableMeta);
-        var editableMetaFilePath = Path.Combine(postsDir, $"{fileBaseName}_editable.yaml");
-        File.WriteAllText(editableMetaFilePath, yamlContent);
-        var editableMetaHash = ComputeSha256Hash(yamlContent);
 
-        // 3. Handle content.md (with Title as H1)
-        var finalContentToSave = $"# {post.Title?.Raw}\n\n{contentToSave}";
-        var contentFilePath = Path.Combine(postsDir, $"{fileBaseName}_content.md");
-        File.WriteAllText(contentFilePath, finalContentToSave);
+        // 3. Construct the full file content
+        var finalContent = string.Join("\n", "---", yamlContent, "---", "", contentToSave);
+        File.WriteAllText(filePath, finalContent);
         
-        // The hash should be of the content *without* the title, to match the server's source.
-        var contentHash = ComputeSha256Hash(contentForHash);
+        // 4. Compute a single hash for the entire file
+        var fileHash = ComputeSha256Hash(finalContent);
 
-        // 3. Save metadata to database
+        // 5. Save metadata to database with the single hash
         var existingPost = _db.Posts.FirstOrDefault(p => p.PostId == post.Id);
-
         if (existingPost != null)
         {
             existingPost.Title = post.Title?.Raw ?? string.Empty;
@@ -214,8 +197,7 @@ public class CacheService
             existingPost.Status = post.Status ?? string.Empty;
             existingPost.Date = post.Date.GetValueOrDefault();
             existingPost.ServerLastModified = post.Modified.GetValueOrDefault();
-            existingPost.ContentHash = contentHash;
-            existingPost.EditableMetaHash = editableMetaHash;
+            existingPost.FileHash = fileHash; // Use single hash
             existingPost.RawPostJson = JsonSerializer.Serialize(post, SerializerOptions);
             existingPost.LastModified = DateTime.UtcNow;
             _db.Posts.Update(existingPost);
@@ -230,8 +212,7 @@ public class CacheService
                 Status = post.Status ?? string.Empty,
                 Date = post.Date.GetValueOrDefault(),
                 ServerLastModified = post.Modified.GetValueOrDefault(),
-                ContentHash = contentHash,
-                EditableMetaHash = editableMetaHash,
+                FileHash = fileHash, // Use single hash
                 RawPostJson = JsonSerializer.Serialize(post, SerializerOptions),
                 LastModified = DateTime.UtcNow
             };
@@ -239,6 +220,35 @@ public class CacheService
         }
 
         _db.SaveChanges();
+    }
+
+    public LocalPost? ReadLocalPost(int postId)
+    {
+        var postFile = FindFileByPattern($"{postId}-*.md");
+        if (string.IsNullOrEmpty(postFile) || !File.Exists(postFile))
+        {
+            return null;
+        }
+
+        var fileContent = File.ReadAllText(postFile);
+        var parts = fileContent.Split(new[] { "---" }, 3, StringSplitOptions.None);
+
+        if (parts.Length < 3)
+        {
+            // Not a valid front matter format, treat all as content
+            return new LocalPost { Content = fileContent };
+        }
+
+        var yaml = parts[1];
+        var content = parts[2].TrimStart();
+        
+        var metadata = DeserializeFromYaml<EditablePostMetadata>(yaml);
+
+        return new LocalPost
+        {
+            Metadata = metadata,
+            Content = content
+        };
     }
 
     public async Task UpdateTaxonomiesCacheAsync(IEnumerable<WordPressCategory> categories, IEnumerable<WordPressTag> tags)
@@ -330,8 +340,7 @@ public class CacheService
                     metadataList.Add(new CachePostMetadata
                     {
                         Post = post,
-                        ContentHash = cachedPost.ContentHash,
-                        EditableMetaHash = cachedPost.EditableMetaHash
+                        FileHash = cachedPost.FileHash
                     });
                 }
             }
@@ -344,60 +353,6 @@ public class CacheService
         return metadataList;
     }
 
-    private (string? Title, string Content) GetOrReadPostContent(int postId)
-    {
-        if (_postContentCache.TryGetValue(postId, out var cachedContent))
-        {
-            return cachedContent;
-        }
-
-        var contentFile = FindFileByPattern($"{postId}-*_content.md");
-        if (string.IsNullOrEmpty(contentFile) || !File.Exists(contentFile))
-        {
-            return (null, string.Empty);
-        }
-
-        var parsedContent = ParseContentFile(contentFile);
-        _postContentCache[postId] = parsedContent;
-        return parsedContent;
-    }
-
-    public string ReadLocalContent(int postId)
-    {
-        return GetOrReadPostContent(postId).Content;
-    }
-
-    public string? GetLocalEditableMetaRawHash(int postId)
-    {
-        var editableFile = FindFileByPattern($"{postId}-*_editable.yaml");
-        if (File.Exists(editableFile))
-        {
-            return ComputeSha256Hash(File.ReadAllText(editableFile));
-        }
-        return null;
-    }
-    
-    public EditablePostMetadata? ReadEditableMetadata(int postId)
-    {
-        var editableFile = FindFileByPattern($"{postId}-*_editable.yaml");
-        EditablePostMetadata? metadata;
-        if (File.Exists(editableFile))
-        {
-            metadata = DeserializeFromYaml<EditablePostMetadata>(File.ReadAllText(editableFile));
-        }
-        else
-        {
-            metadata = new EditablePostMetadata();
-        }
-
-        // Overwrite title with the one from the content file, if it's not already set (e.g. from create command)
-        if (metadata.Title == null)
-        {
-            metadata.Title = GetOrReadPostContent(postId).Title;
-        }
-
-        return metadata;
-    }
 
     public (List<CachedCategory> Categories, List<CachedTag> Tags) GetTaxonomies()
     {
@@ -481,18 +436,10 @@ public class CacheService
         return mediaMetadataList;
     }
 
-    public bool AreCacheFilesPresent(int postId)
+    public bool IsPostCacheFilePresent(int postId)
     {
-        var contentFile = FindFileByPattern($"{postId}-*_content.md");
-        var editableFile = FindFileByPattern($"{postId}-*_editable.yaml");
-        return File.Exists(contentFile) && File.Exists(editableFile);
-    }
-
-    public (bool contentFileExists, bool editableFileExists) CheckCacheFileExistence(int postId)
-    {
-        var contentFile = FindFileByPattern($"{postId}-*_content.md");
-        var editableFile = FindFileByPattern($"{postId}-*_editable.yaml");
-        return (File.Exists(contentFile), File.Exists(editableFile));
+        var postFile = FindFileByPattern($"{postId}-*.md");
+        return File.Exists(postFile);
     }
 
     public void DeletePostFromCache(int postId)
