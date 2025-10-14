@@ -60,19 +60,24 @@ public class SyncService
         var request = new WordPressUpdatePostRequest();
         var localEditableMeta = localPost.Metadata;
 
+        // Initialize Meta from local file, then add/overwrite internal fields
+        var metaForRequest = localEditableMeta.Meta ?? new Dictionary<string, object?>();
+
         // Handle content based on edit mode
         var editMode = localEditableMeta.EditMode ?? "html";
         var conversion = profile.MarkdownConversion ?? "client";
 
         if (editMode == "markdown")
         {
-            request.Meta = new Dictionary<string, object> { { "_md_source", localPost.Content } };
+            metaForRequest["_md_source"] = localPost.Content;
             request.Content = conversion == "client" ? Markdown.ToHtml(localPost.Content) : localPost.Content;
         }
         else // html mode
         {
             request.Content = localPost.Content;
         }
+
+        request.Meta = metaForRequest;
 
         // Apply all editable metadata fields
         request.Title = localEditableMeta.Title;
@@ -430,18 +435,28 @@ public class SyncService
                 var request = new WordPressUpdatePostRequest();
                 var localEditableMeta = localPost.Metadata;
 
+                if (localEditableMeta == null) {
+                    report.ConflictDetected.Add(id);
+                    return;
+                }
+
+                // Initialize Meta from local file, then add/overwrite internal fields
+                var metaForRequest = localEditableMeta.Meta ?? new Dictionary<string, object?>();
+
                 var editMode = localEditableMeta.EditMode ?? "html";
                 var conversion = profile.MarkdownConversion ?? "client";
 
                 if (editMode == "markdown")
                 {
-                    request.Meta = new Dictionary<string, object> { { "_md_source", localPost.Content } };
+                    metaForRequest["_md_source"] = localPost.Content;
                     request.Content = conversion == "client" ? Markdown.ToHtml(localPost.Content) : localPost.Content;
                 }
                 else // html mode
                 {
                     request.Content = localPost.Content;
                 }
+
+                request.Meta = metaForRequest;
 
                 request.Title = localEditableMeta.Title;
                 request.Slug = localEditableMeta.Slug;
@@ -546,19 +561,24 @@ public class SyncService
             var request = new WordPressUpdatePostRequest();
             var meta = localPost.Metadata;
 
+            // Initialize Meta from local file, then add/overwrite internal fields
+            var metaForRequest = meta.Meta ?? new Dictionary<string, object?>();
+
             // Handle content based on edit mode
             var editMode = meta.EditMode ?? "html";
             var conversion = profile.MarkdownConversion ?? "client";
 
             if (editMode == "markdown")
             {
-                request.Meta = new Dictionary<string, object> { { "_md_source", localPost.Content } };
+                metaForRequest["_md_source"] = localPost.Content;
                 request.Content = conversion == "client" ? Markdown.ToHtml(localPost.Content) : localPost.Content;
             }
             else // html mode
             {
                 request.Content = localPost.Content;
             }
+
+            request.Meta = metaForRequest;
 
             request.Title = meta.Title;
             request.Slug = meta.Slug;

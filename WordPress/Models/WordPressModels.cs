@@ -136,7 +136,7 @@ public sealed class WordPressCreatePostRequest
 
     [JsonPropertyName("meta")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public Dictionary<string, object>? Meta { get; set; }
+    public Dictionary<string, object?>? Meta { get; set; }
 }
 
 public sealed class WordPressUpdatePostRequest
@@ -185,7 +185,7 @@ public sealed class WordPressUpdatePostRequest
 
     [JsonPropertyName("meta")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public Dictionary<string, object>? Meta { get; set; }
+    public Dictionary<string, object?>? Meta { get; set; }
 }
 
 public sealed class WordPressRevision : IHasTitle

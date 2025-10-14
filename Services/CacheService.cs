@@ -51,6 +51,8 @@ public class EditablePostMetadata
     public List<string>? Tags { get; set; }
     [YamlMember(Alias = "editMode")]
     public string? EditMode { get; set; }
+    [YamlMember(Alias = "meta")]
+    public Dictionary<string, object?>? Meta { get; set; }
 }
 
 public class EditableCategory
@@ -138,6 +140,30 @@ public class CacheService
         return sanitizedTitle;
     }
 
+    private object? ConvertJsonElement(JsonElement element)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.True:
+                return true;
+            case JsonValueKind.False:
+                return false;
+            case JsonValueKind.Number:
+                if (element.TryGetInt32(out var intValue)) return intValue;
+                if (element.TryGetInt64(out var longValue)) return longValue;
+                return element.GetDouble();
+            case JsonValueKind.String:
+                return element.GetString();
+            case JsonValueKind.Null:
+                return null;
+            default:
+                // For complex types (Array, Object), return the raw JSON text.
+                // YamlDotNet can often handle this better than a half-deserialized object.
+                return element.GetRawText();
+        }
+    }
+
+
     public void SavePostToCache(WordPressPostDetail post)
     {
         var postsDir = Path.Combine(_cachePath, "posts");
@@ -177,7 +203,8 @@ public class CacheService
             CommentStatus = post.CommentStatus,
             PingStatus = post.PingStatus,
             Categories = post.Categories?.Select(c => c.ToString()).ToList(),
-            Tags = post.Tags?.Select(t => t.ToString()).ToList()
+            Tags = post.Tags?.Select(t => t.ToString()).ToList(),
+            Meta = post.Meta?.Where(kv => kv.Key != "_md_source").ToDictionary(kv => kv.Key, kv => ConvertJsonElement((JsonElement)kv.Value))
         };
         var yamlContent = SerializeToYaml(editableMeta);
 

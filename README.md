@@ -210,7 +210,15 @@ wpai connections update "MyBlog" --cache-path ./my-blog-cache
   - **削除:** このファイルを削除しても、サーバー上のタグは削除されません。削除は `tags delete <id>` コマンドを使用してください。
 - `media/[ID]-[ファイル名].yaml`: メディアの `title`, `alt_text`, `caption`, `description` を変更できます。
 - `posts/[ID]-[タイトル].md`: 投稿のメタデータと本文を格納する単一のファイルです。このファイルを編集することで、投稿のすべてを変更できます。
-    - **メタデータ:** ファイル先頭の `---` で区切られたYAMLフロントマターブロックを編集します。`title`, `slug`, `status`, `date`, `excerpt`, `editMode` などを変更できます。
+    - **メタデータ:** ファイル先頭の `---` で区切られたYAMLフロントマターブロックを編集します。`title`, `slug`, `status` などの標準的なフィールドに加えて、`meta` ブロックを記述することで、任意のカスタムフィールドを管理できます。
+        - **`meta` ブロックの使用法:**
+            ```yaml
+            meta:
+              my_custom_field: "some value"
+              another_field: 123
+            ```
+        - **注意:** `meta` ブロックで追加したカスタムフィールドをサーバーに保存するには、あらかじめWordPress側で `register_post_meta` 関数を使い、そのフィールドをREST APIに登録しておく必要があります。
+        - **予約フィールド:** `_md_source` は `editMode: markdown` の際に本文を格納するために内部的に使用されるため、`meta` ブロック内で手動で設定しないでください。
     - **本文:** YAMLフロントマターブロック以降の内容が、投稿の本文となります。
     - `categories` や `tags` には、IDだけでなく、`categories/` や `tags/` ディレクトリ内に存在する名前やスラッグで指定できます。
     - **注意:** ローカルで新しい投稿ファイルを作成して `posts sync` を実行しても、サーバーに新規投稿として作成することはできません。新規投稿は `posts create` コマンドを使用してください。

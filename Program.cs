@@ -300,7 +300,7 @@ public class Program
 
             
 
-                                                request.Meta = new Dictionary<string, object> { { "_md_source", bodyContent ?? string.Empty } };
+                                                request.Meta = new Dictionary<string, object?> { { "_md_source", bodyContent ?? string.Empty } };
 
             
 
