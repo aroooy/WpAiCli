@@ -195,7 +195,7 @@ public class CacheService
         {
             Title = post.Title?.Raw,
             EditMode = hasMarkdownMeta ? "markdown" : "html",
-            Slug = post.Slug,
+            Slug = System.Net.WebUtility.UrlDecode(post.Slug),
             Status = post.Status,
             Date = post.Date,
             Excerpt = post.Excerpt?.Raw,
