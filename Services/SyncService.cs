@@ -246,88 +246,283 @@ public class SyncService
         return report;
     }
 
-    public async Task<SyncReport> SynchronizeMediaAsync(int syncLimit, CancellationToken cancellationToken)
-    {
-        var report = new SyncReport();
+        public async Task<SyncReport> SynchronizeMediaAsync(int syncLimit, CancellationToken cancellationToken)
 
-        // 1. Push local metadata changes
-        var localMediaItems = _cacheService.ReadLocalMediaMetadata();
-        foreach (var (mediaId, metadata) in localMediaItems)
         {
+
+            var report = new SyncReport();
+
+    
+
+            // 1. Push local metadata changes first
+
+            var localMediaMetadata = _cacheService.ReadLocalMediaMetadata().ToDictionary(m => m.MediaId, m => m.Metadata);
+
+            foreach (var (mediaId, metadata) in localMediaMetadata)
+
+            {
+
+                if (IsLocalMediaChanged(mediaId, metadata))
+
+                {
+
+                    try
+
+                    {
+
+                        var request = new WordPressUpdateMediaRequest
+
+                        {
+
+                            Title = metadata.Title,
+
+                            Description = metadata.Description,
+
+                            Caption = metadata.Caption,
+
+                            AltText = metadata.AltText
+
+                        };
+
+                        var updatedMedia = await _wpService.UpdateMediaAsync(mediaId, request, cancellationToken);
+
+                        _cacheService.UpdateMediaMetadataOnly(updatedMedia);
+
+                        report.PushedMediaToServer.Add(mediaId);
+
+                    }
+
+                    catch (Exception ex)
+
+                    {
+
+                        Console.Error.WriteLine($"Failed to push media metadata for ID {mediaId}: {ex.Message}");
+
+                        report.MediaConflicts.Add(mediaId);
+
+                    }
+
+                }
+
+            }
+
+    
+
+            // 2. Fetch remote and local states
+
+            var remoteMedia = (await _wpService.ListMediaAsync(perPage: syncLimit, page: 1, cancellationToken))
+
+                .ToDictionary(m => m.Id, m => m);
+
+            
+
+            // Re-read local metadata in case it was updated by a push
+
+            localMediaMetadata = _cacheService.ReadLocalMediaMetadata().ToDictionary(m => m.MediaId, m => m.Metadata);
+
+    
+
+            var allIds = localMediaMetadata.Keys.Union(remoteMedia.Keys).ToList();
+
+    
+
+            // 3. Compare and sync each item
+
+            foreach (var id in allIds)
+
+            {
+
+                cancellationToken.ThrowIfCancellationRequested();
+
+    
+
+                var hasLocal = localMediaMetadata.TryGetValue(id, out var localMeta);
+
+                var hasRemote = remoteMedia.TryGetValue(id, out var remoteMeta);
+
+    
+
+                if (hasLocal && hasRemote)
+
+                {
+
+                    // Exists in both places, check for changes
+
+                    var isLocalChanged = IsLocalMediaChanged(id, localMeta);
+
+                    var isRemoteChanged = (remoteMeta.ModifiedGmt.GetValueOrDefault() - localMeta.ModifiedGmt.GetValueOrDefault()).TotalSeconds > 1;
+
+    
+
+                    if (isLocalChanged && isRemoteChanged)
+
+                    {
+
+                        report.MediaConflicts.Add(id);
+
+                    }
+
+                    else if (isRemoteChanged)
+
+                    {
+
+                        // Pull remote changes
+
+                        await PullMediaItemAsync(remoteMeta, report, cancellationToken);
+
+                    }
+
+                    // If only local changed, it was handled in the push step. No action needed here.
+
+                }
+
+                else if (!hasLocal && hasRemote)
+
+                {
+
+                    // New on server, pull it
+
+                    await PullMediaItemAsync(remoteMeta, report, cancellationToken);
+
+                }
+
+                else if (hasLocal && !hasRemote)
+
+                {
+
+                    // Potentially deleted on server
+
+                    if (IsLocalMediaChanged(id, localMeta))
+
+                    {
+
+                        report.MediaConflicts.Add(id);
+
+                        continue;
+
+                    }
+
+    
+
+                    try
+
+                    {
+
+                        // Verify it's truly deleted on the server
+
+                        await _wpService.GetMediaAsync(id, cancellationToken);
+
+                        // If it's found, it's just an old item not in the top N. Do nothing.
+
+                    }
+
+                    catch (WordPressApiException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+
+                    {
+
+                        // It's confirmed deleted on the server. Delete locally.
+
+                        _cacheService.DeleteMediaFromCache(id);
+
+                        report.DeletedMediaFromLocal.Add(id);
+
+                    }
+
+                    catch (Exception ex)
+
+                    {
+
+                        Console.Error.WriteLine($"Error probing media item {id}: {ex.Message}");
+
+                        report.MediaConflicts.Add(id);
+
+                    }
+
+                }
+
+            }
+
+    
+
+            return report;
+
+        }
+
+    
+
+        private bool IsLocalMediaChanged(int mediaId, EditableMediaMetadata metadata)
+
+        {
+
             var yamlContent = SerializeToYaml(metadata);
+
             var currentHash = _cacheService.ComputeSha256Hash(yamlContent);
+
             var previousHash = _cacheService.GetMediaMetadataHash(mediaId);
 
-            if (previousHash != null && currentHash != previousHash)
-            {
-                var request = new WordPressUpdateMediaRequest
-                {
-                    Title = metadata.Title,
-                    Description = metadata.Description,
-                    Caption = metadata.Caption,
-                    AltText = metadata.AltText
-                };
-                await _wpService.UpdateMediaAsync(mediaId, request, cancellationToken);
-                report.PushedMediaToServer.Add(mediaId);
-            }
+            return previousHash != null && currentHash != previousHash;
+
         }
 
-        // 2. Pull top-N media from server
-        var allMedia = await _wpService.ListMediaAsync(perPage: syncLimit, page: 1, cancellationToken);
-        foreach (var media in allMedia)
+    
+
+        private async Task PullMediaItemAsync(WordPressMedia media, SyncReport report, CancellationToken cancellationToken)
+
         {
-            if (string.IsNullOrEmpty(media.SourceUrl)) continue;
+
+            if (string.IsNullOrEmpty(media.SourceUrl))
+
+            {
+
+                report.MediaConflicts.Add(media.Id);
+
+                return;
+
+            }
+
+    
 
             try
+
             {
+
                 var fileContent = await _wpService.DownloadMediaFileAsync(media.SourceUrl, cancellationToken);
+
+                var isNew = !_cacheService.IsMediaCached(media.Id);
+
                 _cacheService.SaveMediaToCache(media, fileContent);
-                report.NewlyCachedMedia.Add(media.Id);
+
+    
+
+                if (isNew)
+
+                {
+
+                    report.NewlyCachedMedia.Add(media.Id);
+
+                }
+
+                else
+
+                {
+
+                    report.PulledMediaFromServer.Add(media.Id);
+
+                }
+
             }
+
             catch (Exception ex)
+
             {
+
                 Console.Error.WriteLine($"Failed to sync media item {media.Id}: {ex.Message}");
+
                 report.MediaConflicts.Add(media.Id);
+
             }
+
         }
-
-        // 3. For locally present media not included in top-N, if local metadata is unmodified
-        //    and server returns 404 (deleted), remove local cache.
-        try
-        {
-            var serverIds = new HashSet<int>(allMedia.Select(m => m.Id));
-
-            var localMediaMetas = _cacheService.ReadLocalMediaMetadata();
-            foreach (var (mediaId, metadata) in localMediaMetas)
-            {
-                if (serverIds.Contains(mediaId)) continue; // within top-N, handled above
-
-                var yamlContent = SerializeToYaml(metadata);
-                var currentHash = _cacheService.ComputeSha256Hash(yamlContent);
-                var previousHash = _cacheService.GetMediaMetadataHash(mediaId);
-
-                var isUnmodified = previousHash != null && previousHash == currentHash;
-                if (!isUnmodified) continue; // keep locally if edited
-
-                try
-                {
-                    // Probe server existence
-                    var _ = await _wpService.GetMediaAsync(mediaId, cancellationToken);
-                }
-                catch (WordPressApiException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
-                {
-                    _cacheService.DeleteMediaFromCache(mediaId);
-                    report.DeletedMediaFromLocal.Add(mediaId);
-                }
-            }
-        }
-        catch
-        {
-            // Best-effort cleanup; ignore failures and continue.
-        }
-
-        return report;
-    }
 
     private string SerializeToYaml(EditableMediaMetadata data)
     {

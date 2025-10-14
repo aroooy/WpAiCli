@@ -325,6 +325,9 @@ public sealed class WordPressMedia : IHasTitle
     [JsonPropertyName("date")]
     public DateTime? Date { get; set; }
 
+    [JsonPropertyName("modified_gmt")]
+    public DateTime? ModifiedGmt { get; set; }
+
     [JsonPropertyName("slug")]
     public string? Slug { get; set; }
 

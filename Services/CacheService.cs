@@ -75,6 +75,8 @@ public class EditableTag
 
 public class EditableMediaMetadata
 {
+    [YamlMember(Alias = "modified_gmt")]
+    public DateTime? ModifiedGmt { get; set; }
     [YamlMember(Alias = "title")]
     public string? Title { get; set; }
     [YamlMember(Alias = "alt_text")]
@@ -98,7 +100,7 @@ public class CacheService
     
     private static readonly ISerializer YamlSerializer = new SerializerBuilder()
         .WithNamingConvention(CamelCaseNamingConvention.Instance)
-        .ConfigureDefaultValuesHandling(DefaultValuesHandling.OmitNull)
+        .ConfigureDefaultValuesHandling(DefaultValuesHandling.Preserve)
         .Build();
 
     private static readonly IDeserializer YamlDeserializer = new DeserializerBuilder()
@@ -629,6 +631,15 @@ public class CacheService
         }
     }
 
+    public bool IsMediaCached(int mediaId)
+    {
+        var mediaDir = Path.Combine(_cachePath, "media");
+        if (!Directory.Exists(mediaDir)) return false;
+
+        var files = Directory.GetFiles(mediaDir, $"{mediaId}-*.yaml");
+        return files.Length > 0;
+    }
+
     public void SaveMediaToCache(WordPressMedia media, byte[] fileContent)
     {
         var mediaDir = Path.Combine(_cachePath, "media");
@@ -647,6 +658,7 @@ public class CacheService
         // 1. Handle editable.yaml
         var editableMeta = new EditableMediaMetadata
         {
+            ModifiedGmt = media.ModifiedGmt,
             Title = media.Title?.Raw,
             AltText = media.AltText,
             Caption = media.Caption?.Raw,
@@ -669,6 +681,7 @@ public class CacheService
             FileName = fileBaseName,
             FileHash = fileHash,
             MetadataHash = editableMetaHash,
+            ServerLastModified = media.ModifiedGmt.GetValueOrDefault(),
             RawMediaJson = JsonSerializer.Serialize(media, SerializerOptions),
             LastModified = DateTime.UtcNow
         };
@@ -685,6 +698,7 @@ public class CacheService
         // Prepare editable metadata
         var editableMeta = new EditableMediaMetadata
         {
+            ModifiedGmt = media.ModifiedGmt,
             Title = media.Title?.Raw,
             AltText = media.AltText,
             Caption = media.Caption?.Raw,
@@ -716,6 +730,7 @@ public class CacheService
         if (mediaInDb != null)
         {
             mediaInDb.MetadataHash = editableMetaHash;
+            mediaInDb.ServerLastModified = media.ModifiedGmt.GetValueOrDefault();
             mediaInDb.RawMediaJson = JsonSerializer.Serialize(media, SerializerOptions);
             mediaInDb.LastModified = DateTime.UtcNow;
             _db.Media.Update(mediaInDb);

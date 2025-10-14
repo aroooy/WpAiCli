@@ -545,11 +545,13 @@ public class Program
         {
             Console.WriteLine($"Pushed taxonomies: {report.PushedTaxonomies.Count}");
         }
-        if (report.PushedMediaToServer.Count > 0 || report.NewlyCachedMedia.Count > 0 || report.MediaConflicts.Count > 0)
+        if (report.PushedMediaToServer.Count > 0 || report.NewlyCachedMedia.Count > 0 || report.MediaConflicts.Count > 0 || report.DeletedMediaFromLocal.Count > 0 || report.PulledMediaFromServer.Count > 0)
         {
             Console.WriteLine("--- Media ---");
             Console.WriteLine($"Pushed metadata to server: {report.PushedMediaToServer.Count} item(s)");
+            Console.WriteLine($"Pulled from server: {report.PulledMediaFromServer.Count} item(s)");
             Console.WriteLine($"Newly cached from server: {report.NewlyCachedMedia.Count} item(s)");
+            Console.WriteLine($"Deleted from local: {report.DeletedMediaFromLocal.Count} item(s)");
             Console.WriteLine($"Conflicts/Errors: {report.MediaConflicts.Count} item(s)");
         }
         if (report.ConflictDetected.Count > 0)
@@ -795,14 +797,35 @@ public class Program
             }
             case "upload":
             {
-                var filePath = parsed.Positionals.FirstOrDefault();
+                if (parsed.GetBool("help", defaultValue: false))
+                {
+                    Console.WriteLine("Usage: wpai media upload [options] [--file] <file_path>");
+                    Console.WriteLine("Uploads a media file.");
+                    Console.WriteLine("\nArguments:");
+                    Console.WriteLine("  <file_path>        The path to the file to upload (can also be provided with --file).");
+                    Console.WriteLine("\nOptions:");
+                    Console.WriteLine("  --file <path>      The path to the file to upload.");
+                    Console.WriteLine("  --title <title>    The title for the media item.");
+                    Console.WriteLine("  --description <desc> The description for the media item.");
+                    Console.WriteLine("  --format <format>  The output format (json|table|yaml).");
+                    Console.WriteLine("  --help             Show help for the upload command.");
+                    return (int)ExitCode.Success;
+                }
+
+                var filePath = parsed.GetString("file") ?? parsed.Positionals.FirstOrDefault();
                 if (string.IsNullOrWhiteSpace(filePath))
                 {
-                    Console.Error.WriteLine("Provide a file path to upload.");
+                    Console.Error.WriteLine("Provide a file path to upload using --file <path> or as a positional argument.");
+                    Console.Error.WriteLine("Use 'wpai media upload --help' for more information.");
                     return (int)ExitCode.InvalidArguments;
                 }
 
                 var title = parsed.GetString("title");
+                if (string.IsNullOrWhiteSpace(title))
+                {
+                    title = Path.GetFileNameWithoutExtension(filePath);
+                }
+
                 var description = parsed.GetString("description");
 
                 var mediaItem = await service.UploadMediaAsync(filePath, title, description, ct).ConfigureAwait(false);

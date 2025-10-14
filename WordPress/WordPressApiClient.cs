@@ -21,7 +21,7 @@ public sealed class WordPressApiClient
     private const string RevisionDetailFields = "author,date_gmt,id,modified_gmt,parent,title,content";
     private const string CategoryFields = "id,count,description,link,name,slug,taxonomy,parent";
     private const string TagFields = "id,name,slug,description,count";
-    private const string MediaDetailFields = "id,date,slug,link,title.raw,description.raw,caption.raw,alt_text,media_type,mime_type,source_url";
+    private const string MediaDetailFields = "id,date,modified_gmt,slug,link,title.raw,description.raw,caption.raw,alt_text,media_type,mime_type,source_url";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -293,11 +293,29 @@ public sealed class WordPressApiClient
         var url = BuildUrl("/media");
         using var formData = new MultipartFormDataContent();
 
-        var fileStream = File.OpenRead(filePath);
-        var streamContent = new StreamContent(fileStream);
         var fileName = Path.GetFileName(filePath);
-        streamContent.Headers.ContentType = new MediaTypeHeaderValue(MimeMapping.MimeUtility.GetMimeMapping(fileName));
-        formData.Add(streamContent, "file", fileName);
+        var fileBytes = await File.ReadAllBytesAsync(filePath, cancellationToken);
+        var fileContent = new ByteArrayContent(fileBytes);
+        
+        fileContent.Headers.ContentType = new MediaTypeHeaderValue(MimeMapping.MimeUtility.GetMimeMapping(fileName));
+
+        // Create a ContentDisposition header with proper filename encoding.
+        // The FileNameStar property handles the UTF-8 encoding and formatting for non-ASCII characters.
+        // We also provide a sanitized ASCII filename for compatibility.
+        var asciiFallback = new string(fileName.Where(c => c < 128 && c != '"').ToArray()).Trim();
+        if (string.IsNullOrWhiteSpace(asciiFallback))
+        {
+            asciiFallback = "upload.dat"; // A generic fallback filename
+        }
+
+        fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
+        {
+            Name = "file",
+            FileName = $"\"{asciiFallback}\"", // ASCII fallback
+            FileNameStar = fileName          // UTF-8 version
+        };
+
+        formData.Add(fileContent, "file");
 
         if (!string.IsNullOrWhiteSpace(title))
         {
