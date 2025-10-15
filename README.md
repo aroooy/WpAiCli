@@ -13,7 +13,7 @@ WpAiCli は WordPress REST API と連携するためのクロスプラットフ�
 - `--format table|json|raw` で出力形式を切り替え
 
 ## グローバルオプション
-- `--connection <name>`: 特定の接続プロファイルを指定してコマンドを実行します。
+- `--connection <name>`: 特定の接続プロファイルを指定してコマンドを実行します。省略時は、`connections active` で設定されたアクティブな接続が使用されます。アクティブな接続がない場合は、最後に使用された接続が使われます。
 - `--version`, `-V`: バージョン情報を表示します。
 - `--help`, `-h`: ヘルプを表示します。
 
@@ -37,7 +37,7 @@ wpai connections add --name "BlogName" --base-url "https://example.com/?rest_rou
 ```
 wpai connections list
 ```
-登録済みプロファイルが番号付きで表示され、`*` が最後に利用した接続を示します。
+登録済みプロファイルが番号付きで表示されます。`=>` は現在アクティブな接続、`*` は（アクティブとは別に）最後に利用した接続を示します。コマンド実行時に `--connection` を省略すると、`=>` が付いた接続が優先的に使用されます。
 
 ### 3. 投稿一覧を取得
 ```
@@ -63,7 +63,11 @@ wpai posts list --status publish --format table
 AI など機械連携では JSON モード (`--format json`) を推奨します。テキスト出力よりもエンコーディング／解析面で扱いやすく、文字化けも避けられます。
 
 ### 接続管理 (`connections`)
-- `list`: 登録済み接続の一覧を表示します。
+- `list`: 登録済み接続の一覧を表示します。`=>` はアクティブな接続、`*` は最後に使用した接続を示します。
+- `active`: 対話形式または名前/番号で、デフォルトで使用する接続を「アクティブ」に設定します。
+  - `wpai connections active` (対話モード)
+  - `wpai connections active 2` (番号で指定)
+  - `wpai connections active "My Blog"` (名前で指定)
 - `add`: 新しい接続を登録します。
   - `wpai connections add --name <名称> --base-url <URL> --token <Bearer> [--cache-path <PATH>] [--sync-limit <NUMBER>] [--markdown-conversion <client|server>]`
 - `update <name>`: 既存の接続情報を更新します。

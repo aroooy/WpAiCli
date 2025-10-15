@@ -905,7 +905,7 @@ public class Program
     {
         if (args.Length == 0)
         {
-            Console.Error.WriteLine("Specify connections subcommand (list|add|update|remove).");
+            Console.Error.WriteLine("Specify connections subcommand (list|add|update|remove|active).");
             return (int)ExitCode.InvalidArguments;
         }
 
@@ -919,8 +919,81 @@ public class Program
             "add" => HandleConnectionsAdd(parsed),
             "update" => HandleConnectionsUpdate(parsed),
             "remove" => HandleConnectionsRemove(),
+            "active" => HandleConnectionsActive(parsed),
             _ => UnknownConnectionsCommand(subcommand)
         };
+    }
+
+    static int HandleConnectionsActive(ParsedOptions parsed)
+    {
+        var store = ConnectionStore.Load();
+        var argument = parsed.Positionals.FirstOrDefault();
+
+        ConnectionProfile? profile = null;
+
+        if (!string.IsNullOrWhiteSpace(argument))
+        {
+            // Try to parse as number first
+            if (int.TryParse(argument, out var choice) && choice >= 1 && choice <= store.Profiles.Count)
+            {
+                profile = store.Profiles[choice - 1];
+            }
+            else
+            {
+                // Fallback to parsing as name
+                profile = store.Profiles.FirstOrDefault(p => string.Equals(p.Name, argument, StringComparison.OrdinalIgnoreCase));
+                if (profile is null)
+                {
+                    Console.Error.WriteLine($"Connection '{argument}' not found.");
+                    return (int)ExitCode.InvalidArguments;
+                }
+            }
+        }
+        else // Interactive mode
+        {
+            if (store.Profiles.Count == 0)
+            {
+                Console.WriteLine("No connections have been registered yet.");
+                return (int)ExitCode.Success;
+            }
+
+            Console.WriteLine("Select the connection to set as active:");
+            // Re-use list logic for display consistency
+            for (int i = 0; i < store.Profiles.Count; i++)
+            {
+                var p = store.Profiles[i];
+                var isActive = string.Equals(p.Name, store.ActiveConnection, StringComparison.OrdinalIgnoreCase);
+                var prefix = isActive ? "=>" : "  ";
+                Console.WriteLine($"{prefix} {i + 1}. {p.Name}");
+            }
+
+            Console.Write("\nEnter number to set active (blank to cancel): ");
+            var input = Console.ReadLine();
+            if (string.IsNullOrWhiteSpace(input))
+            { 
+                Console.WriteLine("Operation cancelled.");
+                return (int)ExitCode.Success;
+            }
+
+            if (!int.TryParse(input, out var choice) || choice < 1 || choice > store.Profiles.Count)
+            {
+                Console.Error.WriteLine("Invalid selection.");
+                return (int)ExitCode.InvalidArguments;
+            }
+            profile = store.Profiles[choice - 1];
+        }
+
+        if (profile is null)
+        {
+             Console.Error.WriteLine("Could not determine a connection to activate.");
+             return (int)ExitCode.InvalidArguments;
+        }
+
+        store.ActiveConnection = profile.Name;
+        store.Save();
+
+        Console.WriteLine($"Active connection set to: {profile.Name}");
+        return (int)ExitCode.Success;
     }
 
     static int UnknownConnectionsCommand(string subcommand)
@@ -942,14 +1015,34 @@ public class Program
         for (int i = 0; i < store.Profiles.Count; i++)
         {
             var profile = store.Profiles[i];
+            var isActive = string.Equals(profile.Name, store.ActiveConnection, StringComparison.OrdinalIgnoreCase);
             var isLastUsed = string.Equals(profile.Name, store.LastUsedConnection, StringComparison.OrdinalIgnoreCase);
-            var marker = isLastUsed ? "*" : " ";
-            Console.WriteLine($" {marker} {i + 1}. {profile.Name} ({profile.BaseUrl})");
+
+            string prefix;
+            if (isActive)
+            {
+                prefix = "=>";
+            }
+            else if (isLastUsed)
+            {
+                prefix = " *";
+            }
+            else
+            {
+                prefix = "  ";
+            }
+            
+            Console.WriteLine($"{prefix} {i + 1}. {profile.Name} ({profile.BaseUrl})");
         }
 
+        Console.WriteLine();
+        if (!string.IsNullOrWhiteSpace(store.ActiveConnection))
+        {
+            Console.WriteLine($"=> indicates the active connection ({store.ActiveConnection}).");
+        }
         if (!string.IsNullOrWhiteSpace(store.LastUsedConnection))
         {
-            Console.WriteLine($"* indicates the last used connection ({store.LastUsedConnection}).");
+            Console.WriteLine($" * indicates the last used connection ({store.LastUsedConnection}).");
         }
 
         return (int)ExitCode.Success;
@@ -1261,6 +1354,10 @@ public class Program
                 throw new InvalidOperationException($"Connection '{requestedName}' was not found. Run `wpai connections list` to review names.");
             }
         }
+        else if (!string.IsNullOrWhiteSpace(store.ActiveConnection))
+        {
+            profile = store.Profiles.FirstOrDefault(p => string.Equals(p.Name, store.ActiveConnection, StringComparison.OrdinalIgnoreCase));
+        }
         else if (!string.IsNullOrWhiteSpace(store.LastUsedConnection))
         {
             profile = store.Profiles.FirstOrDefault(p => string.Equals(p.Name, store.LastUsedConnection, StringComparison.OrdinalIgnoreCase));
@@ -1268,7 +1365,7 @@ public class Program
 
         profile ??= store.Profiles.Count == 1
             ? store.Profiles[0]
-            : throw new InvalidOperationException("Multiple connections registered. Specify one with `--connection <name>`.");
+            : throw new InvalidOperationException("Multiple connections registered. Specify one with `--connection <name>` or set an active one with `wpai connections active <name>`.");
 
         var token = CredentialManager.ReadSecret(profile.CredentialKey);
         if (string.IsNullOrWhiteSpace(token))

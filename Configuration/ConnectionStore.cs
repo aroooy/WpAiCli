@@ -15,6 +15,8 @@ public sealed class ConnectionStore
     public List<ConnectionProfile> Profiles { get; } = new();
 
     public string? LastUsedConnection { get; set; }
+    
+    public string? ActiveConnection { get; set; }
 
     public static ConnectionStore Load()
     {
@@ -29,7 +31,8 @@ public sealed class ConnectionStore
 
         var store = new ConnectionStore
         {
-            LastUsedConnection = model.LastUsedConnection
+            LastUsedConnection = model.LastUsedConnection,
+            ActiveConnection = model.ActiveConnection
         };
 
         if (model.Profiles is { Count: > 0 })
@@ -52,6 +55,7 @@ public sealed class ConnectionStore
         var model = new ConnectionStoreModel
         {
             LastUsedConnection = LastUsedConnection,
+            ActiveConnection = ActiveConnection,
             Profiles = Profiles
         };
 
@@ -66,6 +70,9 @@ public sealed class ConnectionStore
     {
         [JsonPropertyName("lastUsedConnection")]
         public string? LastUsedConnection { get; set; }
+        
+        [JsonPropertyName("activeConnection")]
+        public string? ActiveConnection { get; set; }
 
         [JsonPropertyName("profiles")]
         public List<ConnectionProfile> Profiles { get; set; } = new();
