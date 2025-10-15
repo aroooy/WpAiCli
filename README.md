@@ -13,37 +13,35 @@ WpAiCli は WordPress REST API と連携するためのクロスプラットフ�
 - `--format table|json|raw` で出力形式を切り替え
 
 ## グローバルオプション
-- `--connection <name>`: 特定の接続プロファイルを指定してコマンドを実行します。省略時は、`connections active` で設定されたアクティブな接続が使用されます。アクティブな接続がない場合は、最後に使用された接続が使われます。
+
 - `--version`, `-V`: バージョン情報を表示します。
 - `--help`, `-h`: ヘルプを表示します。
 
 ## 初期設定
-以下の手順をおすすめします。
+本ツールを初めて使用する際は、以下の手順で設定を行ってください。
 
 ### 1. 接続情報を登録
+まず、WordPressサイトへの接続情報を登録します。
 ```
 wpai connections add --name "BlogName" --base-url "https://example.com/?rest_route=/wp/v2/" --token <BearerToken>
 ```
 - `--name`: 任意の表示名 (接続切り替え時に使用)
 - `--base-url`: WordPress REST API のベース URL (`?rest_route=/wp/v2/` 形式がおすすめ)
 - `--token`: WordPress で発行した Bearer トークン。OSの資格情報ストアに安全に保存されます。
-- `--cache-path <PATH>`: (任意) 同期機能で利用するローカルキャッシュの保存先ディレクトリを指定します。
-- `--sync-limit <NUMBER>`: (任意) 一度の同期でチェックする最大投稿数を指定します (デフォルト: 30)。
-- `--markdown-conversion <client|server>`: (任意) MarkdownからHTMLへの変換をどこで行うかを指定します (デフォルト: `client`)。
-  - `client`: CLIツール側で変換します。
-  - `server`: サーバー側のプラグイン(Jetpackなど)での変換を期待し、Markdown原文をそのまま送信します。
 
-### 2. 接続の確認
+### 2. アクティブな接続を設定
+次に、コマンドの操作対象となる接続を「アクティブ」に設定します。`connections` 以外のすべてのコマンドは、ここで設定されたアクティブな接続に対して実行されます。
 ```
-wpai connections list
+wpai connections active
 ```
-登録済みプロファイルが番号付きで表示されます。`=>` は現在アクティブな接続、`*` は（アクティブとは別に）最後に利用した接続を示します。コマンド実行時に `--connection` を省略すると、`=>` が付いた接続が優先的に使用されます。
+上記コマンドを引数なしで実行すると、登録済みの接続一覧が表示され、対話形式でアクティブな接続を選択できます。`wpai connections active "BlogName"` のように直接名前を指定することも可能です。
 
-### 3. 投稿一覧を取得
+### 3. 動作を確認
+設定が正しく完了したかを確認するため、投稿一覧を取得してみましょう。
 ```
-wpai posts list --status publish --format table
+wpai posts list --status publish --per-page 1
 ```
-`--connection <name>` を付けると特定の接続を直接指定できます。省略時は最後に使用した接続が利用されます。
+アクティブに設定したサイトの投稿が一覧表示されれば、初期設定は完了です。
 
 ## 一般的な使い方（ワークフロー例）
 
@@ -63,14 +61,14 @@ wpai posts list --status publish --format table
 AI など機械連携では JSON モード (`--format json`) を推奨します。テキスト出力よりもエンコーディング／解析面で扱いやすく、文字化けも避けられます。
 
 ### 接続管理 (`connections`)
-- `list`: 登録済み接続の一覧を表示します。`=>` はアクティブな接続、`*` は最後に使用した接続を示します。
+- `list`: 登録済み接続の一覧を表示します。`=>` はアクティブな接続を示します。
 - `active`: 対話形式または名前/番号で、デフォルトで使用する接続を「アクティブ」に設定します。
   - `wpai connections active` (対話モード)
   - `wpai connections active 2` (番号で指定)
   - `wpai connections active "My Blog"` (名前で指定)
 - `add`: 新しい接続を登録します。
-  - `wpai connections add --name <名称> --base-url <URL> --token <Bearer> [--cache-path <PATH>] [--sync-limit <NUMBER>] [--markdown-conversion <client|server>]`
-- `update <name>`: 既存の接続情報を更新します。
+  - `wpai connections add --name <名称> --base-url <URL> --token <Bearer>`
+- `update <name>`: 既存の接続情報を更新します。キャッシュパスや同期設定などはこのコマンドで行います。
   - `wpai connections update "BlogName" --cache-path ./new-cache --sync-limit 50 --markdown-conversion server`
 - `remove`: 対話形式で既存の接続を削除します。
 

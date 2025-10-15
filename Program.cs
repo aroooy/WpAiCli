@@ -23,17 +23,14 @@ public class Program
         Console.OutputEncoding = System.Text.Encoding.UTF8;
         Console.InputEncoding = System.Text.Encoding.UTF8;
 
-        string? globalConnectionName;
-        var remainingArgs = ExtractGlobalOptions(args, out globalConnectionName);
-
-        if (remainingArgs.Length == 0)
+        if (args.Length == 0)
         {
             PrintDocs();
             return (int)ExitCode.Success;
         }
 
-        var command = remainingArgs[0].ToLowerInvariant();
-        var commandArgs = remainingArgs.Skip(1).ToArray();
+        var command = args[0].ToLowerInvariant();
+        var commandArgs = args.Skip(1).ToArray();
 
         // Handle commands that don't require a connection/DI first
         switch (command)
@@ -57,7 +54,7 @@ public class Program
 
         try
         {
-            var (store, profile, token) = ResolveConnection(globalConnectionName);
+            var (store, profile, token) = ResolveConnection();
 
             var host = Host.CreateDefaultBuilder(args)
                 .ConfigureServices((_, services) =>
@@ -1016,21 +1013,8 @@ public class Program
         {
             var profile = store.Profiles[i];
             var isActive = string.Equals(profile.Name, store.ActiveConnection, StringComparison.OrdinalIgnoreCase);
-            var isLastUsed = string.Equals(profile.Name, store.LastUsedConnection, StringComparison.OrdinalIgnoreCase);
 
-            string prefix;
-            if (isActive)
-            {
-                prefix = "=>";
-            }
-            else if (isLastUsed)
-            {
-                prefix = " *";
-            }
-            else
-            {
-                prefix = "  ";
-            }
+            string prefix = isActive ? "=>" : "  ";
             
             Console.WriteLine($"{prefix} {i + 1}. {profile.Name} ({profile.BaseUrl})");
         }
@@ -1039,10 +1023,6 @@ public class Program
         if (!string.IsNullOrWhiteSpace(store.ActiveConnection))
         {
             Console.WriteLine($"=> indicates the active connection ({store.ActiveConnection}).");
-        }
-        if (!string.IsNullOrWhiteSpace(store.LastUsedConnection))
-        {
-            Console.WriteLine($" * indicates the last used connection ({store.LastUsedConnection}).");
         }
 
         return (int)ExitCode.Success;
@@ -1267,76 +1247,8 @@ public class Program
         }
     }
 
-    static string[] ExtractGlobalOptions(string[] source, out string? connectionOverride)
-    {
-        connectionOverride = null;
-        var remaining = new List<string>();
 
-        for (int i = 0; i < source.Length; i++)
-        {
-            var token = source[i];
-            if (!token.StartsWith("--"))
-            {
-                remaining.Add(token);
-                continue;
-            }
-
-            if (TryMatchOption(token, "connection", out var inlineValue))
-            {
-                connectionOverride = ExtractValue(source, ref i, inlineValue);
-                continue;
-            }
-
-            remaining.Add(token);
-        }
-
-        connectionOverride = string.IsNullOrWhiteSpace(connectionOverride) ? null : connectionOverride.Trim();
-
-        return remaining.ToArray();
-
-        static bool TryMatchOption(string token, string optionName, out string? inlineValue)
-        {
-            var prefix = $"--{optionName}";
-            if (!token.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-            {
-                inlineValue = null;
-                return false;
-            }
-
-            if (token.Length == prefix.Length)
-            {
-                inlineValue = null;
-                return true;
-            }
-
-            if (token[prefix.Length] == '=')
-            {
-                inlineValue = token[(prefix.Length + 1)..];
-                return true;
-            }
-
-            inlineValue = null;
-            return false;
-        }
-
-        static string? ExtractValue(string[] source, ref int index, string? inlineValue)
-        {
-            if (inlineValue is not null)
-            {
-                return inlineValue;
-            }
-
-            if (index + 1 < source.Length && !source[index + 1].StartsWith("--"))
-            {
-                index++;
-                return source[index];
-            }
-
-            return null;
-        }
-    }
-
-    static (ConnectionStore Store, ConnectionProfile Profile, string Token) ResolveConnection(string? requestedName)
+    static (ConnectionStore Store, ConnectionProfile Profile, string Token) ResolveConnection()
     {
         var store = ConnectionStore.Load();
         if (store.Profiles.Count == 0)
@@ -1346,26 +1258,15 @@ public class Program
 
         ConnectionProfile? profile = null;
 
-        if (!string.IsNullOrWhiteSpace(requestedName))
-        {
-            profile = store.Profiles.FirstOrDefault(p => string.Equals(p.Name, requestedName, StringComparison.OrdinalIgnoreCase));
-            if (profile is null)
-            {
-                throw new InvalidOperationException($"Connection '{requestedName}' was not found. Run `wpai connections list` to review names.");
-            }
-        }
-        else if (!string.IsNullOrWhiteSpace(store.ActiveConnection))
+        if (!string.IsNullOrWhiteSpace(store.ActiveConnection))
         {
             profile = store.Profiles.FirstOrDefault(p => string.Equals(p.Name, store.ActiveConnection, StringComparison.OrdinalIgnoreCase));
         }
-        else if (!string.IsNullOrWhiteSpace(store.LastUsedConnection))
-        {
-            profile = store.Profiles.FirstOrDefault(p => string.Equals(p.Name, store.LastUsedConnection, StringComparison.OrdinalIgnoreCase));
-        }
 
-        profile ??= store.Profiles.Count == 1
-            ? store.Profiles[0]
-            : throw new InvalidOperationException("Multiple connections registered. Specify one with `--connection <name>` or set an active one with `wpai connections active <name>`.");
+        if (profile is null)
+        {
+            throw new InvalidOperationException("No active connection set. Please set one using `wpai connections active`.");
+        }
 
         var token = CredentialManager.ReadSecret(profile.CredentialKey);
         if (string.IsNullOrWhiteSpace(token))
