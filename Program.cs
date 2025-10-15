@@ -540,6 +540,7 @@ public class Program
         Console.WriteLine($"Pulled from server: {report.PulledFromServer.Count} post(s)");
         Console.WriteLine($"Newly cached: {report.NewlyCached.Count} post(s)");
         Console.WriteLine($"Deleted from local: {report.DeletedFromLocal.Count} post(s)");
+        Console.WriteLine($"Local validation errors (skipped): {report.LocalValidationErrors.Count} post(s)");
         Console.WriteLine($"Conflicts detected (skipped): {report.ConflictDetected.Count} post(s)");
         if (report.PushedTaxonomies.Count > 0)
         {
@@ -554,6 +555,16 @@ public class Program
             Console.WriteLine($"Deleted from local: {report.DeletedMediaFromLocal.Count} item(s)");
             Console.WriteLine($"Conflicts/Errors: {report.MediaConflicts.Count} item(s)");
         }
+
+        if (report.LocalValidationErrors.Count > 0)
+        {
+            Console.WriteLine("\nLocal validation errors detected:");
+            foreach (var (postId, errorMessage) in report.LocalValidationErrors)
+            {
+                Console.Error.WriteLine($"- {errorMessage}");
+            }
+        }
+
         if (report.ConflictDetected.Count > 0)
         {
             Console.WriteLine("\nConflicts detected for the following Post IDs:");

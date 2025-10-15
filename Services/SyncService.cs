@@ -26,6 +26,7 @@ public class SyncReport
     public List<int> ConflictDetected { get; } = new();
     public List<int> NewlyCached { get; } = new();
     public List<string> PushedTaxonomies { get; } = new();
+    public List<(int PostId, string ErrorMessage)> LocalValidationErrors { get; } = new();
 
     // Media Sync Properties
     public List<int> PushedMediaToServer { get; } = new();
@@ -89,11 +90,19 @@ public class SyncService
         request.CommentStatus = localEditableMeta.CommentStatus;
         request.PingStatus = localEditableMeta.PingStatus;
 
-        if (!TryResolveTaxonomyIds(localEditableMeta.Categories, _cacheService.FindCategoryId, out var categoryIds) ||
-            !TryResolveTaxonomyIds(localEditableMeta.Tags, _cacheService.FindTagId, out var tagIds))
+        var (allCategories, allTags) = _cacheService.GetTaxonomies();
+        var validCategoryIds = new HashSet<int>(allCategories.Select(c => c.Id));
+        var validTagIds = new HashSet<int>(allTags.Select(t => t.Id));
+
+        if (!TryResolveTaxonomyIds(id, localEditableMeta.Categories, validCategoryIds, "Category", out var categoryIds, out var catError))
         {
-            throw new InvalidOperationException($"Failed to resolve taxonomy IDs for post {id}. Please check the category and tag names in the local file.");
+            throw new InvalidOperationException(catError!);
         }
+        if (!TryResolveTaxonomyIds(id, localEditableMeta.Tags, validTagIds, "Tag", out var tagIds, out var tagError))
+        {
+            throw new InvalidOperationException(tagError!);
+        }
+
         request.Categories = categoryIds;
         request.Tags = tagIds;
 
@@ -662,12 +671,21 @@ public class SyncService
                 request.CommentStatus = localEditableMeta.CommentStatus;
                 request.PingStatus = localEditableMeta.PingStatus;
 
-                if (!TryResolveTaxonomyIds(localEditableMeta.Categories, _cacheService.FindCategoryId, out var categoryIds) ||
-                    !TryResolveTaxonomyIds(localEditableMeta.Tags, _cacheService.FindTagId, out var tagIds))
+                var (allCategories, allTags) = _cacheService.GetTaxonomies();
+                var validCategoryIds = new HashSet<int>(allCategories.Select(c => c.Id));
+                var validTagIds = new HashSet<int>(allTags.Select(t => t.Id));
+
+                if (!TryResolveTaxonomyIds(id, localEditableMeta.Categories, validCategoryIds, "Category", out var categoryIds, out var catError))
                 {
-                    report.ConflictDetected.Add(id);
+                    report.LocalValidationErrors.Add((id, catError!));
                     return;
                 }
+                if (!TryResolveTaxonomyIds(id, localEditableMeta.Tags, validTagIds, "Tag", out var tagIds, out var tagError))
+                {
+                    report.LocalValidationErrors.Add((id, tagError!));
+                    return;
+                }
+
                 request.Categories = categoryIds;
                 request.Tags = tagIds;
 
@@ -683,33 +701,41 @@ public class SyncService
         }
     }
 
-    private bool TryResolveTaxonomyIds(List<string>? namesOrIds, Func<string, int?> findId, out int[]? resolvedIds)
+    private bool TryResolveTaxonomyIds(int postId, List<string>? namesOrIds, HashSet<int> validIds, string taxonomyType, out int[]? resolvedIds, out string? errorMessage)
     {
         resolvedIds = null;
+        errorMessage = null;
         if (namesOrIds == null) return true;
 
         var idList = new List<int>();
         foreach (var item in namesOrIds)
         {
-            if (int.TryParse(item, out var id))
+            int id;
+            var parts = item.Split(new[] { '-' }, 2);
+
+            if (parts.Length == 2 && int.TryParse(parts[0], out id))
             {
-                idList.Add(id);
+                // Parsed 'ID-Name' format successfully
+            }
+            else if (int.TryParse(item, out id))
+            {
+                // Parsed plain numeric ID successfully
             }
             else
             {
-                var foundId = findId(item);
-                if (foundId.HasValue)
-                {
-                    idList.Add(foundId.Value);
-                }
-                else
-                {
-                    // Could not resolve term, so we fail
-                    Console.Error.WriteLine($"Error: Could not resolve taxonomy term '{item}' to an ID.");
-                    resolvedIds = null;
-                    return false;
-                }
+                errorMessage = $"Post {postId}: Invalid {taxonomyType} format for '{item}'. Expected 'ID-Name' or a numeric ID.";
+                resolvedIds = null;
+                return false;
             }
+
+            if (!validIds.Contains(id))
+            {
+                errorMessage = $"Post {postId}: {taxonomyType} with ID '{id}' (from '{item}') does not exist. Please check the ID.";
+                resolvedIds = null;
+                return false;
+            }
+            
+            idList.Add(id);
         }
 
         resolvedIds = idList.ToArray();
@@ -784,11 +810,19 @@ public class SyncService
             request.CommentStatus = meta.CommentStatus;
             request.PingStatus = meta.PingStatus;
 
-            if (!TryResolveTaxonomyIds(meta.Categories, _cacheService.FindCategoryId, out var categoryIds) ||
-                !TryResolveTaxonomyIds(meta.Tags, _cacheService.FindTagId, out var tagIds))
+            var (allCategories, allTags) = _cacheService.GetTaxonomies();
+            var validCategoryIds = new HashSet<int>(allCategories.Select(c => c.Id));
+            var validTagIds = new HashSet<int>(allTags.Select(t => t.Id));
+
+            if (!TryResolveTaxonomyIds(id, meta.Categories, validCategoryIds, "Category", out var categoryIds, out var catError))
             {
-                throw new InvalidOperationException($"Failed to resolve taxonomy IDs for post {id}. Please check the category and tag names in the local file.");
+                throw new InvalidOperationException(catError!);
             }
+            if (!TryResolveTaxonomyIds(id, meta.Tags, validTagIds, "Tag", out var tagIds, out var tagError))
+            {
+                throw new InvalidOperationException(tagError!);
+            }
+
             request.Categories = categoryIds;
             request.Tags = tagIds;
 

@@ -192,6 +192,11 @@ public class CacheService
             contentToSave = post.Content?.Raw ?? string.Empty;
         }
 
+        // Get taxonomies for name mapping
+        var (allCategories, allTags) = GetTaxonomies();
+        var categoryMap = allCategories.ToDictionary(c => c.Id, c => c.Name);
+        var tagMap = allTags.ToDictionary(t => t.Id, t => t.Name);
+
         // 2. Populate all metadata into the EditablePostMetadata object
         var editableMeta = new EditablePostMetadata
         {
@@ -204,8 +209,8 @@ public class CacheService
             FeaturedMedia = post.FeaturedMedia,
             CommentStatus = post.CommentStatus,
             PingStatus = post.PingStatus,
-            Categories = post.Categories?.Select(c => c.ToString()).ToList(),
-            Tags = post.Tags?.Select(t => t.ToString()).ToList(),
+            Categories = post.Categories?.Select(c => categoryMap.TryGetValue(c, out var name) ? $"{c}-{name}" : c.ToString()).ToList(),
+            Tags = post.Tags?.Select(t => tagMap.TryGetValue(t, out var name) ? $"{t}-{name}" : t.ToString()).ToList(),
             Meta = post.Meta?.Where(kv => kv.Key != "_md_source").ToDictionary(kv => kv.Key, kv => ConvertJsonElement((JsonElement)kv.Value))
         };
         var yamlContent = SerializeToYaml(editableMeta);
