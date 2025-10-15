@@ -36,7 +36,7 @@ public class EditablePostMetadata
     [YamlMember(Alias = "status")]
     public string? Status { get; set; }
     [YamlMember(Alias = "date")]
-    public DateTime? Date { get; set; }
+    public string? Date { get; set; }
     [YamlMember(Alias = "excerpt")]
     public string? Excerpt { get; set; }
     [YamlMember(Alias = "featured_media")]
@@ -105,7 +105,6 @@ public class CacheService
 
     private static readonly IDeserializer YamlDeserializer = new DeserializerBuilder()
         .WithNamingConvention(CamelCaseNamingConvention.Instance)
-        .IgnoreUnmatchedProperties()
         .Build();
 
     // Cache for parsed content (Title, Content) to avoid re-reading files
@@ -204,7 +203,7 @@ public class CacheService
             EditMode = hasMarkdownMeta ? "markdown" : "html",
             Slug = System.Net.WebUtility.UrlDecode(post.Slug),
             Status = post.Status,
-            Date = post.Date,
+            Date = post.Date?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss"),
             Excerpt = post.Excerpt?.Raw,
             FeaturedMedia = post.FeaturedMedia,
             CommentStatus = post.CommentStatus,
@@ -277,12 +276,44 @@ public class CacheService
         var content = parts[2].TrimStart();
         
         var metadata = DeserializeFromYaml<EditablePostMetadata>(yaml);
+        ValidatePostMetadata(metadata, postFile);
 
         return new LocalPost
         {
             Metadata = metadata,
             Content = content
         };
+    }
+
+    private void ValidatePostMetadata(EditablePostMetadata metadata, string filePath)
+    {
+        if (metadata.Date != null && !DateTime.TryParse(metadata.Date, out _))
+        {
+            throw new InvalidOperationException($"Validation failed for {Path.GetFileName(filePath)}: Invalid format for 'date'. Please use 'yyyy-MM-dd HH:mm:ss'.");
+        }
+
+        var validStatuses = new HashSet<string> { "publish", "future", "draft", "pending", "private" };
+        if (metadata.Status != null && !validStatuses.Contains(metadata.Status))
+        {
+            throw new InvalidOperationException($"Validation failed for {Path.GetFileName(filePath)}: Invalid value '{metadata.Status}' for 'status'. Valid values are: {string.Join(", ", validStatuses)}.");
+        }
+
+        var validCommentStatuses = new HashSet<string> { "open", "closed" };
+        if (metadata.CommentStatus != null && !validCommentStatuses.Contains(metadata.CommentStatus))
+        {
+            throw new InvalidOperationException($"Validation failed for {Path.GetFileName(filePath)}: Invalid value '{metadata.CommentStatus}' for 'commentStatus'. Valid values are: {string.Join(", ", validCommentStatuses)}.");
+        }
+
+        if (metadata.PingStatus != null && !validCommentStatuses.Contains(metadata.PingStatus)) // Same values as commentStatus
+        {
+            throw new InvalidOperationException($"Validation failed for {Path.GetFileName(filePath)}: Invalid value '{metadata.PingStatus}' for 'pingStatus'. Valid values are: {string.Join(", ", validCommentStatuses)}.");
+        }
+
+        var validEditModes = new HashSet<string> { "markdown", "html" };
+        if (metadata.EditMode != null && !validEditModes.Contains(metadata.EditMode))
+        {
+            throw new InvalidOperationException($"Validation failed for {Path.GetFileName(filePath)}: Invalid value '{metadata.EditMode}' for 'editMode'. Valid values are: {string.Join(", ", validEditModes)}.");
+        }
     }
 
     public async Task UpdateTaxonomiesCacheAsync(IEnumerable<WordPressCategory> categories, IEnumerable<WordPressTag> tags)

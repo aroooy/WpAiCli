@@ -84,7 +84,10 @@ public class SyncService
         request.Title = localEditableMeta.Title;
         request.Slug = localEditableMeta.Slug;
         request.Status = localEditableMeta.Status;
-        request.Date = localEditableMeta.Date;
+        if (DateTime.TryParse(localEditableMeta.Date, out var localDate))
+        {
+            request.Date = localDate;
+        }
         request.Excerpt = localEditableMeta.Excerpt;
         request.FeaturedMedia = localEditableMeta.FeaturedMedia;
         request.CommentStatus = localEditableMeta.CommentStatus;
@@ -665,7 +668,10 @@ public class SyncService
                 request.Title = localEditableMeta.Title;
                 request.Slug = localEditableMeta.Slug;
                 request.Status = localEditableMeta.Status;
-                request.Date = localEditableMeta.Date;
+                if (DateTime.TryParse(localEditableMeta.Date, out var localDate))
+                {
+                    request.Date = localDate;
+                }
                 request.Excerpt = localEditableMeta.Excerpt;
                 request.FeaturedMedia = localEditableMeta.FeaturedMedia;
                 request.CommentStatus = localEditableMeta.CommentStatus;
@@ -804,7 +810,10 @@ public class SyncService
             request.Title = meta.Title;
             request.Slug = meta.Slug;
             request.Status = meta.Status;
-            request.Date = meta.Date;
+            if (DateTime.TryParse(meta.Date, out var localDate))
+            {
+                request.Date = localDate;
+            }
             request.Excerpt = meta.Excerpt;
             request.FeaturedMedia = meta.FeaturedMedia;
             request.CommentStatus = meta.CommentStatus;
