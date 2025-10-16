@@ -182,6 +182,11 @@ public class SyncService
     {
         var report = new SyncReport();
 
+        // Ensure taxonomy cache is fresh for ID-Name mapping when saving posts
+        var allCategories = await _wpService.ListCategoriesAsync(cancellationToken);
+        var allTags = await _wpService.ListTagsAsync(cancellationToken);
+        await _cacheService.UpdateTaxonomiesCacheAsync(allCategories, allTags);
+
         // 3. Synchronize posts
         var localPosts = _cacheService.ListLocalPostMetadata()
             .ToDictionary(meta => meta.Post.Id, meta => meta);
@@ -276,7 +281,7 @@ public class SyncService
 
             {
 
-                if (IsLocalMediaChanged(mediaId, metadata))
+                if (IsLocalMediaChanged(mediaId, metadata) && metadata != null)
 
                 {
 
@@ -364,7 +369,7 @@ public class SyncService
 
                     var isLocalChanged = IsLocalMediaChanged(id, localMeta);
 
-                    var isRemoteChanged = (remoteMeta.ModifiedGmt.GetValueOrDefault() - localMeta.ModifiedGmt.GetValueOrDefault()).TotalSeconds > 1;
+                    var isRemoteChanged = (remoteMeta!.ModifiedGmt.GetValueOrDefault() - localMeta!.ModifiedGmt.GetValueOrDefault()).TotalSeconds > 1;
 
     
 
@@ -464,9 +469,10 @@ public class SyncService
 
     
 
-        private bool IsLocalMediaChanged(int mediaId, EditableMediaMetadata metadata)
+        private bool IsLocalMediaChanged(int mediaId, EditableMediaMetadata? metadata)
 
         {
+            if (metadata == null) return false;
 
             var yamlContent = SerializeToYaml(metadata);
 
@@ -480,9 +486,10 @@ public class SyncService
 
     
 
-        private async Task PullMediaItemAsync(WordPressMedia media, SyncReport report, CancellationToken cancellationToken)
+        private async Task PullMediaItemAsync(WordPressMedia? media, SyncReport report, CancellationToken cancellationToken)
 
         {
+            if (media == null) return;
 
             if (string.IsNullOrEmpty(media.SourceUrl))
 

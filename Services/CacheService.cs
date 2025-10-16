@@ -360,7 +360,7 @@ public class CacheService
         // 2. Write individual category files
         foreach (var category in categories)
         {
-            var editableCategory = new EditableCategory { Id = category.Id, Name = category.Name ?? string.Empty, Slug = category.Slug ?? string.Empty, Description = category.Description ?? string.Empty };
+            var editableCategory = new EditableCategory { Id = category.Id, Name = category.Name ?? string.Empty, Slug = System.Net.WebUtility.UrlDecode(category.Slug ?? string.Empty), Description = category.Description ?? string.Empty };
             var yamlContent = YamlSerializer.Serialize(editableCategory);
             var sanitizedName = SanitizeTitleForFilename(category.Name ?? string.Empty);
             var filePath = Path.Combine(categoriesDir, $"{category.Id}-{sanitizedName}.yaml");
@@ -374,7 +374,7 @@ public class CacheService
         // 3. Write individual tag files
         foreach (var tag in tags)
         {
-            var editableTag = new EditableTag { Id = tag.Id, Name = tag.Name ?? string.Empty, Slug = tag.Slug ?? string.Empty, Description = tag.Description ?? string.Empty };
+            var editableTag = new EditableTag { Id = tag.Id, Name = tag.Name ?? string.Empty, Slug = System.Net.WebUtility.UrlDecode(tag.Slug ?? string.Empty), Description = tag.Description ?? string.Empty };
             var yamlContent = YamlSerializer.Serialize(editableTag);
             var sanitizedName = SanitizeTitleForFilename(tag.Name ?? string.Empty);
             var filePath = Path.Combine(tagsDir, $"{tag.Id}-{sanitizedName}.yaml");
