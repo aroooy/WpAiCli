@@ -149,7 +149,7 @@ public class Program
     {
         if (args.Length == 0)
         {
-            Console.Error.WriteLine("Specify posts subcommand (list|get|create|push|delete|revisions|revision).");
+            Console.Error.WriteLine("Specify posts subcommand (list|get|create|push|delete|revisions|revision|sync|organize).");
             return (int)ExitCode.InvalidArguments;
         }
 
@@ -161,6 +161,11 @@ public class Program
 
         switch (subcommand)
         {
+            case "organize":
+                Console.WriteLine("Organizing local post files by status...");
+                cacheService.OrganizePostFiles();
+                Console.WriteLine("Local post files organized successfully.");
+                return (int)ExitCode.Success;
             case "sync":
                 Console.WriteLine("Starting posts synchronization...");
                 var syncLimit = profile.SyncItemsLimit ?? 30;

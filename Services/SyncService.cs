@@ -255,6 +255,8 @@ public class SyncService
             }
         }
 
+        _cacheService.OrganizePostFiles();
+
         return report;
     }
 
@@ -839,6 +841,8 @@ public class SyncService
             _cacheService.SavePostToCache(updatedPost);
             Console.WriteLine($"Conflict resolved. Server post {id} was overwritten with the local version.");
         }
+
+        _cacheService.OrganizePostFiles();
     }
 
     private async Task ResolveTaxonomyConflictAsync(string type, int id, string strategy, CancellationToken cancellationToken)

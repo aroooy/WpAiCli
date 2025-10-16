@@ -167,15 +167,17 @@ public class CacheService
 
     public void SavePostToCache(WordPressPostDetail post)
     {
-        var postsDir = Path.Combine(_cachePath, "posts");
-        Directory.CreateDirectory(postsDir);
+        // Determine the correct directory based on post status
+        var status = post.Status ?? "draft";
+        var statusDir = Path.Combine(_cachePath, "posts", status);
+        Directory.CreateDirectory(statusDir);
 
         var titleForFile = post.Title?.Raw ?? post.Slug;
         var sanitizedTitle = SanitizeTitleForFilename(titleForFile ?? string.Empty);
         var fileBaseName = $"{post.Id}-{sanitizedTitle}";
-        var filePath = Path.Combine(postsDir, $"{fileBaseName}.md");
+        var filePath = Path.Combine(statusDir, $"{fileBaseName}.md");
 
-        // Clean up any old files for this post ID
+        // Clean up any old files for this post ID (now searches recursively)
         DeletePostFromCache(post.Id);
 
         // 1. Determine content and edit mode from meta field
@@ -387,6 +389,70 @@ public class CacheService
         // --- End Refactoring ---
     }
 
+    public void OrganizePostFiles()
+    {
+        var postsDir = Path.Combine(_cachePath, "posts");
+        if (!Directory.Exists(postsDir)) return;
+
+        var allPostFiles = Directory.GetFiles(postsDir, "*.md", SearchOption.AllDirectories);
+
+        foreach (var filePath in allPostFiles)
+        {
+            try
+            {
+                var fileContent = File.ReadAllText(filePath);
+                var parts = fileContent.Split(new[] { "---" }, 3, StringSplitOptions.None);
+
+                if (parts.Length < 3) continue; // Not a valid front matter format
+
+                var yaml = parts[1];
+                var metadata = DeserializeFromYaml<EditablePostMetadata>(yaml);
+
+                if (string.IsNullOrEmpty(metadata.Status)) continue;
+
+                var currentStatus = Path.GetFileName(Path.GetDirectoryName(filePath));
+                var targetStatus = metadata.Status;
+
+                // Logic for future posts that have become published
+                if (targetStatus == "future")
+                {
+                    if (DateTime.TryParse(metadata.Date, out var postDate) && postDate.ToUniversalTime() <= DateTime.UtcNow)
+                    {
+                        targetStatus = "publish";
+                    }
+                }
+
+                if (currentStatus != targetStatus)
+                {
+                    var targetDir = Path.Combine(postsDir, targetStatus);
+                    Directory.CreateDirectory(targetDir);
+                    var newFilePath = Path.Combine(targetDir, Path.GetFileName(filePath));
+                    File.Move(filePath, newFilePath);
+                    Console.WriteLine($"Organized: Moved '{Path.GetFileName(filePath)}' from '{currentStatus}' to '{targetStatus}' folder.");
+
+                    // BUG FIX: Update the database hash after moving the file
+                    var fileName = Path.GetFileNameWithoutExtension(newFilePath);
+                    if (int.TryParse(fileName.Split('-').FirstOrDefault(), out var postId))
+                    {
+                        var postInDb = _db.Posts.FirstOrDefault(p => p.PostId == postId);
+                        if (postInDb != null)
+                        {
+                            // FIX: Use the canonical method to calculate the hash, matching the SyncService logic.
+                            var canonicalContent = string.Join("\n", "---", YamlSerializer.Serialize(metadata), "---", "", parts[2].TrimStart());
+                            var newHash = ComputeSha256Hash(canonicalContent);
+                            postInDb.FileHash = newHash;
+                            _db.SaveChanges();
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"Error organizing file '{Path.GetFileName(filePath)}': {ex.Message}");
+            }
+        }
+    }
+
     public List<CachePostMetadata> ListLocalPostMetadata()
     {
         var postsDir = Path.Combine(_cachePath, "posts");
@@ -513,7 +579,7 @@ public class CacheService
         var postsDir = Path.Combine(_cachePath, "posts");
         if (Directory.Exists(postsDir))
         {
-            var filesToDelete = Directory.GetFiles(postsDir, $"{postId}-*");
+            var filesToDelete = Directory.GetFiles(postsDir, $"{postId}-*", SearchOption.AllDirectories);
             foreach (var file in filesToDelete)
             {
                 File.Delete(file);
@@ -805,7 +871,7 @@ public class CacheService
     public string? FindFileByPattern(string pattern)
     {
         var postsDir = Path.Combine(_cachePath, "posts");
-        return Directory.Exists(postsDir) ? Directory.GetFiles(postsDir, pattern).FirstOrDefault() : null;
+        return Directory.Exists(postsDir) ? Directory.GetFiles(postsDir, pattern, SearchOption.AllDirectories).FirstOrDefault() : null;
     }
 
     public int? FindCategoryId(string nameOrSlug)
