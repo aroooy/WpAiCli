@@ -874,6 +874,28 @@ public class CacheService
         return Directory.Exists(postsDir) ? Directory.GetFiles(postsDir, pattern, SearchOption.AllDirectories).FirstOrDefault() : null;
     }
 
+    private string? FindMediaYamlFile(int mediaId)
+    {
+        var mediaDir = Path.Combine(_cachePath, "media");
+        return Directory.Exists(mediaDir) ? Directory.GetFiles(mediaDir, $"{mediaId}-*.yaml", SearchOption.AllDirectories).FirstOrDefault() : null;
+    }
+
+    public bool IsLocalMediaChanged(int mediaId)
+    {
+        var yamlFile = FindMediaYamlFile(mediaId);
+        if (string.IsNullOrEmpty(yamlFile) || !File.Exists(yamlFile))
+        {
+            return false; // If there is no file, it cannot have changed.
+        }
+
+        var yamlContent = File.ReadAllText(yamlFile);
+        var currentHash = ComputeSha256Hash(yamlContent);
+        var previousHash = GetMediaMetadataHash(mediaId);
+
+        // The change is detected if the previous hash exists and is different from the current one.
+        return previousHash != null && currentHash != previousHash;
+    }
+
     public int? FindCategoryId(string nameOrSlug)
     {
         var normalized = nameOrSlug.Trim();
