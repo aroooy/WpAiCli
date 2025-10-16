@@ -29,6 +29,8 @@ public class LocalPost
 
 public class EditablePostMetadata
 {
+    [YamlMember(Alias = "url")]
+    public string? Url { get; set; }
     [YamlMember(Alias = "title")]
     public string? Title { get; set; }
     [YamlMember(Alias = "slug")]
@@ -57,6 +59,8 @@ public class EditablePostMetadata
 
 public class EditableCategory
 {
+    [YamlMember(Alias = "url")]
+    public string? Url { get; set; }
     public int Id { get; set; }
     public string Name { get; set; } = string.Empty;
     public string Slug { get; set; } = string.Empty;
@@ -66,6 +70,8 @@ public class EditableCategory
 
 public class EditableTag
 {
+    [YamlMember(Alias = "url")]
+    public string? Url { get; set; }
     public int Id { get; set; }
     public string Name { get; set; } = string.Empty;
     public string Slug { get; set; } = string.Empty;
@@ -75,6 +81,10 @@ public class EditableTag
 
 public class EditableMediaMetadata
 {
+    [YamlMember(Alias = "url")]
+    public string? Url { get; set; }
+    [YamlMember(Alias = "source_url")]
+    public string? SourceUrl { get; set; }
     [YamlMember(Alias = "modified_gmt")]
     public DateTime? ModifiedGmt { get; set; }
     [YamlMember(Alias = "title")]
@@ -201,6 +211,7 @@ public class CacheService
         // 2. Populate all metadata into the EditablePostMetadata object
         var editableMeta = new EditablePostMetadata
         {
+            Url = post.Link,
             Title = post.Title?.Raw,
             EditMode = hasMarkdownMeta ? "markdown" : "html",
             Slug = System.Net.WebUtility.UrlDecode(post.Slug),
@@ -360,7 +371,7 @@ public class CacheService
         // 2. Write individual category files
         foreach (var category in categories)
         {
-            var editableCategory = new EditableCategory { Id = category.Id, Name = category.Name ?? string.Empty, Slug = System.Net.WebUtility.UrlDecode(category.Slug ?? string.Empty), Description = category.Description ?? string.Empty };
+            var editableCategory = new EditableCategory { Url = category.Link, Id = category.Id, Name = category.Name ?? string.Empty, Slug = System.Net.WebUtility.UrlDecode(category.Slug ?? string.Empty), Description = category.Description ?? string.Empty };
             var yamlContent = YamlSerializer.Serialize(editableCategory);
             var sanitizedName = SanitizeTitleForFilename(category.Name ?? string.Empty);
             var filePath = Path.Combine(categoriesDir, $"{category.Id}-{sanitizedName}.yaml");
@@ -374,7 +385,7 @@ public class CacheService
         // 3. Write individual tag files
         foreach (var tag in tags)
         {
-            var editableTag = new EditableTag { Id = tag.Id, Name = tag.Name ?? string.Empty, Slug = System.Net.WebUtility.UrlDecode(tag.Slug ?? string.Empty), Description = tag.Description ?? string.Empty };
+            var editableTag = new EditableTag { Url = tag.Link, Id = tag.Id, Name = tag.Name ?? string.Empty, Slug = System.Net.WebUtility.UrlDecode(tag.Slug ?? string.Empty), Description = tag.Description ?? string.Empty };
             var yamlContent = YamlSerializer.Serialize(editableTag);
             var sanitizedName = SanitizeTitleForFilename(tag.Name ?? string.Empty);
             var filePath = Path.Combine(tagsDir, $"{tag.Id}-{sanitizedName}.yaml");
@@ -755,11 +766,10 @@ public class CacheService
         var fileBaseName = $"{media.Id}-{fileName}";
         var yamlFileName = $"{media.Id}-{Path.GetFileNameWithoutExtension(fileName)}.yaml";
 
-        DeleteMediaFromCache(media.Id);
-
-        // 1. Handle editable.yaml
         var editableMeta = new EditableMediaMetadata
         {
+            Url = media.Link,
+            SourceUrl = media.SourceUrl,
             ModifiedGmt = media.ModifiedGmt,
             Title = media.Title?.Raw,
             AltText = media.AltText,
@@ -800,6 +810,8 @@ public class CacheService
         // Prepare editable metadata
         var editableMeta = new EditableMediaMetadata
         {
+            Url = media.Link,
+            SourceUrl = media.SourceUrl,
             ModifiedGmt = media.ModifiedGmt,
             Title = media.Title?.Raw,
             AltText = media.AltText,

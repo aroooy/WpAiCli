@@ -231,6 +231,9 @@ public abstract class WordPressTerm
 
     [JsonPropertyName("description")]
     public string? Description { get; set; }
+
+    [JsonPropertyName("link")]
+    public string? Link { get; set; }
 }
 
 public sealed class WordPressCategory : WordPressTerm
@@ -351,6 +354,9 @@ public sealed class WordPressMedia : IHasTitle
 
     [JsonPropertyName("source_url")]
     public string? SourceUrl { get; set; }
+
+    [JsonPropertyName("link")]
+    public string? Link { get; set; }
 }
 
 public sealed class WordPressDeleteResponse
