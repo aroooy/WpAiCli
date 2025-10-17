@@ -113,6 +113,12 @@ public class Program
                         );
                 case "taxonomies":
                     return await HandleTaxonomiesAsync(commandArgs, services.GetRequiredService<SyncService>());
+                case "revisions":
+                    return await HandleRevisionsAsync(
+                        commandArgs,
+                        services.GetRequiredService<WordPressService>(),
+                        services.GetRequiredService<CacheService>()
+                    );
                 case "resolve":
                     return await HandleResolveAsync(commandArgs, services.GetRequiredService<SyncService>(), services.GetRequiredService<ConnectionProfile>());
                 default:
@@ -149,7 +155,7 @@ public class Program
     {
         if (args.Length == 0)
         {
-            Console.Error.WriteLine("Specify posts subcommand (list|get|create|push|delete|revisions|revision|sync|organize).");
+            Console.Error.WriteLine("Specify posts subcommand (list|get|create|push|delete|sync|organize).");
             return (int)ExitCode.InvalidArguments;
         }
 
@@ -444,44 +450,99 @@ public class Program
                 return (int)ExitCode.Success;
             }
 
-            case "revisions":
-            {
-                var id = ResolveId(parsed, defaultValue: parsed.Positionals.FirstOrDefault());
-                if (id is null)
-                {
-                    Console.Error.WriteLine("Provide a post ID.");
-                    return (int)ExitCode.InvalidArguments;
-                }
-
-                var revisions = await service.GetPostRevisionsAsync(id.Value, ct).ConfigureAwait(false);
-                OutputFormatter.WriteRevisions(revisions, format, Console.Out);
-                return (int)ExitCode.Success;
-            }
-
-            case "revision":
-            {
-                if (parsed.Positionals.Count < 2)
-                {
-                    Console.Error.WriteLine("Provide a post ID and a revision ID.");
-                    return (int)ExitCode.InvalidArguments;
-                }
-
-                if (!int.TryParse(parsed.Positionals[0], out var postId) || !int.TryParse(parsed.Positionals[1], out var revisionId))
-                {
-                    Console.Error.WriteLine("Post ID and revision ID must be integers.");
-                    return (int)ExitCode.InvalidArguments;
-                }
-
-                var revision = await service.GetPostRevisionAsync(postId, revisionId, ct).ConfigureAwait(false);
-                OutputFormatter.WriteRevision(revision, format, Console.Out);
-                return (int)ExitCode.Success;
-            }
-
             default:
                 Console.Error.WriteLine($"Unknown posts subcommand: {subcommand}");
                 return (int)ExitCode.InvalidArguments;
         }
     }
+
+    static async Task<int> HandleRevisionsAsync(string[] args, WordPressService service, CacheService cacheService)
+    {
+        if (args.Length == 0)
+        {
+            Console.Error.WriteLine("Specify revisions subcommand (list|fetch|clean).");
+            return (int)ExitCode.InvalidArguments;
+        }
+
+        var subcommand = args[0].ToLowerInvariant();
+        var subArgs = args.Skip(1).ToArray();
+        var parsed = OptionParser.Parse(subArgs);
+        var format = OutputFormatter.ParseFormat(parsed.GetString("format"));
+        var ct = CancellationToken.None;
+
+        switch (subcommand)
+        {
+            case "list":
+            {
+                var postId = parsed.GetInt("post-id");
+                if (postId is null)
+                {
+                    Console.Error.WriteLine("Provide a post ID using --post-id <ID>.");
+                    return (int)ExitCode.InvalidArguments;
+                }
+
+                var revisions = await service.GetPostRevisionsAsync(postId.Value, ct).ConfigureAwait(false);
+                OutputFormatter.WriteRevisions(revisions, format, Console.Out);
+                return (int)ExitCode.Success;
+            }
+            case "fetch":
+            {
+                var postId = parsed.GetInt("post-id");
+                if (postId is null)
+                {
+                    Console.Error.WriteLine("Provide a post ID using --post-id <ID>.");
+                    return (int)ExitCode.InvalidArguments;
+                }
+
+                var revisions = await service.GetPostRevisionsAsync(postId.Value, ct).ConfigureAwait(false);
+                if (revisions == null || !revisions.Any())
+                {
+                    Console.WriteLine($"No revisions found for post {postId.Value}.");
+                    return (int)ExitCode.Success;
+                }
+
+                Console.WriteLine($"Fetching {revisions.Count()} revisions for post {postId.Value}...");
+                foreach (var revisionSummary in revisions)
+                {
+                    Console.WriteLine($"  -> Fetching revision {revisionSummary.Id}...");
+                    var fullRevision = await service.GetPostRevisionAsync(postId.Value, revisionSummary.Id, ct).ConfigureAwait(false);
+                    cacheService.SaveRevisionToCache(fullRevision);
+                }
+
+                Console.WriteLine($"\nFetch complete. Revisions are saved in: wp-cache/revisions/post_{postId.Value}/");
+                return (int)ExitCode.Success;
+            }
+            case "clean":
+            {
+                var postId = parsed.GetInt("post-id");
+                
+                string targetDescription;
+                if (postId.HasValue)
+                {
+                    targetDescription = $"the revision cache for post {postId.Value}";
+                }
+                else
+                {
+                    targetDescription = "ALL local revision caches";
+                }
+
+                Console.Write($"Are you sure you want to permanently delete {targetDescription}? (y/N): ");
+                var confirmation = Console.ReadLine();
+                if (!string.Equals(confirmation, "y", StringComparison.OrdinalIgnoreCase))
+                {
+                    Console.WriteLine("Operation cancelled.");
+                    return (int)ExitCode.Success;
+                }
+
+                cacheService.CleanRevisionsCache(postId);
+                return (int)ExitCode.Success;
+            }
+            default:
+                Console.Error.WriteLine($"Unknown revisions subcommand: {subcommand}");
+                return (int)ExitCode.InvalidArguments;
+        }
+    }
+
 
     static async Task<int> HandleResolveAsync(string[] args, SyncService syncService, ConnectionProfile profile)
     {

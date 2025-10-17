@@ -268,6 +268,31 @@ public class CacheService
         _db.SaveChanges();
     }
 
+    public void SaveRevisionToCache(WordPressRevision revision)
+    {
+        // 1. Define directory and file path
+        var revisionDir = Path.Combine(_cachePath, "revisions", $"post_{revision.Parent}");
+        Directory.CreateDirectory(revisionDir);
+        var filePath = Path.Combine(revisionDir, $"{revision.Id}.md");
+
+        // 2. Populate metadata from the revision object
+        var editableMeta = new
+        {
+            Title = revision.Title?.Raw,
+            revision.Slug,
+            Date = revision.DateGmt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss"),
+            EditMode = "html"
+        };
+        var yamlContent = YamlSerializer.Serialize(editableMeta);
+
+        // 3. Get content (currently raw HTML, TODO: Convert to Markdown)
+        var contentToSave = revision.Content?.Raw ?? string.Empty;
+
+        // 4. Construct the full file content and write to disk
+        var finalContent = string.Join("\n", "---", yamlContent, "---", "", contentToSave);
+        File.WriteAllText(filePath, finalContent);
+    }
+
     public LocalPost? ReadLocalPost(int postId)
     {
         var postFile = FindFileByPattern($"{postId}-*.md");
@@ -719,6 +744,29 @@ public class CacheService
             _db.States.Remove(state);
         }
         _db.SaveChanges();
+    }
+
+    public void CleanRevisionsCache(int? postId)
+    {
+        string pathToDelete;
+        if (postId.HasValue)
+        {
+            pathToDelete = Path.Combine(_cachePath, "revisions", $"post_{postId.Value}");
+        }
+        else
+        {
+            pathToDelete = Path.Combine(_cachePath, "revisions");
+        }
+
+        if (Directory.Exists(pathToDelete))
+        {
+            Directory.Delete(pathToDelete, true);
+            Console.WriteLine($"Successfully deleted: {pathToDelete}");
+        }
+        else
+        {
+            Console.WriteLine("No revision cache found to delete.");
+        }
     }
 
     public void DeleteMediaFromCache(int mediaId)

@@ -84,14 +84,31 @@ AI など機械連携では JSON モード (`--format json`) を推奨します�
     - `create`: 新しい投稿を作成します。 `[キャッシュへの影響: 即時作成]`
       - `wpai posts create --title <TITLE> --content <CONTENT> | --content-file <PATH> [--status <STATUS>] [--edit-mode <markdown|html>] [--categories <IDs>] [--tags <IDs>] [--featured-media <ID>]`
       - **注意:** `--content` または `--content-file` は必須で、内容は空や空白のみにはできません。
-      - **AI利用時のヒント:** 本文に記事タイトルを含めないでください。タイトルは `--title` オプションで別途指定されるため、本文にタイトルを含めると表示が重複します。- `push <id>`: ローカルキャッシュの変更（本文、メタデータ）をサーバーに一括で反映（プッシュ）します。 `[キャッシュへの影響: サーバー反映後に更新]`
+      - **AI利用時のヒント:** 本文に記事タイトルを含めないでください。タイトルは `--title` オプションで別途指定されるため、本文にタイトルを含めると表示が重複します。
+- `push <id>`: ローカルキャッシュの変更（本文、メタデータ）をサーバーに一括で反映（プッシュ）します。 `[キャッシュへの影響: サーバー反映後に更新]`
   - `wpai posts push 123`
 - `delete <id>`: 投稿を削除します。 `[キャッシュへの影響: 即時削除]`
   - `wpai posts delete 123 [--force]`
-- `revisions <id>`: 指定した投稿のリビジョン一覧を取得します。 `[キャッシュへの影響: なし]`
-  - `wpai posts revisions 123`
-- `revision <post-id> <revision-id>`: 特定のリビジョンの詳細を取得します。 `[キャッシュへの影響: なし]`
-  - `wpai posts revision 123 456`
+
+### リビジョン (`revisions`)
+投稿の変更履歴（リビジョン）を管理します。
+
+- `list --post-id <ID>`: 指定した投稿のリビジョン一覧を取得します。 `[キャッシュへの影響: なし]`
+  - `wpai revisions list --post-id 123`
+- `fetch --post-id <ID>`: 指定した投稿の全リビジョンをローカルに一括でダウンロードします。比較・検討用途に最適です。 `[キャッシュへの影響: `wp-cache/revisions/post_<ID>/` 以下にファイル作成]`
+  - `wpai revisions fetch --post-id 123`
+- `clean [--post-id <ID>]`: ローカルにダウンロードしたリビジョンキャッシュを削除します。 `[キャッシュへの影響: `wp-cache/revisions/` 以下のファイル・フォルダを削除]`
+  - `wpai revisions clean --post-id 123` (特定の投稿のリビジョンのみ削除)
+  - `wpai revisions clean` (すべてのリビジョンキャッシュを削除)
+
+#### リビジョンを使った投稿の復元（ワークフロー）
+本ツールでは、安全性を重視し、リビジョンから復元する操作は以下の手動ワークフローを推奨しています。
+
+1. **履歴の確認:** `wpai revisions list --post-id 123` を実行し、リビジョンIDや日時を確認します。
+2. **一括取得:** `wpai revisions fetch --post-id 123` を実行し、すべてのリビジョンをローカルにダウンロードします。
+3. **比較:** `wp-cache/revisions/post_123/` ディレクトリに作成されたリビジョンファイル (`456.md`など) と、現在の投稿ファイル `wp-cache/posts/publish/123.md` をエディタや差分ツールで比較します。
+4. **内容の反映:** 復元したいリビジョンファイルの中身をコピーし、現在の投稿ファイルに貼り付けて上書き保存します。
+5. **サーバーへ反映:** `wpai posts push 123` を実行します。ローカルファイルの変更がサーバーにプッシュされ、投稿の復元が完了します。
 
 ### カテゴリ (`categories`)
 - `list`: カテゴリを一覧表示します。 `[キャッシュへの影響: なし]`
