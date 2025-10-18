@@ -1,16 +1,68 @@
 # WpAiCli Usage Guide
 
 ## 概要
+
+
+
 WpAiCli は WordPress REST API と連携するためのクロスプラットフォーム CLI です。投稿、カテゴリ、タグ、メディアの管理に加えて、複数サイトの接続情報を安全に切り替えながら利用できます。
 
+
+
 主な特徴:
+
 - Windows Credential Manager または macOS/Linux の Secret-Tool に Bearer トークンを保存
+
 - 接続プロファイルの登録 / 一覧 / 削除 / 更新を CLI から実行
+
 - 投稿、カテゴリ、タグ、メディアの作成、取得、更新、削除の各コマンドをサポート
+
 - 投稿のローカルキャッシュと双方向同期に対応
+
 - 投稿リビジョンの取得にも対応
+
 - メディア（画像など）のアップロード機能を搭載
+
 - `--format table|json|raw` で出力形式を切り替え
+
+
+
+## インストール
+
+
+
+### .NET ツールとしてインストール (推奨)
+
+
+
+お使いのPCに [.NET 9.0 SDK](https://dotnet.microsoft.com/download/dotnet/9.0) (またはそれ以降) がインストールされている必要があります。
+
+
+
+以下のコマンドを一行実行するだけで、`wpai` コマンドがシステム全体で利用可能になります。
+
+
+
+```shell
+
+dotnet tool install --global WpAiCli
+
+```
+
+
+
+### 手動インストール (GitHub Releases)
+
+
+
+1.  [リリースページ](https://github.com/aroooy/WpAiCli/releases)にアクセスします。
+
+2.  お使いのOS（Windows, macOS, Linux）に対応したZIPファイルをダウンロードします。
+
+3.  ZIPファイルを任意のディレクトリに解凍します。
+
+4.  (任意ですが推奨) 解凍したディレクトリに環境変数のPATHを通すことで、どの場所からでも `wpai` コマンドを実行できるようになります。
+
+
 
 ## グローバルオプション
 
