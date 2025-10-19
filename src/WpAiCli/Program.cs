@@ -154,6 +154,11 @@ public class Program
         }
     }
 
+    // NOTE:
+    // Posts command entry point.
+    // - Validates input for create/push/delete
+    // - Supports edit-mode (markdown|html) where markdown can be converted client-side
+    //   or sent as-is for server-side conversion depending on profile settings.
     static async Task<int> HandlePostsAsync(string[] args, WordPressService service, SyncService syncService, ConnectionProfile profile, CacheService cacheService)
     {
         if (args.Length == 0)
@@ -176,11 +181,13 @@ public class Program
                 Console.WriteLine("Local post files organized successfully.");
                 return (int)ExitCode.Success;
             case "sync":
+            {
                 Console.WriteLine("Starting posts synchronization...");
                 var syncLimit = profile.SyncItemsLimit ?? 30;
                 var report = await syncService.SynchronizePostsAsync(profile, syncLimit, ct);
                 PrintSyncReport(report);
                 return (int)ExitCode.Success;
+            }
 
             case "list":
             {
@@ -409,16 +416,26 @@ public class Program
 
             case "push":
             {
-                var id = ResolveId(parsed, defaultValue: parsed.Positionals.FirstOrDefault());
-                if (id is null)
+                if (parsed.GetBool("all", defaultValue: false))
                 {
-                    Console.Error.WriteLine("Provide a post ID.");
-                    return (int)ExitCode.InvalidArguments;
+                    Console.WriteLine("Pushing all modified local posts to the server...");
+                    var report = await syncService.PushAllModifiedPostsAsync(profile, ct);
+                    PrintSyncReport(report);
+                    return (int)ExitCode.Success;
                 }
+                else
+                {
+                    var id = ResolveId(parsed, defaultValue: parsed.Positionals.FirstOrDefault());
+                    if (id is null)
+                    {
+                        Console.Error.WriteLine("Provide a post ID or use the --all flag.");
+                        return (int)ExitCode.InvalidArguments;
+                    }
 
-                var updated = await syncService.PushPostAsync(id.Value, profile, ct);
-                OutputFormatter.WritePost(updated, format, Console.Out);
-                return (int)ExitCode.Success;
+                    var updated = await syncService.PushPostAsync(id.Value, profile, ct);
+                    OutputFormatter.WritePost(updated, format, Console.Out);
+                    return (int)ExitCode.Success;
+                }
             }
 
             case "delete":

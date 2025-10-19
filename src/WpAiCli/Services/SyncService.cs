@@ -18,6 +18,10 @@ using WpAiCli.Configuration;
 
 namespace WpAiCli.Services;
 
+// NOTE:
+// SyncReport aggregates side effects from sync operations.
+// It is intended for user-friendly reporting rather than strict programmatic consumption.
+
 public class SyncReport
 {
     public List<int> PushedToServer { get; } = new();
@@ -46,6 +50,8 @@ public class SyncService
         .ConfigureDefaultValuesHandling(DefaultValuesHandling.OmitNull)
         .Build();
 
+    // Coordinates bidirectional sync between the local cache and WordPress.
+    // Posts, taxonomies, and media are handled with similar compare/push/pull logic.
     public SyncService(WordPressService wpService, CacheService cacheService)
     {
         _wpService = wpService;
@@ -112,6 +118,45 @@ public class SyncService
         var updatedPost = await _wpService.UpdatePostAsync(id, request, cancellationToken);
         _cacheService.SavePostToCache(updatedPost);
         return updatedPost;
+    }
+
+    public async Task<SyncReport> PushAllModifiedPostsAsync(ConnectionProfile profile, CancellationToken cancellationToken)
+    {
+        var report = new SyncReport();
+        var localMetas = _cacheService.ListLocalPostMetadata();
+
+        foreach (var localMeta in localMetas)
+        {
+            var id = localMeta.Post.Id;
+            try
+            {
+                if (!_cacheService.IsPostCacheFilePresent(id))
+                {
+                    continue; // Skip if the file doesn't exist for some reason
+                }
+
+                var localPost = _cacheService.ReadLocalPost(id);
+                if (localPost == null) continue;
+
+                var fullLocalContent = string.Join("\n", "---", _cacheService.SerializeToYaml(localPost.Metadata), "---", "", localPost.Content);
+                var currentLocalHash = _cacheService.ComputeSha256Hash(fullLocalContent);
+                var isLocalChanged = currentLocalHash != localMeta.FileHash;
+
+                if (isLocalChanged)
+                {
+                    Console.WriteLine($"Local changes detected for post {id}. Pushing to server...");
+                    await PushPostAsync(id, profile, cancellationToken);
+                    report.PushedToServer.Add(id);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"Failed to push post {id}: {ex.Message}");
+                report.LocalValidationErrors.Add((id, ex.Message));
+            }
+        }
+
+        return report;
     }
 
     public async Task<WordPressCategory> PushCategoryAsync(int id, CancellationToken cancellationToken)
@@ -265,6 +310,7 @@ public class SyncService
         return report;
     }
 
+        // Synchronize media metadata and files (top-N by server listing).
         public async Task<SyncReport> SynchronizeMediaAsync(int syncLimit, CancellationToken cancellationToken)
         {
             var report = new SyncReport();

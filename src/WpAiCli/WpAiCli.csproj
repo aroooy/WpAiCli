@@ -16,7 +16,7 @@
 
     <!-- NuGetパッケージのメタデータ -->
     <PackageId>WpAiCli</PackageId>
-    <Version>1.0.0</Version>
+    <Version>1.0.2</Version>
     <Authors>Hiroaki Hayase</Authors>
     <Description>A CLI tool to manage WordPress posts and media, designed for easy AI assistance.</Description>
     <PackageTags>wordpress;cli;automation;ai</PackageTags>
@@ -29,7 +29,11 @@
 
   <ItemGroup>
     <None Include="..\..\LICENSE.txt" Pack="true" PackagePath="\" />
-    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+    <Content Include="..\..\README.md">
+      <Pack>true</Pack>
+      <PackagePath>\</PackagePath>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
   <ItemGroup>

@@ -1,13 +1,33 @@
-﻿using System.ComponentModel;
+﻿using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.Json;
 
 namespace WpAiCli.Configuration;
 
+// NOTE:
+// Cross-platform credential storage helper.
+// - On Windows, uses the native Credential Manager (Advapi32.dll).
+// - On macOS/Linux, falls back to a per-user JSON file under ~/.wpaicli/credentials.json.
+// This keeps behavior consistent across OSes without external dependencies.
+
 internal static class CredentialManager
 {
+    private static readonly bool IsWindows = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
+
+    // Windows-specific constants
     private const int CredTypeGeneric = 1;
     private const int CredPersistLocalMachine = 2;
+
+    // Non-Windows credential file path
+    // (Readable and simple; contents are not encrypted—suitable for dev machines.)
+    private static readonly string CredentialFilePath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+        ".wpaicli",
+        "credentials.json");
 
     public static void Save(string targetName, string secret)
     {
@@ -15,10 +35,45 @@ internal static class CredentialManager
         {
             throw new ArgumentException("Target name is required.", nameof(targetName));
         }
-
         secret ??= string.Empty;
-        var secretBytes = Encoding.Unicode.GetBytes(secret);
 
+        if (IsWindows)
+        {
+            SaveForWindows(targetName, secret);
+        }
+        else
+        {
+            SaveForNonWindows(targetName, secret);
+        }
+    }
+
+    public static string? ReadSecret(string targetName)
+    {
+        if (IsWindows)
+        {
+            return ReadSecretForWindows(targetName);
+        }
+        else
+        {
+            return ReadSecretForNonWindows(targetName);
+        }
+    }
+
+    public static void Delete(string targetName)
+    {
+        if (IsWindows)
+        {
+            DeleteForWindows(targetName);
+        }
+        else
+        {
+            DeleteForNonWindows(targetName);
+        }
+    }
+
+    private static void SaveForWindows(string targetName, string secret)
+    {
+        var secretBytes = Encoding.Unicode.GetBytes(secret);
         var credential = new NativeCredential
         {
             Type = CredTypeGeneric,
@@ -33,7 +88,6 @@ internal static class CredentialManager
         try
         {
             Marshal.Copy(secretBytes, 0, credential.CredentialBlob, secretBytes.Length);
-
             if (!CredWrite(ref credential, 0))
             {
                 throw new Win32Exception(Marshal.GetLastWin32Error(), $"Failed to save credential '{targetName}'.");
@@ -48,7 +102,7 @@ internal static class CredentialManager
         }
     }
 
-    public static string? ReadSecret(string targetName)
+    private static string? ReadSecretForWindows(string targetName)
     {
         if (!CredRead(targetName, CredTypeGeneric, 0, out var credentialPtr))
         {
@@ -57,7 +111,6 @@ internal static class CredentialManager
             {
                 return null;
             }
-
             throw new Win32Exception(error, $"Failed to read credential '{targetName}'.");
         }
 
@@ -79,7 +132,7 @@ internal static class CredentialManager
         }
     }
 
-    public static void Delete(string targetName)
+    private static void DeleteForWindows(string targetName)
     {
         if (!CredDelete(targetName, CredTypeGeneric, 0))
         {
@@ -88,11 +141,55 @@ internal static class CredentialManager
             {
                 return;
             }
-
             throw new Win32Exception(error, $"Failed to delete credential '{targetName}'.");
         }
     }
 
+    private static Dictionary<string, string> ReadCredentialFile()
+    {
+        if (!File.Exists(CredentialFilePath))
+        {
+            return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        }
+        var json = File.ReadAllText(CredentialFilePath);
+        return JsonSerializer.Deserialize<Dictionary<string, string>>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) 
+               ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static void WriteCredentialFile(Dictionary<string, string> credentials)
+    {
+        var directory = Path.GetDirectoryName(CredentialFilePath);
+        if (directory != null && !Directory.Exists(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+        var json = JsonSerializer.Serialize(credentials, new JsonSerializerOptions { WriteIndented = true });
+        File.WriteAllText(CredentialFilePath, json);
+    }
+
+    private static void SaveForNonWindows(string targetName, string secret)
+    {
+        var credentials = ReadCredentialFile();
+        credentials[targetName] = secret;
+        WriteCredentialFile(credentials);
+    }
+
+    private static string? ReadSecretForNonWindows(string targetName)
+    {
+        var credentials = ReadCredentialFile();
+        return credentials.TryGetValue(targetName, out var secret) ? secret : null;
+    }
+
+    private static void DeleteForNonWindows(string targetName)
+    {
+        var credentials = ReadCredentialFile();
+        if (credentials.Remove(targetName))
+        {
+            WriteCredentialFile(credentials);
+        }
+    }
+
+    // P/Invoke declarations for Windows
     [DllImport("Advapi32.dll", EntryPoint = "CredWriteW", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern bool CredWrite(ref NativeCredential credential, uint flags);
 
