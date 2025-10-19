@@ -1,0 +1,51 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>wpai</AssemblyName>
+
+    <!-- .NETツールとしてパッケージ化する設定 -->
+    <PackAsTool>true</PackAsTool>
+    <!-- ユーザーがインストール後に使うコマンド名 -->
+    <ToolCommandName>wpai</ToolCommandName>
+    <!-- パッケージの出力先 -->
+    <PackageOutputPath>..\..\nupkg</PackageOutputPath>
+
+    <!-- NuGetパッケージのメタデータ -->
+    <PackageId>WpAiCli</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>Hiroaki Hayase</Authors>
+    <Description>A CLI tool to manage WordPress posts and media, designed for easy AI assistance.</Description>
+    <PackageTags>wordpress;cli;automation;ai</PackageTags>
+    <PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
+    <PackageProjectUrl>https://github.com/aroooy/WpAiCli</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/aroooy/WpAiCli.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="..\..\LICENSE.txt" Pack="true" PackagePath="\" />
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Markdig" Version="0.42.0" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="9.0.9" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.9" />
+    <PackageReference Include="ReverseMarkdown" Version="4.7.0" />
+    <PackageReference Include="System.Configuration.ConfigurationManager" Version="9.0.9" />
+    <PackageReference Include="YamlDotNet" Version="16.3.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\mu-plugins.zip" />
+  </ItemGroup>
+
+</Project>
+
+
+
