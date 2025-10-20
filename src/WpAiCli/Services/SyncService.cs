@@ -225,14 +225,14 @@ public class SyncService
 
     public async Task<SyncReport> SynchronizePostsAsync(ConnectionProfile profile, int syncLimit, CancellationToken cancellationToken)
     {
-        var report = new SyncReport();
+        // Step 1: Perform a full, bidirectional sync for taxonomies.
+        // Any failure here will throw an exception and halt the entire process.
+        Console.WriteLine("Step 1/2: Synchronizing taxonomies (categories and tags)...");
+        var report = await SynchronizeTaxonomiesAsync(cancellationToken);
+        Console.WriteLine("Taxonomy synchronization complete.");
 
-        // Ensure taxonomy cache is fresh for ID-Name mapping when saving posts
-        var allCategories = await _wpService.ListCategoriesAsync(cancellationToken);
-        var allTags = await _wpService.ListTagsAsync(cancellationToken);
-        await _cacheService.UpdateTaxonomiesCacheAsync(allCategories, allTags);
-
-        // 3. Synchronize posts
+        // Step 2: Synchronize posts, now that taxonomies are up-to-date.
+        Console.WriteLine("Step 2/2: Synchronizing posts...");
         var localPosts = _cacheService.ListLocalPostMetadata()
             .ToDictionary(meta => meta.Post.Id, meta => meta);
 
@@ -306,6 +306,7 @@ public class SyncService
         }
 
         _cacheService.OrganizePostFiles();
+        Console.WriteLine("Post synchronization complete.");
 
         return report;
     }
