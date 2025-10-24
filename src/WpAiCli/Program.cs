@@ -145,6 +145,7 @@ public class Program
         }
     }
 
+
     static void PrintDocs()
     {
         if (!HelpPrinter.TryPrintDocumentation(Console.Out))
@@ -187,6 +188,7 @@ public class Program
                 PrintSyncReport(report);
                 return (int)ExitCode.Success;
             }
+
             case "list":
             {
                 var status = parsed.GetString("status");
@@ -200,6 +202,7 @@ public class Program
 
                 return (int)ExitCode.Success;
             }
+
             case "get":
             {
                 var id = ResolveId(parsed, defaultValue: null);
@@ -214,82 +217,203 @@ public class Program
 
                 return (int)ExitCode.Success;
             }
-            case "create":
-            {
-                var title = parsed.GetString("title");
-                if (string.IsNullOrWhiteSpace(title))
-                {
-                    Console.Error.WriteLine("Error: --title is required and cannot be empty.");
-                    return (int)ExitCode.InvalidArguments;
-                }
 
-                var bodyContent = parsed.GetString("content");
-                var contentFile = ToFileInfo(parsed.GetString("content-file"));
+                        case "create":
 
-                if (string.IsNullOrWhiteSpace(bodyContent) && (contentFile == null || !contentFile.Exists))
-                {
-                    Console.Error.WriteLine("Error: Either --content or a valid --content-file is required.");
-                    return (int)ExitCode.InvalidArguments;
-                }
+                        {
 
-                if (contentFile != null && contentFile.Exists)
-                {
-                    bodyContent = File.ReadAllText(contentFile.FullName);
-                }
+                            var title = parsed.GetString("title");
 
-                var status = parsed.GetString("status") ?? "draft";
-                var categories = parsed.GetIntArray("categories");
-                var tags = parsed.GetIntArray("tags");
-                var featured = parsed.GetInt("featured-media");
-                var editMode = parsed.GetString("edit-mode") ?? "markdown";
+                            if (string.IsNullOrWhiteSpace(title))
 
-                if (editMode != "markdown" && editMode != "html")
-                {
-                    Console.Error.WriteLine("Invalid value for --edit-mode. Must be 'markdown' or 'html'.");
-                    return (int)ExitCode.InvalidArguments;
-                }
+                            {
 
-                var request = new WordPressCreatePostRequest
-                {
-                    Title = title,
-                    Status = status,
-                    Categories = categories,
-                    Tags = tags,
-                    FeaturedMedia = featured
-                };
+                                Console.Error.WriteLine("Error: --title is required and cannot be empty.");
 
-                var conversion = profile.MarkdownConversion ?? "client";
+                                return (int)ExitCode.InvalidArguments;
 
-                if (editMode == "markdown")
-                {
-                    request.Meta = new Dictionary<string, object?> { { "_md_source", bodyContent ?? string.Empty } };
+                            }
 
-                    if (conversion == "client")
-                    {
-                        request.Content = Markdown.ToHtml(bodyContent ?? string.Empty);
-                    }
-                    else // server conversion
-                    {
-                        request.Content = bodyContent;
-                    }
-                }
-                else // html mode
-                {
-                    request.Content = bodyContent;
-                }
+            
 
-                var post = await service.CreatePostAsync(request, ct).ConfigureAwait(false);
+                            var bodyContent = parsed.GetString("content");
 
-                if (post != null)
-                {
-                    if (!string.IsNullOrEmpty(profile.CachePath))
-                    {
-                        cacheService.SavePostToCache(post);
-                    }
-                    OutputFormatter.WritePost(post, format, Console.Out);
-                }
-                return (int)ExitCode.Success;
-            }
+                            var contentFile = ToFileInfo(parsed.GetString("content-file"));
+
+            
+
+                            if (string.IsNullOrWhiteSpace(bodyContent) && (contentFile == null || !contentFile.Exists))
+
+                            {
+
+                                Console.Error.WriteLine("Error: Either --content or a valid --content-file is required.");
+
+                                return (int)ExitCode.InvalidArguments;
+
+                            }
+
+            
+
+                            if (contentFile != null && contentFile.Exists)
+
+                            {
+
+                                bodyContent = File.ReadAllText(contentFile.FullName);
+
+                            }
+
+            
+
+                            var status = parsed.GetString("status") ?? "draft";
+
+                            var categories = parsed.GetIntArray("categories");
+
+                            var tags = parsed.GetIntArray("tags");
+
+                            var featured = parsed.GetInt("featured-media");
+
+                            var editMode = parsed.GetString("edit-mode") ?? "markdown";
+
+            
+
+                            if (editMode != "markdown" && editMode != "html")
+
+                            {
+
+                                Console.Error.WriteLine("Invalid value for --edit-mode. Must be 'markdown' or 'html'.");
+
+                                return (int)ExitCode.InvalidArguments;
+
+                            }
+
+            
+
+                            var request = new WordPressCreatePostRequest
+
+                            {
+
+                                Title = title,
+
+                                Status = status,
+
+                                Categories = categories,
+
+                                Tags = tags,
+
+                                FeaturedMedia = featured
+
+                            };
+
+            
+
+                            var conversion = profile.MarkdownConversion ?? "client";
+
+            
+
+                                            if (editMode == "markdown")
+
+            
+
+                                            {
+
+            
+
+                                                request.Meta = new Dictionary<string, object?> { { "_md_source", bodyContent ?? string.Empty } };
+
+            
+
+                                                if (conversion == "client")
+
+            
+
+                                                {                        request.Content = Markdown.ToHtml(bodyContent ?? string.Empty);
+
+            
+
+                                                }
+
+            
+
+                                                else // server conversion
+
+            
+
+                                                {
+
+            
+
+                                                    request.Content = bodyContent;
+
+            
+
+                                                }
+
+            
+
+                                            }
+
+            
+
+                                            else // html mode
+
+            
+
+                                            {
+
+            
+
+                                                request.Content = bodyContent;
+
+            
+
+                                            }
+
+            
+
+                            
+
+            
+
+                                            var post = await service.CreatePostAsync(request, ct).ConfigureAwait(false);
+
+            
+
+                                            if (post != null)
+
+            
+
+                                            {
+
+            
+
+                                                if (!string.IsNullOrEmpty(profile.CachePath))
+
+            
+
+                                                {
+
+            
+
+                                                    cacheService.SavePostToCache(post);
+
+            
+
+                                                }
+
+            
+
+                                                OutputFormatter.WritePost(post, format, Console.Out);
+
+            
+
+                                            }
+
+            
+
+                            return (int)ExitCode.Success;
+
+                        }
+
             case "push":
             {
                 if (parsed.GetBool("all", defaultValue: false))
@@ -313,6 +437,7 @@ public class Program
                     return (int)ExitCode.Success;
                 }
             }
+
             case "delete":
             {
                 var id = ResolveId(parsed, defaultValue: parsed.Positionals.FirstOrDefault());
@@ -344,6 +469,7 @@ public class Program
 
                 return (int)ExitCode.Success;
             }
+
             default:
                 Console.Error.WriteLine($"Unknown posts subcommand: {subcommand}");
                 return (int)ExitCode.InvalidArguments;
@@ -403,8 +529,7 @@ public class Program
                     cacheService.SaveRevisionToCache(fullRevision);
                 }
 
-                Console.WriteLine($"
-Fetch complete. Revisions are saved in: wp-cache/revisions/post_{postId.Value}/");
+                Console.WriteLine($"\nFetch complete. Revisions are saved in: wp-cache/revisions/post_{postId.Value}/");
                 return (int)ExitCode.Success;
             }
             case "clean":
@@ -437,6 +562,7 @@ Fetch complete. Revisions are saved in: wp-cache/revisions/post_{postId.Value}/"
                 return (int)ExitCode.InvalidArguments;
         }
     }
+
 
     static async Task<int> HandleResolveAsync(string[] args, SyncService syncService, ConnectionProfile profile)
     {
@@ -492,8 +618,7 @@ Fetch complete. Revisions are saved in: wp-cache/revisions/post_{postId.Value}/"
 
     static void PrintSyncReport(SyncReport report)
     {
-        Console.WriteLine("
---- Sync Report ---");
+        Console.WriteLine("\n--- Sync Report ---");
         Console.WriteLine($"Pushed to server: {report.PushedToServer.Count} post(s)");
         Console.WriteLine($"Pulled from server: {report.PulledFromServer.Count} post(s)");
         Console.WriteLine($"Newly cached: {report.NewlyCached.Count} post(s)");
@@ -516,8 +641,7 @@ Fetch complete. Revisions are saved in: wp-cache/revisions/post_{postId.Value}/"
 
         if (report.LocalValidationErrors.Count > 0)
         {
-            Console.WriteLine("
-Local validation errors detected:");
+            Console.WriteLine("\nLocal validation errors detected:");
             foreach (var (postId, errorMessage) in report.LocalValidationErrors)
             {
                 Console.Error.WriteLine($"- {errorMessage}");
@@ -526,8 +650,7 @@ Local validation errors detected:");
 
         if (report.ConflictDetected.Count > 0)
         {
-            Console.WriteLine("
-Conflicts detected for the following Post IDs:");
+            Console.WriteLine("\nConflicts detected for the following Post IDs:");
             Console.WriteLine($"  {string.Join(", ", report.ConflictDetected)}");
             Console.WriteLine("Please resolve them individually using the 'resolve' command.");
             Console.WriteLine("Example: wpai resolve post 123 --strategy [local-wins|server-wins]");
@@ -772,11 +895,9 @@ Conflicts detected for the following Post IDs:");
                 {
                     Console.WriteLine("Usage: wpai media upload [options] [--file] <file_path>");
                     Console.WriteLine("Uploads a media file.");
-                    Console.WriteLine("
-Arguments:");
+                    Console.WriteLine("\nArguments:");
                     Console.WriteLine("  <file_path>        The path to the file to upload (can also be provided with --file).");
-                    Console.WriteLine("
-Options:");
+                    Console.WriteLine("\nOptions:");
                     Console.WriteLine("  --file <path>      The path to the file to upload.");
                     Console.WriteLine("  --title <title>    The title for the media item.");
                     Console.WriteLine("  --description <desc> The description for the media item.");
@@ -929,8 +1050,7 @@ Options:");
                 Console.WriteLine($"{prefix} {i + 1}. {p.Name}");
             }
 
-            Console.Write("
-Enter number to set active (blank to cancel): ");
+            Console.Write("\nEnter number to set active (blank to cancel): ");
             var input = Console.ReadLine();
             if (string.IsNullOrWhiteSpace(input))
             { 
@@ -1154,8 +1274,7 @@ Enter number to set active (blank to cancel): ");
         if (updated)
         {
             store.Save();
-            Console.WriteLine($"
-Connection '{name}' updated.");
+            Console.WriteLine($"\nConnection '{name}' updated.");
         }
 
         return (int)ExitCode.Success;
@@ -1232,6 +1351,7 @@ Connection '{name}' updated.");
             return (int)ExitCode.InvalidArguments;
         }
     }
+
 
     static (ConnectionStore Store, ConnectionProfile Profile, string Token) ResolveConnection()
     {

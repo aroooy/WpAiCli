@@ -61,22 +61,6 @@ wpai posts list --status publish --per-page 1
 ```
 アクティブに設定したサイトの投稿が一覧表示されれば、初期設定は完了です。
 
-### 4. (任意) マークダウン変換戦略の選択
-
-本ツールは、投稿時にマークダウンをどのようにHTMLへ変換するかを選択できます。この設定は `connections add` または `connections update` コマンドで `--markdown-conversion <client|server>` オプションを使って、接続ごとに指定します。
-
-- **`client` モード (デフォルト)**
-  - **動作:** CLIツール側でマークダウンをHTMLに変換してから、WordPressに送信します。
-  - **長所:** WordPress側に特別なプラグインが不要で、すぐに利用を開始できます。
-  - **推奨:** **特に理由がなければ、こちらのモードをお勧めします。**
-
-- **`server` モード**
-  - **動作:** マークダウンの生テキストをそのままWordPressに送信します。HTMLへの変換はサーバー側で行われます。
-  - **長所:** サーバー側で一貫した変換処理を保証できます。
-  - **必須条件:** このモードを利用するには、`wpai export-plugin` コマンドで出力される **専用のmu-pluginをWordPressにインストールする必要があります。**
-
-どちらのモードを選ぶかは、あなたのワークフローやサーバーの管理ポリシーによります。最初の設定では、デフォルトの `client` モードのままにしておくのが最も簡単です。
-
 ## 一般的な使い方（ワークフロー例）
 
 ### 1. 新規投稿を作成し、公開する
@@ -129,9 +113,8 @@ AI など機械連携では JSON モード (`--format json`) を推奨します�
   - `wpai connections active 2` (番号で指定)
   - `wpai connections active "My Blog"` (名前で指定)
 - `add`: 新しい接続を登録します。
-  - `wpai connections add --name <名称> --base-url <URL> --token <Bearer> [--cache-path <PATH>] [--markdown-conversion <client|server>]`
+  - `wpai connections add --name <名称> --base-url <URL> --token <Bearer> [--cache-path <PATH>]`
   - `--cache-path` は任意です。省略した場合、コマンド実行ディレクトリ下の `wp-cache` がデフォルトのキャッシュパスとして設定されます。
-  - `--markdown-conversion` は任意です。省略時は `client` が適用されます。詳細は「マークダウン変換戦略の選択」セクションを参照してください。
 - `update <name>`: 既存の接続情報を更新します。キャッシュパスや同期設定などはこのコマンドで行います。
   - `wpai connections update "BlogName" --cache-path ./new-cache --sync-limit 50 --markdown-conversion server`
 - `remove`: 対話形式で既存の接続を削除します。
