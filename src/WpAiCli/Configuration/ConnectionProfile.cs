@@ -1,4 +1,4 @@
-﻿using System.Text.Json.Serialization;
+using System.Text.Json.Serialization;
 
 namespace WpAiCli.Configuration;
 
@@ -12,6 +12,12 @@ public sealed class ConnectionProfile
 
     [JsonPropertyName("credentialKey")]
     public string CredentialKey { get; set; } = string.Empty;
+
+    [JsonPropertyName("authMethod")]
+    public string AuthMethod { get; set; } = "ApplicationPassword";
+
+    [JsonPropertyName("userName")]
+    public string? UserName { get; set; }
 
     public string? CachePath { get; set; }
 
