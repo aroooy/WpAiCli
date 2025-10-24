@@ -1201,16 +1201,6 @@ public class Program
             return (int)ExitCode.InvalidArguments;
         }
 
-        var cachePath = parsed.GetString("cache-path");
-        var syncLimitStr = parsed.GetString("sync-limit");
-        var markdownConversion = parsed.GetString("markdown-conversion");
-
-        if (cachePath is null && syncLimitStr is null && markdownConversion is null)
-        {
-            Console.Error.WriteLine("Specify the setting to update. Supported options: --cache-path, --sync-limit, --markdown-conversion");
-            return (int)ExitCode.InvalidArguments;
-        }
-
         var store = ConnectionStore.Load();
         var profile = store.Profiles.FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase));
 
@@ -1220,8 +1210,136 @@ public class Program
             return (int)ExitCode.InvalidArguments;
         }
 
+        // Non-interactive mode check
+        if (parsed.HasOptions)
+        {
+            return HandleConnectionsUpdateNonInteractive(parsed, profile, store);
+        }
+
+        // Interactive mode
+        while (true)
+        {
+            Console.WriteLine($"\nUpdating connection: {profile.Name} ({profile.BaseUrl})");
+            Console.WriteLine("What do you want to update?");
+            Console.WriteLine("  1: Base URL");
+            Console.WriteLine("  2: Application Password");
+            Console.WriteLine("  3: Cache Path");
+            Console.WriteLine("  4: Sync Items Limit");
+            Console.WriteLine("  5: Markdown Conversion");
+            Console.WriteLine("  q: Quit");
+            Console.Write("Enter your choice: ");
+
+            var choice = Console.ReadLine();
+            bool shouldQuit = false;
+
+            switch (choice?.ToLower())
+            {
+                case "1":
+                    Console.Write($"Enter new Base URL (current: {profile.BaseUrl}): ");
+                    var newUrl = Console.ReadLine();
+                    if (!string.IsNullOrWhiteSpace(newUrl))
+                    {
+                        profile.BaseUrl = newUrl.TrimEnd('/');
+                        store.Save();
+                        Console.WriteLine("Base URL updated successfully.");
+                    }
+                    break;
+                case "2":
+                    Console.Write("Enter new Application Password: ");
+                    var newPassword = ReadPassword();
+                    if (!string.IsNullOrWhiteSpace(newPassword))
+                    {
+                        CredentialManager.Save(profile.CredentialKey, newPassword);
+                        Console.WriteLine("Application Password updated successfully.");
+                    }
+                    break;
+                case "3":
+                    Console.Write($"Enter new Cache Path (current: {profile.CachePath ?? "Not set"}): ");
+                    var newCachePath = Console.ReadLine();
+                    profile.CachePath = !string.IsNullOrWhiteSpace(newCachePath) ? Path.GetFullPath(newCachePath) : null;
+                    store.Save();
+                    Console.WriteLine("Cache Path updated successfully.");
+                    break;
+                case "4":
+                    Console.Write($"Enter new Sync Items Limit (current: {profile.SyncItemsLimit?.ToString() ?? "Default"}): ");
+                    var newSyncLimitStr = Console.ReadLine();
+                    if (string.IsNullOrWhiteSpace(newSyncLimitStr))
+                    {
+                        profile.SyncItemsLimit = null;
+                        Console.WriteLine("Sync limit has been reset to default.");
+                    }
+                    else if (int.TryParse(newSyncLimitStr, out var newSyncLimit) && newSyncLimit > 0)
+                    {
+                        profile.SyncItemsLimit = newSyncLimit;
+                        Console.WriteLine($"Sync limit set to: {newSyncLimit}");
+                    }
+                    else
+                    {
+                        Console.Error.WriteLine("Invalid input. Must be a positive integer.");
+                    }
+                    store.Save();
+                    break;
+                case "5":
+                    Console.Write($"Enter new Markdown Conversion (client/server, current: {profile.MarkdownConversion ?? "Default"}): ");
+                    var newMarkdownConversion = Console.ReadLine()?.ToLowerInvariant();
+                     if (string.IsNullOrWhiteSpace(newMarkdownConversion))
+                    {
+                        profile.MarkdownConversion = null;
+                        Console.WriteLine("Markdown conversion has been reset to default.");
+                    }
+                    else if (newMarkdownConversion == "client" || newMarkdownConversion == "server")
+                    {
+                        profile.MarkdownConversion = newMarkdownConversion;
+                        Console.WriteLine($"Markdown conversion set to: {newMarkdownConversion}");
+                    }
+                    else
+                    {
+                        Console.Error.WriteLine("Invalid input. Must be 'client' or 'server'.");
+                    }
+                    store.Save();
+                    break;
+                case "q":
+                    shouldQuit = true;
+                    break;
+                default:
+                    Console.WriteLine("Invalid choice. Please try again.");
+                    break;
+            }
+            if (shouldQuit) break;
+        }
+        return (int)ExitCode.Success;
+    }
+
+    static int HandleConnectionsUpdateNonInteractive(ParsedOptions parsed, ConnectionProfile profile, ConnectionStore store)
+    {
         var updated = false;
 
+        var baseUrl = parsed.GetString("base-url");
+        if (baseUrl != null)
+        {
+            profile.BaseUrl = baseUrl.TrimEnd('/');
+            updated = true;
+            Console.WriteLine($"Base URL set to: {profile.BaseUrl}");
+        }
+
+        if (parsed.GetBool("update-password", defaultValue: false))
+        {
+            Console.Write("Enter new Application Password: ");
+            var newPassword = ReadPassword();
+            if (!string.IsNullOrWhiteSpace(newPassword))
+            {
+                CredentialManager.Save(profile.CredentialKey, newPassword);
+                updated = true;
+                Console.WriteLine("Application Password updated successfully.");
+            }
+            else
+            {
+                Console.Error.WriteLine("Password cannot be empty.");
+                return (int)ExitCode.InvalidArguments;
+            }
+        }
+
+        var cachePath = parsed.GetString("cache-path");
         if (cachePath is not null)
         {
             profile.CachePath = !string.IsNullOrWhiteSpace(cachePath) ? Path.GetFullPath(cachePath) : null;
@@ -1231,6 +1349,7 @@ public class Program
                 : "Cache location has been removed.");
         }
 
+        var syncLimitStr = parsed.GetString("sync-limit");
         if (syncLimitStr is not null)
         {
             if (int.TryParse(syncLimitStr, out var parsedLimit) && parsedLimit > 0)
@@ -1251,6 +1370,7 @@ public class Program
             updated = true;
         }
 
+        var markdownConversion = parsed.GetString("markdown-conversion");
         if (markdownConversion is not null)
         {
             if (markdownConversion == "client" || markdownConversion == "server")
@@ -1274,7 +1394,7 @@ public class Program
         if (updated)
         {
             store.Save();
-            Console.WriteLine($"\nConnection '{name}' updated.");
+            Console.WriteLine($"\nConnection '{profile.Name}' updated.");
         }
 
         return (int)ExitCode.Success;
@@ -1453,5 +1573,28 @@ public class Program
         Console.WriteLine("Once the files are in place, WordPress will load them automatically.");
 
         return (int)ExitCode.Success;
+    }
+
+    static string ReadPassword()
+    {
+        var password = new System.Text.StringBuilder();
+        while (true)
+        {
+            var key = Console.ReadKey(true);
+            if (key.Key == ConsoleKey.Enter)
+            {
+                Console.WriteLine();
+                break;
+            }
+            if (key.Key == ConsoleKey.Backspace && password.Length > 0)
+            {
+                password.Remove(password.Length - 1, 1);
+            }
+            else if (!char.IsControl(key.KeyChar))
+            {
+                password.Append(key.KeyChar);
+            }
+        }
+        return password.ToString();
     }
 }

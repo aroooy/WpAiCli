@@ -10,6 +10,8 @@ public sealed class ParsedOptions
         Positionals = positionals;
     }
 
+    public bool HasOptions => _options.Count > 0;
+
     public IReadOnlyList<string> Positionals { get; }
 
     public string? GetString(string name)

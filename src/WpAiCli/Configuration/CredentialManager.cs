@@ -39,6 +39,7 @@ internal static class CredentialManager
 
         if (IsWindows)
         {
+            DeleteForWindows(targetName); // Overwrite by deleting first
             SaveForWindows(targetName, secret);
         }
         else
