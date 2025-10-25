@@ -12,6 +12,7 @@ using WpAiCli.Services.Data;
 using WpAiCli.WordPress.Models;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
+// using YamlDotNet.Serialization.TypeInspectors; // Removed to avoid duplicate registration issues
 
 namespace WpAiCli.Services;
 
@@ -51,7 +52,7 @@ public class EditablePostMetadata
     public List<string>? Categories { get; set; }
     [YamlMember(Alias = "tags")]
     public List<string>? Tags { get; set; }
-    [YamlMember(Alias = "editMode")]
+    [YamlMember(Alias = "edit_mode")]
     public string? EditMode { get; set; }
     [YamlMember(Alias = "meta")]
     public Dictionary<string, object?>? Meta { get; set; }
@@ -61,8 +62,11 @@ public class EditableCategory
 {
     [YamlMember(Alias = "url")]
     public string? Url { get; set; }
+    [YamlMember(Alias = "id")]
     public int Id { get; set; }
+    [YamlMember(Alias = "name")]
     public string Name { get; set; } = string.Empty;
+    [YamlMember(Alias = "slug")]
     public string Slug { get; set; } = string.Empty;
     [YamlMember(Alias = "description")]
     public string Description { get; set; } = string.Empty;
@@ -78,8 +82,11 @@ public class EditableTag
 {
     [YamlMember(Alias = "url")]
     public string? Url { get; set; }
+    [YamlMember(Alias = "id")]
     public int Id { get; set; }
+    [YamlMember(Alias = "name")]
     public string Name { get; set; } = string.Empty;
+    [YamlMember(Alias = "slug")]
     public string Slug { get; set; } = string.Empty;
     [YamlMember(Alias = "description")]
     public string Description { get; set; } = string.Empty;
