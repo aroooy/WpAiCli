@@ -652,7 +652,7 @@ public class CacheService
         _db.SaveChanges();
 
         // Save YAML file
-        var editableCategory = new EditableCategory { Id = category.Id, Name = category.Name ?? string.Empty, Slug = category.Slug ?? string.Empty, Description = category.Description ?? string.Empty };
+        var editableCategory = new EditableCategory { Url = category.Link, Id = category.Id, Name = category.Name ?? string.Empty, Slug = category.Slug ?? string.Empty, Description = category.Description ?? string.Empty };
         var yamlContent = YamlSerializer.Serialize(editableCategory);
         var sanitizedName = SanitizeTitleForFilename(category.Name ?? string.Empty);
         var filePath = Path.Combine(categoriesDir, $"{category.Id}-{sanitizedName}.yaml");
@@ -710,7 +710,7 @@ public class CacheService
         cachedTag.Slug = tag.Slug ?? string.Empty;
         _db.SaveChanges();
 
-        var editableTag = new EditableTag { Id = tag.Id, Name = tag.Name ?? string.Empty, Slug = tag.Slug ?? string.Empty, Description = tag.Description ?? string.Empty };
+        var editableTag = new EditableTag { Url = tag.Link, Id = tag.Id, Name = tag.Name ?? string.Empty, Slug = tag.Slug ?? string.Empty, Description = tag.Description ?? string.Empty };
         var yamlContent = YamlSerializer.Serialize(editableTag);
         var sanitizedName = SanitizeTitleForFilename(tag.Name ?? string.Empty);
         var filePath = Path.Combine(tagsDir, $"{tag.Id}-{sanitizedName}.yaml");
@@ -1042,11 +1042,11 @@ public class CacheService
             object editableTerm;
             if (term is WordPressCategory cat)
             {
-                editableTerm = new EditableCategory { Id = cat.Id, Name = cat.Name ?? string.Empty, Slug = cat.Slug ?? string.Empty, Description = cat.Description ?? string.Empty };
+                editableTerm = new EditableCategory { Url = cat.Link, Id = cat.Id, Name = cat.Name ?? string.Empty, Slug = cat.Slug ?? string.Empty, Description = cat.Description ?? string.Empty };
             }
             else if (term is WordPressTag tag)
             {
-                editableTerm = new EditableTag { Id = tag.Id, Name = tag.Name ?? string.Empty, Slug = tag.Slug ?? string.Empty, Description = tag.Description ?? string.Empty };
+                editableTerm = new EditableTag { Url = tag.Link, Id = tag.Id, Name = tag.Name ?? string.Empty, Slug = tag.Slug ?? string.Empty, Description = tag.Description ?? string.Empty };
             }
             else
             {
