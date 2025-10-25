@@ -39,6 +39,8 @@ public class Program
         // Handle commands that don't require a connection/DI first
         switch (command)
         {
+            case "cache":
+                return HandleCache(commandArgs);
             case "--help":
             case "-h":
             case "help":
@@ -90,6 +92,33 @@ public class Program
             UpdateLastUsedConnection(store, profile.Name);
 
             return await RunCommandAsync(host.Services, command, commandArgs);
+        }
+        catch (InvalidOperationException ex)
+        {
+            Console.Error.WriteLine(ex.Message);
+            return (int)ExitCode.InvalidArguments;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine(ex.ToString());
+            return (int)ExitCode.UnhandledError;
+        }
+    }
+
+    static int HandleCache(string[] args)
+    {
+        try
+        {
+            var (store, profile, credential) = ResolveConnection();
+            if (string.IsNullOrWhiteSpace(profile.CachePath) || string.IsNullOrWhiteSpace(profile.Name))
+            {
+                Console.Error.WriteLine("Cache path is not configured for the active connection.");
+                return (int)ExitCode.InvalidArguments;
+            }
+
+            var cacheRoot = Path.Combine(profile.CachePath!, profile.Name);
+            Console.WriteLine(cacheRoot);
+            return (int)ExitCode.Success;
         }
         catch (InvalidOperationException ex)
         {

@@ -132,6 +132,12 @@ AI など機械連携では JSON モード (`--format json`) を推奨します�
   - `wpai connections update "BlogName" --cache-path ./new-cache --sync-limit 50 --markdown-conversion server`
 - `remove`: 対話形式で既存の接続を削除します。
 
+#### キャッシュパスの確認 (`cache`)
+
+- アクティブ接続のキャッシュルートパスを表示します。 `[キャッシュ側の変化: なし]`
+  - `wpai cache`
+  - 出力例: `C:\path\to\wp-cache\<connection-name>`
+
 ### 投稿 (`posts`)
 
 - `sync`: **投稿と分類(カテゴリ・タグ)の双方向同期**を行います。まず分類の同期が実行され、成功した場合にのみ投稿の同期に進む、安全なプロセスです。 `[キャッシュへの影響: サーバー変更を反映]`
