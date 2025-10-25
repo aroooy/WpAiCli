@@ -526,9 +526,9 @@ public class CacheService
         return (_db.Categories.ToList(), _db.Tags.ToList());
     }
 
-    public (List<EditableCategory> Categories, List<EditableTag> Tags) ReadLocalTaxonomies()
+    public (List<(EditableCategory Category, string RawContent)> Categories, List<(EditableTag Tag, string RawContent)> Tags) ReadLocalTaxonomies()
     {
-        var categories = new List<EditableCategory>();
+        var categories = new List<(EditableCategory, string)>();
         var categoriesDir = Path.Combine(_cachePath, "categories");
         if (Directory.Exists(categoriesDir))
         {
@@ -538,7 +538,7 @@ public class CacheService
                 {
                     var yamlContent = File.ReadAllText(file);
                     var category = DeserializeFromYaml<EditableCategory>(yamlContent);
-                    categories.Add(category);
+                    categories.Add((category, yamlContent));
                 }
                 catch (Exception ex)
                 {
@@ -547,7 +547,7 @@ public class CacheService
             }
         }
 
-        var tags = new List<EditableTag>();
+        var tags = new List<(EditableTag, string)>();
         var tagsDir = Path.Combine(_cachePath, "tags");
         if (Directory.Exists(tagsDir))
         {
@@ -557,7 +557,7 @@ public class CacheService
                 {
                     var yamlContent = File.ReadAllText(file);
                     var tag = DeserializeFromYaml<EditableTag>(yamlContent);
-                    tags.Add(tag);
+                    tags.Add((tag, yamlContent));
                 }
                 catch (Exception ex)
                 {

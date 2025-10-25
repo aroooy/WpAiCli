@@ -47,7 +47,7 @@ public class SyncService
     
     private static readonly ISerializer YamlSerializer = new SerializerBuilder()
         .WithNamingConvention(CamelCaseNamingConvention.Instance)
-        .ConfigureDefaultValuesHandling(DefaultValuesHandling.OmitNull)
+        .ConfigureDefaultValuesHandling(DefaultValuesHandling.Preserve)
         .Build();
 
     // Coordinates bidirectional sync between the local cache and WordPress.
@@ -461,7 +461,7 @@ public class SyncService
         var (cachedCategories, cachedTags) = _cacheService.GetTaxonomies();
         var cachedCategoriesDict = cachedCategories.ToDictionary(c => c.Id);
 
-        foreach (var localCat in localCategories)
+        foreach (var (localCat, rawContent) in localCategories)
         {
             if (localCat.Id == 0)
             {
@@ -472,9 +472,7 @@ public class SyncService
             else if (cachedCategoriesDict.TryGetValue(localCat.Id, out var cachedCat))
             {
                 // Update existing category
-                var editableCategoryForHash = new EditableCategory { Id = localCat.Id, Name = localCat.Name, Slug = localCat.Slug, Description = localCat.Description };
-                var yamlContent = YamlSerializer.Serialize(editableCategoryForHash);
-                var currentHash = _cacheService.ComputeSha256Hash(yamlContent);
+                var currentHash = _cacheService.ComputeSha256Hash(rawContent);
                 var previousHash = _cacheService.GetState($"category_{localCat.Id}_hash");
 
                 if (currentHash != previousHash)
@@ -487,7 +485,7 @@ public class SyncService
 
         // 3. Synchronize Tags
         var cachedTagsDict = cachedTags.ToDictionary(t => t.Id);
-        foreach (var localTag in localTags)
+        foreach (var (localTag, rawContent) in localTags)
         {
             if (localTag.Id == 0)
             {
@@ -498,9 +496,7 @@ public class SyncService
             else if (cachedTagsDict.TryGetValue(localTag.Id, out var cachedTag))
             {
                 // Update existing tag
-                var editableTagForHash = new EditableTag { Id = localTag.Id, Name = localTag.Name, Slug = localTag.Slug, Description = localTag.Description };
-                var yamlContent = YamlSerializer.Serialize(editableTagForHash);
-                var currentHash = _cacheService.ComputeSha256Hash(yamlContent);
+                var currentHash = _cacheService.ComputeSha256Hash(rawContent);
                 var previousHash = _cacheService.GetState($"tag_{localTag.Id}_hash");
 
                 if (currentHash != previousHash)
