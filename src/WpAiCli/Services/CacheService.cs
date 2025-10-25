@@ -29,77 +29,50 @@ public class LocalPost
 
 public class EditablePostMetadata
 {
-    [YamlMember(Alias = "url")]
     public string? Url { get; set; }
-    [YamlMember(Alias = "title")]
     public string? Title { get; set; }
-    [YamlMember(Alias = "slug")]
     public string? Slug { get; set; }
-    [YamlMember(Alias = "status")]
     public string? Status { get; set; }
-    [YamlMember(Alias = "date")]
     public string? Date { get; set; }
-    [YamlMember(Alias = "excerpt")]
     public string? Excerpt { get; set; }
-    [YamlMember(Alias = "featured_media")]
     public int? FeaturedMedia { get; set; }
-    [YamlMember(Alias = "comment_status")]
     public string? CommentStatus { get; set; }
-    [YamlMember(Alias = "ping_status")]
     public string? PingStatus { get; set; }
-    [YamlMember(Alias = "categories")]
     public List<string>? Categories { get; set; }
-    [YamlMember(Alias = "tags")]
     public List<string>? Tags { get; set; }
-    [YamlMember(Alias = "editMode")]
     public string? EditMode { get; set; }
-    [YamlMember(Alias = "meta")]
     public Dictionary<string, object?>? Meta { get; set; }
 }
 
 public class EditableCategory
 {
-    [YamlMember(Alias = "url")]
     public string? Url { get; set; }
     public int Id { get; set; }
     public string Name { get; set; } = string.Empty;
     public string Slug { get; set; } = string.Empty;
-    [YamlMember(Alias = "description")]
     public string Description { get; set; } = string.Empty;
-    [YamlMember(Alias = "parent_id")]
     public int? ParentId { get; set; }
-    [YamlMember(Alias = "parent_slug")]
     public string? ParentSlug { get; set; }
-    [YamlMember(Alias = "parent_ref")]
     public string? ParentRef { get; set; }
 }
 
 public class EditableTag
 {
-    [YamlMember(Alias = "url")]
     public string? Url { get; set; }
     public int Id { get; set; }
     public string Name { get; set; } = string.Empty;
     public string Slug { get; set; } = string.Empty;
-    [YamlMember(Alias = "description")]
     public string Description { get; set; } = string.Empty;
 }
 
 public class EditableMediaMetadata
 {
-    [YamlMember(Alias = "url")]
     public string? Url { get; set; }
-    [YamlMember(Alias = "source_url")]
     public string? SourceUrl { get; set; }
-    [YamlMember(Alias = "modified_gmt")]
     public DateTime? ModifiedGmt { get; set; }
-    [YamlMember(Alias = "title")]
     public string? Title { get; set; }
-    [YamlMember(Alias = "alt_text")]
     public string? AltText { get; set; }
-    [YamlMember(Alias = "caption")]
     public string? Caption { get; set; }
-    [YamlMember(Alias = "description")]
     public string? Description { get; set; }
 }
 
