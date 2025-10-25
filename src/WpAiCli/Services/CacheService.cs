@@ -66,6 +66,12 @@ public class EditableCategory
     public string Slug { get; set; } = string.Empty;
     [YamlMember(Alias = "description")]
     public string Description { get; set; } = string.Empty;
+    [YamlMember(Alias = "parent_id")]
+    public int? ParentId { get; set; }
+    [YamlMember(Alias = "parent_slug")]
+    public string? ParentSlug { get; set; }
+    [YamlMember(Alias = "parent_ref")]
+    public string? ParentRef { get; set; }
 }
 
 public class EditableTag
@@ -394,9 +400,21 @@ public class CacheService
 
 
         // 2. Write individual category files
-        foreach (var category in categories)
+        var categoryList = categories.ToList();
+        var categoriesById = categoryList.ToDictionary(c => c.Id, c => c);
+        foreach (var category in categoryList)
         {
-            var editableCategory = new EditableCategory { Url = category.Link, Id = category.Id, Name = category.Name ?? string.Empty, Slug = System.Net.WebUtility.UrlDecode(category.Slug ?? string.Empty), Description = category.Description ?? string.Empty };
+            int? parentId = (category.Parent.HasValue && category.Parent.Value > 0) ? category.Parent.Value : (int?)null;
+            string? parentSlug = null;
+            string? parentRef = null;
+            if (parentId.HasValue && categoriesById.TryGetValue(parentId.Value, out var parentCat))
+            {
+                parentSlug = parentCat.Slug ?? string.Empty;
+                var parentName = parentCat.Name ?? string.Empty;
+                parentRef = $"{parentId.Value}-{parentName}";
+            }
+
+            var editableCategory = new EditableCategory { Url = category.Link, Id = category.Id, Name = category.Name ?? string.Empty, Slug = System.Net.WebUtility.UrlDecode(category.Slug ?? string.Empty), Description = category.Description ?? string.Empty, ParentId = parentId, ParentSlug = parentSlug, ParentRef = parentRef };
             var yamlContent = YamlSerializer.Serialize(editableCategory);
             var sanitizedName = SanitizeTitleForFilename(category.Name ?? string.Empty);
             var filePath = Path.Combine(categoriesDir, $"{category.Id}-{sanitizedName}.yaml");
@@ -652,7 +670,19 @@ public class CacheService
         _db.SaveChanges();
 
         // Save YAML file
-        var editableCategory = new EditableCategory { Url = category.Link, Id = category.Id, Name = category.Name ?? string.Empty, Slug = category.Slug ?? string.Empty, Description = category.Description ?? string.Empty };
+        int? parentId = (category.Parent.HasValue && category.Parent.Value > 0) ? category.Parent.Value : (int?)null;
+        string? parentSlug = null;
+        string? parentRef = null;
+        if (parentId.HasValue)
+        {
+            var parentCached = _db.Categories.FirstOrDefault(c => c.Id == parentId.Value);
+            parentSlug = parentCached?.Slug;
+            if (parentCached != null)
+            {
+                parentRef = $"{parentCached.Id}-{parentCached.Name}";
+            }
+        }
+        var editableCategory = new EditableCategory { Url = category.Link, Id = category.Id, Name = category.Name ?? string.Empty, Slug = category.Slug ?? string.Empty, Description = category.Description ?? string.Empty, ParentId = parentId, ParentSlug = parentSlug, ParentRef = parentRef };
         var yamlContent = YamlSerializer.Serialize(editableCategory);
         var sanitizedName = SanitizeTitleForFilename(category.Name ?? string.Empty);
         var filePath = Path.Combine(categoriesDir, $"{category.Id}-{sanitizedName}.yaml");
@@ -1042,7 +1072,19 @@ public class CacheService
             object editableTerm;
             if (term is WordPressCategory cat)
             {
-                editableTerm = new EditableCategory { Url = cat.Link, Id = cat.Id, Name = cat.Name ?? string.Empty, Slug = cat.Slug ?? string.Empty, Description = cat.Description ?? string.Empty };
+                int? parentId = (cat.Parent.HasValue && cat.Parent.Value > 0) ? cat.Parent.Value : (int?)null;
+                string? parentSlug = null;
+                string? parentRef = null;
+                if (parentId.HasValue)
+                {
+                    var parentCached = _db.Categories.FirstOrDefault(c => c.Id == parentId.Value);
+                    parentSlug = parentCached?.Slug;
+                    if (parentCached != null)
+                    {
+                        parentRef = $"{parentCached.Id}-{parentCached.Name}";
+                    }
+                }
+                editableTerm = new EditableCategory { Url = cat.Link, Id = cat.Id, Name = cat.Name ?? string.Empty, Slug = cat.Slug ?? string.Empty, Description = cat.Description ?? string.Empty, ParentId = parentId, ParentSlug = parentSlug, ParentRef = parentRef };
             }
             else if (term is WordPressTag tag)
             {
