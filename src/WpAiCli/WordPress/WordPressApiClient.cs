@@ -21,7 +21,7 @@ public sealed class WordPressApiClient
     private const string RevisionSummaryFields = "author,date_gmt,id,modified_gmt,parent,title";
     private const string RevisionDetailFields = "author,date_gmt,id,modified_gmt,parent,title,content";
     private const string CategoryFields = "id,count,description,link,name,slug,taxonomy,parent";
-    private const string TagFields = "id,name,slug,description,count";
+    private const string TagFields = "id,name,slug,description,count,link";
     private const string MediaDetailFields = "id,date,modified_gmt,slug,link,title.raw,description.raw,caption.raw,alt_text,media_type,mime_type,source_url";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
