@@ -17,7 +17,7 @@ public sealed class WordPressApiClient
 
     // Fields constants for reuse
     private const string PostSummaryFields = "id,date,date_gmt,guid,modified,modified_gmt,slug,status,type,link,title";
-    private const string PostDetailFields = "id,date,date_gmt,guid.raw,modified,modified_gmt,password,slug,status,type,link,title.raw,content.raw,excerpt,author,featured_media,comment_status,ping_status,sticky,template,format,categories,tags,permalink_template,generated_slug,class_list,meta";
+    private const string PostDetailFields = "id,date,date_gmt,guid.raw,modified,modified_gmt,password,slug,status,type,link,title.raw,content.raw,excerpt.raw,author,featured_media,comment_status,ping_status,sticky,template,format,categories,tags,permalink_template,generated_slug,class_list,meta";
     private const string RevisionSummaryFields = "author,date_gmt,id,modified_gmt,parent,title";
     private const string RevisionDetailFields = "author,date_gmt,id,modified_gmt,parent,title,content";
     private const string CategoryFields = "id,count,description,link,name,slug,taxonomy,parent";
@@ -246,6 +246,7 @@ public sealed class WordPressApiClient
     public async Task<IReadOnlyList<WordPressMedia>> GetMediaAsync(int? perPage, int? page, CancellationToken cancellationToken)
     {
         var url = BuildUrl("/media");
+        url = AppendQuery(url, "context", "edit");
         url = AppendQuery(url, "_fields", MediaDetailFields);
         if (perPage.HasValue)
         {
