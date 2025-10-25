@@ -6,6 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AssemblyName>wpai</AssemblyName>
+    <Version>1.0.5</Version>
 
     <!-- .NETツールとしてパッケージ化する設定 -->
     <PackAsTool>true</PackAsTool>
