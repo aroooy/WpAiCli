@@ -42,17 +42,17 @@ public class EditablePostMetadata
     public string? Date { get; set; }
     [YamlMember(Alias = "excerpt")]
     public string? Excerpt { get; set; }
-    [YamlMember(Alias = "featured_media")]
+    [YamlMember(Alias = "featuredMedia")]
     public int? FeaturedMedia { get; set; }
-    [YamlMember(Alias = "comment_status")]
+    [YamlMember(Alias = "commentStatus")]
     public string? CommentStatus { get; set; }
-    [YamlMember(Alias = "ping_status")]
+    [YamlMember(Alias = "pingStatus")]
     public string? PingStatus { get; set; }
     [YamlMember(Alias = "categories")]
     public List<string>? Categories { get; set; }
     [YamlMember(Alias = "tags")]
     public List<string>? Tags { get; set; }
-    [YamlMember(Alias = "edit_mode")]
+    [YamlMember(Alias = "editMode")]
     public string? EditMode { get; set; }
     [YamlMember(Alias = "meta")]
     public Dictionary<string, object?>? Meta { get; set; }
@@ -70,11 +70,11 @@ public class EditableCategory
     public string Slug { get; set; } = string.Empty;
     [YamlMember(Alias = "description")]
     public string Description { get; set; } = string.Empty;
-    [YamlMember(Alias = "parent_id")]
+    [YamlMember(Alias = "parentId")]
     public int? ParentId { get; set; }
-    [YamlMember(Alias = "parent_slug")]
+    [YamlMember(Alias = "parentSlug")]
     public string? ParentSlug { get; set; }
-    [YamlMember(Alias = "parent_ref")]
+    [YamlMember(Alias = "parentRef")]
     public string? ParentRef { get; set; }
 }
 
@@ -96,13 +96,13 @@ public class EditableMediaMetadata
 {
     [YamlMember(Alias = "url")]
     public string? Url { get; set; }
-    [YamlMember(Alias = "source_url")]
+    [YamlMember(Alias = "sourceUrl")]
     public string? SourceUrl { get; set; }
-    [YamlMember(Alias = "modified_gmt")]
+    [YamlMember(Alias = "modifiedGmt")]
     public DateTime? ModifiedGmt { get; set; }
     [YamlMember(Alias = "title")]
     public string? Title { get; set; }
-    [YamlMember(Alias = "alt_text")]
+    [YamlMember(Alias = "altText")]
     public string? AltText { get; set; }
     [YamlMember(Alias = "caption")]
     public string? Caption { get; set; }
