@@ -6,7 +6,7 @@ WpAiCli は WordPress REST API と連携するためのクロスプラットフ�
 
 主な特徴:
 
-- Windows Credential Manager または macOS/Linux の Secret-Tool に Bearer トークンを保存
+- Windows Credential Manager または macOS/Linux の Secret-Tool に認証情報（アプリケーションパスワードやJWTトークン）を保存
 - 接続プロファイルの登録 / 一覧 / 削除 / 更新を CLI から実行
 - 投稿、カテゴリ、タグ、メディアの作成、取得、更新、削除の各コマンドをサポート
 - 投稿のローカルキャッシュと双方向同期に対応
@@ -35,13 +35,26 @@ dotnet tool install --global WpAiCli
 
 ### 1. 接続情報を登録
 
-まず、WordPressサイトへの接続情報を登録します。
+まず、WordPressサイトへの接続情報を登録します。認証方式は `ApplicationPassword` (推奨) と `Jwt` に対応しています。
+
+**推奨: ApplicationPassword を使う場合**
+```shell
+wpai connections add --name "MyBlog" --base-url "https://example.com/wp-json" --auth-method "ApplicationPassword" --username "your-username" --password "your-application-password"
 ```
-wpai connections add --name "BlogName" --base-url "https://example.com/?rest_route=/wp/v2/" --token <BearerToken>
+
+**Jwt トークンを使う場合**
+```shell
+wpai connections add --name "MyBlog" --base-url "https://example.com/wp-json" --auth-method "Jwt" --jwt-token "your-jwt-token"
 ```
+
 - `--name`: 任意の表示名 (接続切り替え時に使用)
-- `--base-url`: WordPress REST API のベース URL (`?rest_route=/wp/v2/` 形式がおすすめ)
-- `--token`: WordPress で発行した Bearer トークン。OSの資格情報ストアに安全に保存されます。
+- `--base-url`: WordPress REST API のベース URL (`/wp-json` で終わる形式を推奨)
+- `--auth-method`: `ApplicationPassword` または `Jwt` を指定します。 (デフォルト: `ApplicationPassword`)
+- `--username`: WordPressのユーザー名 (ApplicationPassword 時に必須)
+- `--password`: WordPressで生成したアプリケーションパスワード (ApplicationPassword 時に必須)
+- `--jwt-token`: JWT認証用のトークン (Jwt 時に必須)
+
+認証情報はOSの資格情報ストアに安全に保存されます。
 
 ### 2. アクティブな接続を設定
 
@@ -113,7 +126,7 @@ AI など機械連携では JSON モード (`--format json`) を推奨します�
   - `wpai connections active 2` (番号で指定)
   - `wpai connections active "My Blog"` (名前で指定)
 - `add`: 新しい接続を登録します。
-  - `wpai connections add --name <名称> --base-url <URL> --token <Bearer> [--cache-path <PATH>]`
+  - `wpai connections add --name <名称> --base-url <URL> --auth-method <ApplicationPassword|Jwt> ...`
   - `--cache-path` は任意です。省略した場合、コマンド実行ディレクトリ下の `wp-cache` がデフォルトのキャッシュパスとして設定されます。
 - `update <name>`: 既存の接続情報を更新します。キャッシュパスや同期設定などはこのコマンドで行います。
   - `wpai connections update "BlogName" --cache-path ./new-cache --sync-limit 50 --markdown-conversion server`
@@ -259,7 +272,7 @@ wpai export-plugin
 同期を有効にするには、まず接続情報にキャッシュディレクトリのパスを設定する必要があります。
 ```
 # 新規接続時に設定
-wpai connections add --name "MyBlog" --base-url <URL> --token <TOKEN> --cache-path ./my-blog-cache
+wpai connections add --name "MyBlog" --base-url <URL> --cache-path ./my-blog-cache
 
 # 既存の接続を更新
 wpai connections update "MyBlog" --cache-path ./my-blog-cache
@@ -346,7 +359,10 @@ wpai connections update "MyBlog" --cache-path ./my-blog-cache
 ## トラブルシューティング
 
 - 「No connections registered」: `wpai connections add` で接続を登録してください。
-- `rest_forbidden_context` などの 401/403 エラー: トークンに必要な権限が無い、または期限切れです。新しいトークンで接続を再登録してください。
+- `rest_forbidden_context` などの 401/403 エラー: 認証情報（アプリケーションパスワードやJWTトークン）に誤りがあるか、必要な権限が無い、または期限切れです。新しい認証情報で接続を再登録してください。
+- **アプリケーションパスワードで403エラーが出る場合:** クライアント側の問題ではなく、Webサーバー(Apacheなど)が `Authorization` ヘッダーをWordPressに渡していない可能性があります。WordPressルートにある `.htaccess` ファイルに以下のいずれかの設定を追記して解決するか試してください。
+  - **解決策1:** `CGIPassAuth On`
+  - **解決策2:** `RewriteEngine On`, `RewriteCond %{HTTP:Authorization} ^(.*)`, `RewriteRule .* - [e=HTTP_AUTHORIZATION:%1]`
 - `media upload` で「このファイルタイプをアップロードする権限がありません」エラー: WordPressのセキュリティプラグインやテーマ、マルチサイト設定などで、アップロード可能なファイルの種類が制限されている可能性があります。
 - `posts sync` で「Cache path is not configured」エラー: `wpai connections update <name> --cache-path <PATH>` でキャッシュディレクトリを設定してください。
 

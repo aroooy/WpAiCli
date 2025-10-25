@@ -6,6 +6,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using WpAiCli.Configuration;
 using WpAiCli.WordPress.Models;
 
 namespace WpAiCli.WordPress;
@@ -31,13 +32,38 @@ public sealed class WordPressApiClient
 
     private readonly HttpClient _httpClient;
     private readonly string _baseUrl;
-    private readonly string? _bearerToken;
+    private readonly AuthenticationHeaderValue? _authenticationHeader;
 
-    public WordPressApiClient(HttpClient httpClient, string? baseUrl, string? bearerToken)
+    public WordPressApiClient(HttpClient httpClient, ConnectionProfile profile, string credential)
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
-        _baseUrl = NormalizeBaseUrl(string.IsNullOrWhiteSpace(baseUrl) ? DefaultBaseUrl : baseUrl);
-        _bearerToken = bearerToken;
+        _baseUrl = NormalizeBaseUrl(string.IsNullOrWhiteSpace(profile.BaseUrl) ? DefaultBaseUrl : profile.BaseUrl);
+
+        if (string.IsNullOrWhiteSpace(credential))
+        {
+            // No credentials provided, proceed without authentication header.
+            _authenticationHeader = null;
+            return;
+        }
+
+        switch (profile.AuthMethod)
+        {
+            case "ApplicationPassword":
+                if (string.IsNullOrWhiteSpace(profile.UserName))
+                {
+                    throw new InvalidOperationException("User name is required for Application Password authentication.");
+                }
+                var basicAuthValue = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{profile.UserName}:{credential}"));
+                _authenticationHeader = new AuthenticationHeaderValue("Basic", basicAuthValue);
+                break;
+
+            case "Jwt":
+                _authenticationHeader = new AuthenticationHeaderValue("Bearer", credential);
+                break;
+
+            default:
+                throw new NotSupportedException($"Authentication method '{profile.AuthMethod}' is not supported.");
+        }
     }
 
     public async Task<IReadOnlyList<WordPressPostDetail>> GetPostsAsync(string? status, int? perPage, int? page, CancellationToken cancellationToken)
@@ -90,7 +116,6 @@ public sealed class WordPressApiClient
     public Task<WordPressPostDetail> CreatePostAsync(WordPressCreatePostRequest request, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
-        EnsureAuthenticated(nameof(CreatePostAsync));
 
         if (string.IsNullOrWhiteSpace(request.Title) || string.IsNullOrWhiteSpace(request.Content) || string.IsNullOrWhiteSpace(request.Status))
         {
@@ -104,7 +129,6 @@ public sealed class WordPressApiClient
     public Task<WordPressPostDetail> UpdatePostAsync(int id, WordPressUpdatePostRequest request, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
-        EnsureAuthenticated(nameof(UpdatePostAsync));
 
         var url = BuildUrl($"/posts/{id}");
         var method = new HttpMethod("PATCH");
@@ -113,8 +137,6 @@ public sealed class WordPressApiClient
 
     public async Task<WordPressDeleteResponse> DeletePostAsync(int id, bool force, CancellationToken cancellationToken)
     {
-        EnsureAuthenticated(nameof(DeletePostAsync));
-
         var url = BuildUrl($"/posts/{id}");
         if (force)
         {
@@ -142,8 +164,6 @@ public sealed class WordPressApiClient
 
     public async Task<WordPressDeleteResponse> DeleteCategoryAsync(int id, bool force, CancellationToken cancellationToken)
     {
-        EnsureAuthenticated(nameof(DeleteCategoryAsync));
-
         var url = BuildUrl($"/categories/{id}");
         if (force)
         {
@@ -157,7 +177,6 @@ public sealed class WordPressApiClient
     public Task<WordPressCategory> UpdateCategoryAsync(int id, WordPressUpdateCategoryRequest request, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
-        EnsureAuthenticated(nameof(UpdateCategoryAsync));
 
         var url = BuildUrl($"/categories/{id}");
         return SendAsync<WordPressCategory>(HttpMethod.Post, url, cancellationToken, request);
@@ -166,7 +185,6 @@ public sealed class WordPressApiClient
     public Task<WordPressCategory> CreateCategoryAsync(WordPressCreateCategoryRequest request, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
-        EnsureAuthenticated(nameof(CreateCategoryAsync));
 
         if (string.IsNullOrWhiteSpace(request.Name))
         {
@@ -188,7 +206,6 @@ public sealed class WordPressApiClient
     public Task<WordPressTag> CreateTagAsync(WordPressCreateTagRequest request, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
-        EnsureAuthenticated(nameof(CreateTagAsync));
 
         if (string.IsNullOrWhiteSpace(request.Name))
         {
@@ -208,8 +225,6 @@ public sealed class WordPressApiClient
 
     public async Task<WordPressDeleteResponse> DeleteTagAsync(int id, bool force, CancellationToken cancellationToken)
     {
-        EnsureAuthenticated(nameof(DeleteTagAsync));
-
         var url = BuildUrl($"/tags/{id}");
         if (force)
         {
@@ -223,7 +238,6 @@ public sealed class WordPressApiClient
     public Task<WordPressTag> UpdateTagAsync(int id, WordPressUpdateTagRequest request, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
-        EnsureAuthenticated(nameof(UpdateTagAsync));
 
         var url = BuildUrl($"/tags/{id}");
         return SendAsync<WordPressTag>(HttpMethod.Post, url, cancellationToken, request);
@@ -256,7 +270,6 @@ public sealed class WordPressApiClient
     public Task<WordPressMedia> UpdateMediaAsync(int id, WordPressUpdateMediaRequest request, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
-        EnsureAuthenticated(nameof(UpdateMediaAsync));
 
         var url = BuildUrl($"/media/{id}");
         return SendAsync<WordPressMedia>(HttpMethod.Post, url, cancellationToken, request);
@@ -264,8 +277,6 @@ public sealed class WordPressApiClient
 
     public async Task<WordPressDeleteResponse> DeleteMediaAsync(int id, bool force, CancellationToken cancellationToken)
     {
-        EnsureAuthenticated(nameof(DeleteMediaAsync));
-
         var url = BuildUrl($"/media/{id}");
         if (force)
         {
@@ -283,8 +294,6 @@ public sealed class WordPressApiClient
 
     public async Task<WordPressMedia> UploadMediaAsync(string filePath, string? title, string? description, CancellationToken cancellationToken)
     {
-        EnsureAuthenticated(nameof(UploadMediaAsync));
-
         if (!File.Exists(filePath))
         {
             throw new FileNotFoundException("The specified file for upload was not found.", filePath);
@@ -328,9 +337,9 @@ public sealed class WordPressApiClient
 
         using var request = new HttpRequestMessage(HttpMethod.Post, url);
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-        if (!string.IsNullOrWhiteSpace(_bearerToken))
+        if (_authenticationHeader is not null)
         {
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _bearerToken);
+            request.Headers.Authorization = _authenticationHeader;
         }
         request.Content = formData;
 
@@ -356,9 +365,9 @@ public sealed class WordPressApiClient
         using var request = new HttpRequestMessage(method, requestUri);
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
-        if (!string.IsNullOrWhiteSpace(_bearerToken))
+        if (_authenticationHeader is not null)
         {
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _bearerToken);
+            request.Headers.Authorization = _authenticationHeader;
         }
 
         if (body is not null)
@@ -422,14 +431,6 @@ public sealed class WordPressApiClient
             baseUrl = baseUrl.TrimEnd('/');
         }
         return baseUrl;
-    }
-
-    private void EnsureAuthenticated(string operation)
-    {
-        if (string.IsNullOrWhiteSpace(_bearerToken))
-        {
-            throw new InvalidOperationException($"{operation} requires a valid bearer token.");
-        }
     }
 
     private sealed class VoidResult { }

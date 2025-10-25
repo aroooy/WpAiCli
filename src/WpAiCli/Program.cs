@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using WpAiCli.Configuration;
 using WpAiCli.Completion;
 using WpAiCli.Help;
@@ -14,6 +15,8 @@ using WpAiCli.Parsing;
 using WpAiCli.Services;
 using WpAiCli.WordPress.Models;
 using Markdig;
+using System.Net.Http;
+using WpAiCli.WordPress;
 using System.Net;
 using System.Reflection;
 
@@ -57,14 +60,26 @@ public class Program
 
         try
         {
-            var (store, profile, token) = ResolveConnection();
+            var (store, profile, credential) = ResolveConnection();
 
             var host = Host.CreateDefaultBuilder(args)
+                .ConfigureLogging(logging =>
+                {
+                    logging.ClearProviders();
+                    logging.AddConsole();
+                    logging.AddFilter("System.Net.Http.HttpClient", LogLevel.Warning);
+                })
                 .ConfigureServices((_, services) =>
                 {
                     services.AddSingleton(store);
                     services.AddSingleton(profile);
-                    services.AddSingleton(new WordPressSettings(profile.BaseUrl, token));
+                    services.AddHttpClient<WordPressApiClient>();
+                    services.AddSingleton(sp => 
+                        new WordPressApiClient(
+                            sp.GetRequiredService<System.Net.Http.IHttpClientFactory>().CreateClient(nameof(WordPressApiClient)),
+                            profile,
+                            credential
+                        ));
 
                     services.AddTransient<WordPressService>();
                     services.AddTransient<CacheService>(sp => new CacheService(profile.CachePath!, profile.Name));
@@ -1118,7 +1133,7 @@ public class Program
     {
         var name = parsed.GetString("name");
         var baseUrl = parsed.GetString("base-url");
-        var token = parsed.GetString("token");
+        var authMethod = parsed.GetString("auth-method") ?? "ApplicationPassword";
         var cachePath = parsed.GetString("cache-path");
         var syncLimitStr = parsed.GetString("sync-limit");
 
@@ -1129,10 +1144,41 @@ public class Program
 
         var markdownConversion = parsed.GetString("markdown-conversion");
 
-        if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(baseUrl) || string.IsNullOrWhiteSpace(token))
+        if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(baseUrl))
         {
-            Console.Error.WriteLine("Provide --name, --base-url, and --token when adding a connection.");
+            Console.Error.WriteLine("Provide --name and --base-url when adding a connection.");
             return (int)ExitCode.InvalidArguments;
+        }
+
+        if (authMethod != "ApplicationPassword" && authMethod != "Jwt")
+        {
+            Console.Error.WriteLine("Invalid value for --auth-method. Must be 'ApplicationPassword' or 'Jwt'.");
+            return (int)ExitCode.InvalidArguments;
+        }
+        
+        string credential;
+        string? userName = null;
+
+        if (authMethod == "ApplicationPassword")
+        {
+            userName = parsed.GetString("username");
+            var password = parsed.GetString("password");
+            if (string.IsNullOrWhiteSpace(userName) || string.IsNullOrWhiteSpace(password))
+            {
+                Console.Error.WriteLine("For ApplicationPassword authentication, provide --username and --password.");
+                return (int)ExitCode.InvalidArguments;
+            }
+            credential = password;
+        }
+        else // Jwt
+        {
+            var jwtToken = parsed.GetString("jwt-token");
+            if (string.IsNullOrWhiteSpace(jwtToken))
+            {
+                Console.Error.WriteLine("For Jwt authentication, provide --jwt-token.");
+                return (int)ExitCode.InvalidArguments;
+            }
+            credential = jwtToken;
         }
 
         if (markdownConversion != null && markdownConversion != "client" && markdownConversion != "server")
@@ -1158,12 +1204,14 @@ public class Program
             Name = name,
             BaseUrl = baseUrl.Trim(),
             CredentialKey = $"WpAiCli/{name}",
+            AuthMethod = authMethod,
+            UserName = userName,
             CachePath = absoluteCachePath,
             SyncItemsLimit = syncLimit,
             MarkdownConversion = markdownConversion
         };
 
-        CredentialManager.Save(profile.CredentialKey, token);
+        CredentialManager.Save(profile.CredentialKey, credential);
         store.Profiles.Add(profile);
         store.LastUsedConnection = profile.Name;
 
@@ -1174,7 +1222,7 @@ public class Program
 
         store.Save();
 
-        Console.WriteLine($"Connection '{profile.Name}' registered.");
+        Console.WriteLine($"Connection '{profile.Name}' registered with '{profile.AuthMethod}' authentication.");
 
         if (isFirstConnection)
         {
@@ -1222,7 +1270,7 @@ public class Program
             Console.WriteLine($"\nUpdating connection: {profile.Name} ({profile.BaseUrl})");
             Console.WriteLine("What do you want to update?");
             Console.WriteLine("  1: Base URL");
-            Console.WriteLine("  2: Application Password");
+            Console.WriteLine("  2: Authentication");
             Console.WriteLine("  3: Cache Path");
             Console.WriteLine("  4: Sync Items Limit");
             Console.WriteLine("  5: Markdown Conversion");
@@ -1245,13 +1293,7 @@ public class Program
                     }
                     break;
                 case "2":
-                    Console.Write("Enter new Application Password: ");
-                    var newPassword = ReadPassword();
-                    if (!string.IsNullOrWhiteSpace(newPassword))
-                    {
-                        CredentialManager.Save(profile.CredentialKey, newPassword);
-                        Console.WriteLine("Application Password updated successfully.");
-                    }
+                    UpdateAuthenticationInteractive(profile, store);
                     break;
                 case "3":
                     Console.Write($"Enter new Cache Path (current: {profile.CachePath ?? "Not set"}): ");
@@ -1310,6 +1352,61 @@ public class Program
         return (int)ExitCode.Success;
     }
 
+    static void UpdateAuthenticationInteractive(ConnectionProfile profile, ConnectionStore store)
+    {
+        Console.WriteLine($"\nCurrent authentication method: {profile.AuthMethod}");
+        Console.Write("Choose new method (ApplicationPassword/Jwt) or press Enter to keep current: ");
+        var newAuthMethod = Console.ReadLine();
+
+        if (string.IsNullOrWhiteSpace(newAuthMethod))
+        {
+            newAuthMethod = profile.AuthMethod;
+        }
+
+        if (string.Equals(newAuthMethod, "ApplicationPassword", StringComparison.OrdinalIgnoreCase))
+        {
+            profile.AuthMethod = "ApplicationPassword";
+            Console.Write($"Enter new Username (current: {profile.UserName}): ");
+            var newUsername = Console.ReadLine();
+            if (!string.IsNullOrWhiteSpace(newUsername)) 
+            {
+                profile.UserName = newUsername;
+            }
+            else if (string.IsNullOrWhiteSpace(profile.UserName))
+            {
+                Console.Error.WriteLine("Username cannot be empty for Application Password authentication.");
+                return;
+            }
+
+            Console.Write("Enter new Application Password: ");
+            var newPassword = ReadPassword();
+            if (!string.IsNullOrWhiteSpace(newPassword))
+            {
+                CredentialManager.Save(profile.CredentialKey, newPassword);
+                Console.WriteLine("Application Password updated successfully.");
+            }
+        }
+        else if (string.Equals(newAuthMethod, "Jwt", StringComparison.OrdinalIgnoreCase))
+        {
+            profile.AuthMethod = "Jwt";
+            profile.UserName = null; // Not used for JWT
+            Console.Write("Enter new JWT Token: ");
+            var newJwt = ReadPassword();
+            if (!string.IsNullOrWhiteSpace(newJwt))
+            {
+                CredentialManager.Save(profile.CredentialKey, newJwt);
+                Console.WriteLine("JWT Token updated successfully.");
+            }
+        }
+        else
+        {
+            Console.Error.WriteLine("Invalid authentication method.");
+            return;
+        }
+        store.Save();
+    }
+
+
     static int HandleConnectionsUpdateNonInteractive(ParsedOptions parsed, ConnectionProfile profile, ConnectionStore store)
     {
         var updated = false;
@@ -1322,21 +1419,44 @@ public class Program
             Console.WriteLine($"Base URL set to: {profile.BaseUrl}");
         }
 
-        if (parsed.GetBool("update-password", defaultValue: false))
+        var authMethod = parsed.GetString("auth-method");
+        if (authMethod != null)
         {
-            Console.Write("Enter new Application Password: ");
-            var newPassword = ReadPassword();
-            if (!string.IsNullOrWhiteSpace(newPassword))
+            if (authMethod == "ApplicationPassword" || authMethod == "Jwt")
             {
-                CredentialManager.Save(profile.CredentialKey, newPassword);
+                profile.AuthMethod = authMethod;
                 updated = true;
-                Console.WriteLine("Application Password updated successfully.");
+                Console.WriteLine($"Authentication method set to: {profile.AuthMethod}");
             }
             else
             {
-                Console.Error.WriteLine("Password cannot be empty.");
+                Console.Error.WriteLine("Invalid auth-method. Must be 'ApplicationPassword' or 'Jwt'.");
                 return (int)ExitCode.InvalidArguments;
             }
+        }
+
+        var username = parsed.GetString("username");
+        if (username != null)
+        {
+            profile.UserName = username;
+            updated = true;
+            Console.WriteLine($"Username set to: {profile.UserName}");
+        }
+
+        var password = parsed.GetString("password");
+        if(password != null)
+        {
+            CredentialManager.Save(profile.CredentialKey, password);
+            updated = true;
+            Console.WriteLine("Password updated.");
+        }
+
+        var jwtToken = parsed.GetString("jwt-token");
+        if(jwtToken != null)
+        {
+            CredentialManager.Save(profile.CredentialKey, jwtToken);
+            updated = true;
+            Console.WriteLine("JWT Token updated.");
         }
 
         var cachePath = parsed.GetString("cache-path");
@@ -1473,7 +1593,7 @@ public class Program
     }
 
 
-    static (ConnectionStore Store, ConnectionProfile Profile, string Token) ResolveConnection()
+    static (ConnectionStore Store, ConnectionProfile Profile, string credential) ResolveConnection()
     {
         var store = ConnectionStore.Load();
         if (store.Profiles.Count == 0)
@@ -1493,13 +1613,13 @@ public class Program
             throw new InvalidOperationException("No active connection set. Please set one using `wpai connections active`.");
         }
 
-        var token = CredentialManager.ReadSecret(profile.CredentialKey);
-        if (string.IsNullOrWhiteSpace(token))
+        var credential = CredentialManager.ReadSecret(profile.CredentialKey);
+        if (string.IsNullOrWhiteSpace(credential))
         {
             throw new InvalidOperationException($"Credential for connection '{profile.Name}' is missing. Re-add the connection.");
         }
 
-        return (store, profile, token);
+        return (store, profile, credential);
     }
 
     static void UpdateLastUsedConnection(ConnectionStore store, string connectionName)

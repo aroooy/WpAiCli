@@ -1,20 +1,15 @@
-﻿using WpAiCli.Configuration;
-using WpAiCli.WordPress;
+﻿using WpAiCli.WordPress;
 using WpAiCli.WordPress.Models;
 
 namespace WpAiCli.Services;
 
-public sealed class WordPressService : IDisposable
+public sealed class WordPressService
 {
-    private readonly WordPressSettings _settings;
-    private readonly HttpClient _httpClient;
     private readonly WordPressApiClient _apiClient;
 
-    public WordPressService(WordPressSettings settings)
+    public WordPressService(WordPressApiClient apiClient)
     {
-        _settings = settings ?? throw new ArgumentNullException(nameof(settings));
-        _httpClient = CreateHttpClient();
-        _apiClient = new WordPressApiClient(_httpClient, settings.BaseUrl, settings.BearerToken);
+        _apiClient = apiClient ?? throw new ArgumentNullException(nameof(apiClient));
     }
 
     public Task<IReadOnlyList<WordPressPostDetail>> ListPostsAsync(string? status, int? perPage, int? page, CancellationToken cancellationToken)
@@ -86,24 +81,6 @@ public sealed class WordPressService : IDisposable
     public Task<byte[]> DownloadMediaFileAsync(string url, CancellationToken cancellationToken)
         => _apiClient.DownloadFileAsync(url, cancellationToken);
 
-    private HttpClient CreateHttpClient()
-    {
-        var handler = new SocketsHttpHandler
-        {
-            PooledConnectionLifetime = TimeSpan.FromMinutes(2)
-        };
-
-        return new HttpClient(handler, disposeHandler: true)
-        {
-            Timeout = TimeSpan.FromSeconds(30)
-        };
-    }
-
     private static string? NormalizeEmpty(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value;
-
-    public void Dispose()
-    {
-        _httpClient.Dispose();
-    }
 }
