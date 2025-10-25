@@ -5,7 +5,7 @@ namespace WpAiCli.WordPress;
 public sealed class WordPressApiException : Exception
 {
     public WordPressApiException(HttpStatusCode statusCode, string responseBody)
-        : base($"WordPress API が { (int)statusCode } ({statusCode}) を返しました。")
+        : base($"WordPress API returned { (int)statusCode } ({statusCode}).")
     {
         StatusCode = statusCode;
         ResponseBody = responseBody;

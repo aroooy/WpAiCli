@@ -8,7 +8,7 @@ public static class ContentLoader
         {
             if (!contentFile.Exists)
             {
-                throw new FileNotFoundException($"コンテンツ ファイルが見つかりません: {contentFile.FullName}");
+                throw new FileNotFoundException($"Content file not found: {contentFile.FullName}");
             }
 
             return File.ReadAllText(contentFile.FullName);

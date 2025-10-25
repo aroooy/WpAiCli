@@ -7,14 +7,14 @@
     <Nullable>enable</Nullable>
     <AssemblyName>wpai</AssemblyName>
 
-    <!-- .NETツールとしてパッケージ化する設定 -->
+    <!-- Settings for packaging as a .NET tool -->
     <PackAsTool>true</PackAsTool>
-    <!-- ユーザーがインストール後に使うコマンド名 -->
+    <!-- The command name users will use after installation -->
     <ToolCommandName>wpai</ToolCommandName>
-    <!-- パッケージの出力先 -->
+    <!-- The output path for the package -->
     <PackageOutputPath>..\..\nupkg</PackageOutputPath>
 
-    <!-- NuGetパッケージのメタデータ -->
+    <!-- NuGet package metadata -->
     <PackageId>WpAiCli</PackageId>
     <Version>1.0.5</Version>
     <Authors>Hiroaki Hayase</Authors>

@@ -13,7 +13,7 @@ public static class CompletionScriptGenerator
             "bash" => GetBashScript(),
             "zsh" => GetZshScript(),
             "powershell" => GetPowerShellScript(),
-            _ => throw new ArgumentException($"未対応のシェルです: {shell}", nameof(shell))
+            _ => throw new ArgumentException($"Unsupported shell: {shell}", nameof(shell))
         };
     }
 

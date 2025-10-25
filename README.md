@@ -1,378 +1,380 @@
-# WpAiCli Usage Guide
+# WpAiCli - WordPress AI CLI
 
-## 概要
+A CLI tool to streamline WordPress post management using the power of AI.
 
-WpAiCli は WordPress REST API と連携するためのクロスプラットフォーム CLI です。投稿、カテゴリ、タグ、メディアの管理に加えて、複数サイトの接続情報を安全に切り替えながら利用できます。
+## Overview
 
-主な特徴:
+WpAiCli is a .NET-based cross-platform CLI tool designed to interact with the WordPress REST API. It allows you to manage posts, categories, tags, and media, with the ability to securely switch between multiple site connections.
 
-- Windows Credential Manager または macOS/Linux の Secret-Tool に認証情報（アプリケーションパスワードやJWTトークン）を保存
-- 接続プロファイルの登録 / 一覧 / 削除 / 更新を CLI から実行
-- 投稿、カテゴリ、タグ、メディアの作成、取得、更新、削除の各コマンドをサポート
-- 投稿のローカルキャッシュと双方向同期に対応
-- 投稿リビジョンの取得にも対応
-- メディア（画像など）のアップロード機能を搭載
-- `--format table|json|raw` で出力形式を切り替え
+### Key Features:
 
-## インストール
+- **Secure Credential Storage**: Saves authentication credentials (Application Passwords or JWT tokens) in the Windows Credential Manager or macOS/Linux Secret-Tool.
+- **Connection Management**: Register, list, delete, and update connection profiles directly from the CLI.
+- **Full CRUD Support**: Supports create, read, update, and delete commands for posts, categories, tags, and media.
+- **Two-Way Sync & Local Cache**: Provides two-way synchronization for posts and maintains a local cache.
+- **Revision Management**: Supports fetching post revisions.
+- **Media Uploads**: Includes functionality to upload media files like images.
+- **Flexible Output**: Switch output formats using `--format table|json|raw`.
 
-お使いのPCに [.NET 9.0 SDK](https://dotnet.microsoft.com/download/dotnet/9.0) (またはそれ以降) がインストールされている必要があります。
+## Installation
 
-以下のコマンドを一行実行するだけで、`wpai` コマンドがシステム全体で利用可能になります。
+You must have the [.NET 9.0 SDK](https://dotnet.microsoft.com/download/dotnet/9.0) (or later) installed on your system.
+
+Execute the following single command to make the `wpai` command available system-wide:
 
 ```shell
 dotnet tool install --global WpAiCli
 ```
 
-## グローバルオプション
+## Global Options
 
-- `--version`, `-V`: バージョン情報を表示します。
-- `--help`, `-h`: ヘルプを表示します。
+- `--version`, `-V`: Show version information.
+- `--help`, `-h`: Show help.
 
-## 初期設定
+## Initial Setup
 
-本ツールを初めて使用する際は、以下の手順で設定を行ってください。
+When using the tool for the first time, please follow these setup steps.
 
-### 1. 接続情報を登録
+### 1. Register a Connection
 
-まず、WordPressサイトへの接続情報を登録します。認証方式は `ApplicationPassword` (推奨) と `Jwt` に対応しています。
+First, register a connection to your WordPress site. The tool supports `ApplicationPassword` (recommended) and `Jwt` authentication methods.
 
-**推奨: ApplicationPassword を使う場合**
+**Recommended: Using ApplicationPassword**
 ```shell
 wpai connections add --name "MyBlog" --base-url "https://example.com/wp-json" --auth-method "ApplicationPassword" --username "your-username" --password "your-application-password"
 ```
 
-**Jwt トークンを使う場合**
+**Using a JWT Token**
 ```shell
 wpai connections add --name "MyBlog" --base-url "https://example.com/wp-json" --auth-method "Jwt" --jwt-token "your-jwt-token"
 ```
 
-- `--name`: 任意の表示名 (接続切り替え時に使用)
-- `--base-url`: WordPress REST API のベース URL (`/wp-json` で終わる形式を推奨)
-- `--auth-method`: `ApplicationPassword` または `Jwt` を指定します。 (デフォルト: `ApplicationPassword`)
-- `--username`: WordPressのユーザー名 (ApplicationPassword 時に必須)
-- `--password`: WordPressで生成したアプリケーションパスワード (ApplicationPassword 時に必須)
-- `--jwt-token`: JWT認証用のトークン (Jwt 時に必須)
+- `--name`: An arbitrary display name (used for switching connections).
+- `--base-url`: The base URL of the WordPress REST API (ending in `/wp-json` is recommended).
+- `--auth-method`: Specify `ApplicationPassword` or `Jwt`. (Default: `ApplicationPassword`).
+- `--username`: Your WordPress username (required for ApplicationPassword).
+- `--password`: The application password generated in WordPress (required for ApplicationPassword).
+- `--jwt-token`: The token for JWT authentication (required for Jwt).
 
-認証情報はOSの資格情報ストアに安全に保存されます。
+Authentication credentials are stored securely in your OS's credential store.
 
-### 2. アクティブな接続を設定
+### 2. Set the Active Connection
 
-次に、コマンドの操作対象となる接続を「アクティブ」に設定します。`connections` 以外のすべてのコマンドは、ここで設定されたアクティブな接続に対して実行されます。
+Next, set the "active" connection that commands will target. All commands except for `connections` will be executed against the active connection set here.
 
-**注意:** 登録されている接続が一つもない状態で最初の接続を追加した場合、その接続は自動的にアクティブとして設定されるため、この手順は不要です。
+**Note:** If you add the first connection when no others are registered, it is automatically set as active, and this step is not necessary.
 ```
 wpai connections active
 ```
-上記コマンドを引数なしで実行すると、登録済みの接続一覧が表示され、対話形式でアクティブな接続を選択できます。`wpai connections active "BlogName"` のように直接名前を指定することも可能です。
+Running the command without arguments will display a list of registered connections and allow you to interactively select the active one. You can also specify it directly by name, like `wpai connections active "BlogName"`.
 
-### 3. 動作を確認
+### 3. Verify Operation
 
-設定が正しく完了したかを確認するため、投稿一覧を取得してみましょう。
+To confirm that the setup is correct, try fetching a list of posts.
 ```
 wpai posts list --status publish --per-page 1
 ```
-アクティブに設定したサイトの投稿が一覧表示されれば、初期設定は完了です。
+If posts from your active site are displayed, the initial setup is complete.
 
-## 一般的な使い方（ワークフロー例）
+## Common Usage (Workflow Examples)
 
-### 1. 新規投稿を作成し、公開する
+### 1. Create and Publish a New Post
 
-1. `wpai posts create --title "新しい記事" --content "ここに本文を記述" --status draft` で下書きを作成します。
-   - この時点でローカルにキャッシュファイル (`.md`) が自動生成されます。
-2. 生成された `posts/123-new-article.md` をエディタで編集します。
-3. `wpai posts push 123` を実行し、編集内容をサーバーに反映します。
-4. 記事を公開するには、ファイル先頭のYAMLフロントマター内の `status` を `publish` に変更し、再度 `wpai posts push 123` を実行します。
+1. Create a draft post with `wpai posts create --title "New Article" --content "Write the body here" --status draft`.
+   - A local cache file (`.md`) is automatically generated at this point.
+2. Edit the generated `posts/123-new-article.md` in your editor.
+3. Run `wpai posts push 123` to apply your edits to the server.
+4. To publish the article, change the `status` in the YAML front-matter at the top of the file to `publish` and run `wpai posts push 123` again.
 
-### 2. 既存の投稿を編集する
+### 2. Edit an Existing Post
 
-1. `wpai posts sync` を実行し、サーバーから最新の状態を取得します。
-2. 編集したい記事のローカルファイル (`.md`) を編集します。
-3. `wpai posts push <ID>` を実行し、変更をサーバーに反映します。
+1. Run `wpai posts sync` to fetch the latest state from the server.
+2. Edit the local Markdown file (`.md`) for the desired article.
+3. Run `wpai posts push <ID>` to apply the changes to the server.
 
-## AI向けの推奨ワークフロー
+## Recommended Workflow for AI
 
-以下に、AIがタスクを実行する際の推奨コマンド選択パターンを示します。
+The following patterns are recommended for AI agents executing tasks.
 
-### シナリオ1: ローカルでの編集を終え、サーバーに反映したい
+### Scenario 1: Pushing Local Edits to the Server
 
-ローカルで複数の投稿や分類ファイルを編集し、その作業結果をまとめてサーバーに送信したい場合。
+When you have finished editing multiple local post or taxonomy files and want to send the results to the server.
 
-- **推奨コマンド:**
+- **Recommended Commands:**
   - `posts push --all`
   - `taxonomies sync`
-- **理由:**
-  「ローカルの変更をプッシュする」という意図が最も明確に表現できます。`posts sync`でも同様の結果は得られますが、`push`と`sync`を使い分けることで、AIの操作ログがより人間にとって理解しやすくなります。
+- **Reasoning:**
+  This most clearly expresses the intent to "push local changes." While `posts sync` might achieve a similar result, distinguishing between `push` and `sync` makes the AI's operation logs more understandable for humans.
 
-### シナリオ2: これから編集を始めるため、最新の状態を取得したい
+### Scenario 2: Fetching the Latest State Before Editing
 
-ローカルでの作業を開始する前に、他のユーザーによる変更などを取り込み、最新の状態で始めたい場合。
+When you want to start working with the latest content, pulling in any changes made by other users.
 
-- **推奨コマンド:**
+- **Recommended Commands:**
   - `posts sync`
   - `media sync`
-- **理由:**
-  `sync`コマンドは、サーバーからの変更取得（プル）を確実に行うため、この目的に最適です。
+- **Reasoning:**
+  The `sync` command reliably performs a pull of changes from the server, making it ideal for this purpose.
 
-## コマンド一覧
+## Command Reference
 
-AI など機械連携では JSON モード (`--format json`) を推奨します。テキスト出力よりもエンコーディング／解析面で扱いやすく、文字化けも避けられます。
+For machine integration (like with an AI), JSON mode (`--format json`) is recommended. It is easier to handle in terms of encoding/parsing and avoids character corruption issues compared to text output.
 
-### 接続管理 (`connections`)
+### Connection Management (`connections`)
 
-- `list`: 登録済み接続の一覧を表示します。`=>` はアクティブな接続を示します。
-- `active`: 対話形式または名前/番号で、デフォルトで使用する接続を「アクティブ」に設定します。
-  - `wpai connections active` (対話モード)
-  - `wpai connections active 2` (番号で指定)
-  - `wpai connections active "My Blog"` (名前で指定)
-- `add`: 新しい接続を登録します。
-  - `wpai connections add --name <名称> --base-url <URL> --auth-method <ApplicationPassword|Jwt> ...`
-  - `--cache-path` は任意です。省略した場合、コマンド実行ディレクトリ下の `wp-cache` がデフォルトのキャッシュパスとして設定されます。
-- `update <name>`: 既存の接続情報を更新します。キャッシュパスや同期設定などはこのコマンドで行います。
+- `list`: Displays a list of registered connections. `=>` indicates the active connection.
+- `active`: Sets the default connection to use as "active," either interactively or by name/number.
+  - `wpai connections active` (Interactive mode)
+  - `wpai connections active 2` (By number)
+  - `wpai connections active "My Blog"` (By name)
+- `add`: Registers a new connection.
+  - `wpai connections add --name <NAME> --base-url <URL> --auth-method <ApplicationPassword|Jwt> ...`
+  - `--cache-path` is optional. If omitted, `wp-cache` in the current execution directory is set as the default cache path.
+- `update <name>`: Updates existing connection information. Use this command for settings like cache path and sync configurations.
   - `wpai connections update "BlogName" --cache-path ./new-cache --sync-limit 50 --markdown-conversion server`
-- `remove`: 対話形式で既存の接続を削除します。
+- `remove`: Deletes an existing connection interactively.
 
-#### キャッシュパスの確認 (`cache`)
+#### Check Cache Path (`cache`)
 
-- アクティブ接続のキャッシュルートパスを表示します。 `[キャッシュ側の変化: なし]`
+- Displays the cache root path for the active connection. `[Cache Change: None]`
   - `wpai cache`
-  - 出力例: `C:\path\to\wp-cache\<connection-name>`
+  - Example output: `C:\path\to\wp-cache\<connection-name>`
 
-### 投稿 (`posts`)
+### Posts (`posts`)
 
-- `sync`: **投稿と分類(カテゴリ・タグ)の双方向同期**を行います。まず分類の同期が実行され、成功した場合にのみ投稿の同期に進む、安全なプロセスです。 `[キャッシュへの影響: サーバー変更を反映]`
+- `sync`: **Performs a two-way sync for posts and taxonomies (categories/tags).** It's a safe process that first syncs taxonomies and proceeds to post synchronization only if successful. `[Cache Effect: Reflects server changes]`
   - `wpai posts sync`
-- `organize`: ローカルキャッシュ内の投稿ファイル（`.md`）を、各ファイルのYAMLヘッダーに記載されたステータスに基づいて、`publish`, `draft` などのサブフォルダに整理します。サーバーとの通信は行いません。 `[キャッシュへの影響: ローカルファイル移動]`
+- `organize`: Organizes local post files (`.md`) into subfolders like `publish`, `draft`, etc., based on the status in each file's YAML header. Does not communicate with the server. `[Cache Effect: Local file move]`
   - `wpai posts organize`
-- `list`: 投稿を一覧表示します。 `[キャッシュへの影響: なし]`
+- `list`: Lists posts. `[Cache Effect: None]`
   - `wpai posts list [--status <STATUS>] [--per-page <NUM>] [--page <NUM>]`
-- `get <id>`: 指定したIDの投稿を1件取得します。 `[キャッシュへの影響: なし]`
+- `get <id>`: Retrieves a single post by its ID. `[Cache Effect: None]`
   - `wpai posts get 123`
-- `create`: 新しい投稿を作成します。 `[キャッシュへの影響: 即時作成]`
+- `create`: Creates a new post. `[Cache Effect: Immediate creation]`
   - `wpai posts create --title <TITLE> --content <CONTENT> | --content-file <PATH> [--status <STATUS>] [--edit-mode <markdown|html>] [--categories <IDs>] [--tags <IDs>] [--featured-media <ID>]`
-  - **注意:** `--content` または `--content-file` は必須で、内容は空や空白のみにはできません。
-  - **AI利用時のヒント:** 本文に記事タイトルを含めないでください。タイトルは `--title` オプションで別途指定されるため、本文にタイトルを含めると表示が重複します。
-- `push <id> | --all`: ローカルキャッシュの変更をサーバーに反映（プッシュ）します。IDの指定で個別、`--all`でローカルで変更された全ての投稿を一括プッシュが可能です。 `[キャッシュへの影響: サーバー反映後に更新]`
+  - **Note:** `--content` or `--content-file` is required, and its content cannot be empty or whitespace.
+  - **Hint for AI Usage:** Do not include the article title in the body content. The title is specified separately with the `--title` option, and including it in the body will cause duplication.
+- `push <id> | --all`: Pushes local cache changes to the server. You can push individually by ID or all locally modified posts at once with `--all`. `[Cache Effect: Updated after server reflection]`
   - `wpai posts push 123`
   - `wpai posts push --all`
-- `delete <id>`: 投稿を削除します。 `[キャッシュへの影響: 即時削除]`
+- `delete <id>`: Deletes a post. `[Cache Effect: Immediate deletion]`
   - `wpai posts delete 123 [--force]`
 
-### リビジョン (`revisions`)
+### Revisions (`revisions`)
 
-投稿の変更履歴（リビジョン）を管理します。
+Manages post change history (revisions).
 
-- `list --post-id <ID>`: 指定した投稿のリビジョン一覧を取得します。 `[キャッシュへの影響: なし]`
+- `list --post-id <ID>`: Retrieves a list of revisions for a specified post. `[Cache Effect: None]`
   - `wpai revisions list --post-id 123`
-- `fetch --post-id <ID>`: 指定した投稿の全リビジョンをローカルに一括でダウンロードします。比較・検討用途に最適です。 `[キャッシュへの影響: `wp-cache/revisions/post_<ID>/` 以下にファイル作成]`
+- `fetch --post-id <ID>`: Downloads all revisions for a specified post to the local cache. Ideal for comparison and review. `[Cache Effect: Creates files under `wp-cache/revisions/post_<ID>/`]`
   - `wpai revisions fetch --post-id 123`
-- `clean [--post-id <ID>]`: ローカルにダウンロードしたリビジョンキャッシュを削除します。 `[キャッシュへの影響: `wp-cache/revisions/` 以下のファイル・フォルダを削除]`
-  - `wpai revisions clean --post-id 123` (特定の投稿のリビジョンのみ削除)
-  - `wpai revisions clean` (すべてのリビジョンキャッシュを削除)
+- `clean [--post-id <ID>]`: Deletes the locally downloaded revision cache. `[Cache Effect: Deletes files/folders under `wp-cache/revisions/`]`
+  - `wpai revisions clean --post-id 123` (Deletes revisions for a specific post)
+  - `wpai revisions clean` (Deletes all revision caches)
 
-#### リビジョンを使った投稿の復元（ワークフロー）
+#### Restoring a Post from a Revision (Workflow)
 
-本ツールでは、安全性を重視し、リビジョンから復元する操作は以下の手動ワークフローを推奨しています。
+For safety, this tool recommends the following manual workflow for restoring from a revision.
 
-1. **履歴の確認:** `wpai revisions list --post-id 123` を実行し、リビジョンIDや日時を確認します。
-2. **一括取得:** `wpai revisions fetch --post-id 123` を実行し、すべてのリビジョンをローカルにダウンロードします。
-3. **比較:** `wp-cache/revisions/post_123/` ディレクトリに作成されたリビジョンファイル (`456.md`など) と、現在の投稿ファイル `wp-cache/posts/publish/123.md` をエディタや差分ツールで比較します。
-4. **内容の反映:** 復元したいリビジョンファイルの中身をコピーし、現在の投稿ファイルに貼り付けて上書き保存します。
-5. **サーバーへ反映:** `wpai posts push 123` を実行します。ローカルファイルの変更がサーバーにプッシュされ、投稿の復元が完了します。
+1.  **Check History:** Run `wpai revisions list --post-id 123` to check revision IDs and dates.
+2.  **Bulk Fetch:** Run `wpai revisions fetch --post-id 123` to download all revisions locally.
+3.  **Compare:** Use an editor or diff tool to compare the revision files (e.g., `456.md`) in the `wp-cache/revisions/post_123/` directory with the current post file `wp-cache/posts/publish/123.md`.
+4.  **Apply Content:** Copy the content from the desired revision file and paste it into the current post file, overwriting it.
+5.  **Push to Server:** Run `wpai posts push 123`. The local file changes will be pushed to the server, completing the post restoration.
 
-### カテゴリ (`categories`)
+### Categories (`categories`)
 
-- `list`: カテゴリを一覧表示します。 `[キャッシュへの影響: なし]`
-- `get <id>`: 指定したIDのカテゴリを1件取得します。 `[キャッシュへの影響: なし]`
-- `create`: 新しいカテゴリを作成します。 `[キャッシュへの影響: 即時作成]`
+- `list`: Lists categories. `[Cache Effect: None]`
+- `get <id>`: Retrieves a single category by its ID. `[Cache Effect: None]`
+- `create`: Creates a new category. `[Cache Effect: Immediate creation]`
   - `wpai categories create --name <NAME> [--slug <SLUG>] [--description <DESC>]`
-- `push <id>`: ローカルキャッシュ（YAMLファイル）の変更をサーバーに反映（プッシュ）します。 `[キャッシュへの影響: サーバー反映後にハッシュのみ更新]`
+- `push <id>`: Pushes local cache (YAML file) changes to the server. `[Cache Effect: Updates hash only after server reflection]`
   - `wpai categories push 45`
-- `delete <id>`: カテゴリを削除します。 `[キャッシュへの影響: 即時削除]`
+- `delete <id>`: Deletes a category. `[Cache Effect: Immediate deletion]`
 
-### タグ (`tags`)
+### Tags (`tags`)
 
-- `list`: タグを一覧表示します。 `[キャッシュへの影響: なし]`
-- `create`: 新しいタグを作成します。 `[キャッシュへの影響: 即時作成]`
+- `list`: Lists tags. `[Cache Effect: None]`
+- `create`: Creates a new tag. `[Cache Effect: Immediate creation]`
   - `wpai tags create --name <NAME> [--slug <SLUG>] [--description <DESC>]`
-- `get <id>`: 指定したIDのタグを1件取得します。 `[キャッシュへの影響: なし]`
-- `push <id>`: ローカルキャッシュ（YAMLファイル）の変更をサーバーに反映（プッシュ）します。 `[キャッシュへの影響: サーバー反映後にハッシュのみ更新]`
+- `get <id>`: Retrieves a single tag by its ID. `[Cache Effect: None]`
+- `push <id>`: Pushes local cache (YAML file) changes to the server. `[Cache Effect: Updates hash only after server reflection]`
   - `wpai tags push 67`
-- `delete <id>`: タグを削除します。 `[キャッシュへの影響: 即時削除]`
+- `delete <id>`: Deletes a tag. `[Cache Effect: Immediate deletion]`
 
-### タクソノミ (`taxonomies`)
+### Taxonomies (`taxonomies`)
 
-- `sync`: ローカルキャッシュとサーバー上のすべてのカテゴリとタグを双方向で同期します。 `[キャッシュへの影響: サーバー変更を反映]`
+- `sync`: Performs a two-way sync for all categories and tags between the local cache and the server. `[Cache Effect: Reflects server changes]`
   - `wpai taxonomies sync`
 
-### メディア (`media`)
+### Media (`media`)
 
-- `sync`: ローカルキャッシュとサーバー上のメディアを同期します。サーバーで削除されたメディアはローカルキャッシュからも削除されます。 `[キャッシュへの影響: サーバー変更を反映]`
-- `list`: メディアライブラリの項目を一覧表示します。 `[キャッシュへの影響: なし]`
+- `sync`: Syncs media between the local cache and the server. Media deleted on the server will be removed from the local cache. `[Cache Effect: Reflects server changes]`
+- `list`: Lists items in the media library. `[Cache Effect: None]`
   - `wpai media list [--per-page <NUM>] [--page <NUM>]`
-- `upload <file-path>`: ファイルをメディアライブラリにアップロードします。 `[キャッシュへの影響: 即時作成]`
+- `upload <file-path>`: Uploads a file to the media library. `[Cache Effect: Immediate creation]`
   - `wpai media upload <PATH> [--file <PATH>] [--title <TITLE>] [--description <DESC>]`
-- `push <id>`: ローカルキャッシュ（YAMLファイル）のメタデータ変更（タイトル、代替テキスト等）をサーバーに反映（プッシュ）します。 `[キャッシュへの影響: サーバー反映後にメタデータのみ更新]`
+- `push <id>`: Pushes metadata changes (title, alt text, etc.) from the local cache (YAML file) to the server. `[Cache Effect: Updates metadata only after server reflection]`
   - `wpai media push 89`
-- `delete <id>`: メディアを削除します。 `[キャッシュへの影響: 即時削除]`
+- `delete <id>`: Deletes media. `[Cache Effect: Immediate deletion]`
   - `wpai media delete 123 [--force]`
 
-### 競合の解決 (`resolve`)
+### Conflict Resolution (`resolve`)
 
-`posts sync` を実行した際に競合が検出された場合、このコマンドを使って手動で競合を解決します。
+If a conflict is detected during `posts sync`, use this command to resolve it manually.
 
-- `resolve <type> <id> --strategy <strategy>`: 競合を解決します。
-  - `<type>`: 競合したコンテンツの種類 (`post`, `category`, `tag`)。
-  - `<id>`: 競合したアイテムのID。
-  - `--strategy <strategy>`: 必須。以下のいずれかの解決戦略を指定します。
-    - `local-wins`: ローカルの変更を正とし、サーバーの状態をローカルの状態で上書きします。
-    - `server-wins`: サーバーの変更を正とし、ローカルの状態をサーバーの状態で上書きします。
+- `resolve <type> <id> --strategy <strategy>`: Resolves a conflict.
+  - `<type>`: The type of content that conflicted (`post`, `category`, `tag`).
+  - `<id>`: The ID of the conflicted item.
+  - `--strategy <strategy>`: Required. Specify one of the following resolution strategies:
+    - `local-wins`: Prioritizes local changes, overwriting the server state with the local state.
+    - `server-wins`: Prioritizes server changes, overwriting the local state with the server state.
 
-  **実行例:**
+  **Example:**
   ```bash
-  # 投稿ID 123 の競合を、ローカルの変更を優先して解決
+  # Resolve conflict for post ID 123, prioritizing local changes
   wpai resolve post 123 --strategy local-wins
 
-  # カテゴリID 45 の競合を、サーバーの変更を優先して解決
+  # Resolve conflict for category ID 45, prioritizing server changes
   wpai resolve category 45 --strategy server-wins
   ```
 
-  **注意: Markdownの `server` 変換モードにおける競合検出**
+  **Note on Conflict Detection in `server` Markdown Conversion Mode**
 
-  Markdownの変換設定 (`--markdown-conversion`) を `server` に設定している場合、同期の競合検出はサーバー上の `_md_source` という特別なメタフィールドへの変更に依存します。
+  When the Markdown conversion setting (`--markdown-conversion`) is set to `server`, conflict detection depends on changes to a special meta field on the server called `_md_source`.
 
-  これは、WordPressの管理画面で通常のビジュアルエディタやコードエディタを使って投稿を編集しても、この `_md_source` フィールドは更新されないことを意味します。その結果、**管理画面からの編集はサーバー側の変更として検出されず、競合が発生しません。** ローカルの変更がサーバーの変更を上書きしてしまいます。
+  This means that editing a post using the standard Visual or Code editor in the WordPress admin area will **not** update the `_md_source` field. As a result, **edits from the admin panel will not be detected as a server-side change, and no conflict will occur.** The local changes will simply overwrite the server changes.
 
-  `server` モードで正しく競合を検出させるには、サーバー側でもREST API経由で `_md_source` メタフィールドを更新する必要があります。
+  To correctly detect conflicts in `server` mode, the `_md_source` meta field must also be updated on the server side, typically via the REST API.
 
-## 同期機能
+## Sync Functionality
 
-### サーバー側の設定：Markdownの双方向同期
+### Server-Side Setup: Two-Way Markdown Sync
 
-本ツールのMarkdownによる双方向同期機能（`editMode: markdown`）を最大限に活用するには、WordPressサーバー側に専用のプラグインを設置し、REST APIがMarkdownのソーステキストをカスタムフィールド (`_md_source`) として認識できるようにする必要があります。
+To fully leverage the two-way Markdown sync feature (`editMode: markdown`), you need to place a dedicated plugin on your WordPress server. This allows the REST API to recognize the Markdown source text as a custom field (`_md_source`).
 
-以下のコマンドを実行すると、設定に必要な`mu-plugins.zip`ファイルが現在のディレクトリに出力され、詳しいインストール手順が表示されます。
+Running the following command will output a `mu-plugins.zip` file in the current directory and display detailed installation instructions.
 
 ```shell
 wpai export-plugin
 ```
 
-### 同期の基本概念: `push` と `sync` の違い
+### Core Sync Concepts: `push` vs. `sync`
 
-本ツールには、ローカルとサーバーの状態を一致させるために `push` と `sync` という2種類のコマンド群があります。AIが自らの意図を明確に表現するために、これらの違いを理解することが重要です。
+This tool has two types of commands, `push` and `sync`, for aligning local and server states. It is important for an AI to understand these differences to express its intent clearly.
 
-- **`push` コマンド (`posts push --all` など)**
-  - **意図:** 「ローカルの作業内容を、一方的にサーバーへ反映させたい」
-  - **方向:** ローカル → サーバー (単方向)
-  - **用途:** ローカルで複数の編集を終え、その結果をまとめてサーバーに送信する場合に最適です。サーバー側の変更は考慮しません。
+- **`push` commands (`posts push --all`, etc.)**
+  - **Intent:** "I want to unilaterally apply my local work to the server."
+  - **Direction:** Local → Server (One-way)
+  - **Use Case:** Ideal for when you have finished several local edits and want to send the result to the server. It does not consider server-side changes.
 
-- **`sync` コマンド (`posts sync` など)**
-  - **意図:** 「ローカルとサーバーの状態を比較し、双方を一致させたい」
-  - **方向:** ローカル ⇔ サーバー (双方向)
-  - **用途:** 作業を始める前にサーバーの最新状態を取得したい場合や、複数人での共同作業で発生しうる競合を検出しながら慎重に同期したい場合に最適です。内部ではプッシュとプルの両方が発生する可能性があります。
+- **`sync` commands (`posts sync`, etc.)**
+  - **Intent:** "I want to compare local and server states and make them identical."
+  - **Direction:** Local ↔ Server (Two-way)
+  - **Use Case:** Ideal for fetching the latest server state before starting work or for carefully synchronizing in a multi-user environment where conflicts might occur. Internally, both pushes and pulls may happen.
 
-`posts sync` および `media sync` コマンドは、ローカルのファイルシステムとWordPressサーバー上のコンテンツ（投稿、メディア、カテゴリ、タグ）を同期する機能です。
+The `posts sync` and `media sync` commands synchronize content (posts, media, categories, tags) between your local filesystem and the WordPress server.
 
-### 設定
+### Configuration
 
-同期を有効にするには、まず接続情報にキャッシュディレクトリのパスを設定する必要があります。
+To enable sync, you must first set the path to a cache directory in your connection settings.
 ```
-# 新規接続時に設定
+# Set during a new connection
 wpai connections add --name "MyBlog" --base-url <URL> --cache-path ./my-blog-cache
 
-# 既存の接続を更新
+# Update an existing connection
 wpai connections update "MyBlog" --cache-path ./my-blog-cache
 ```
 
-### 同期の実行とキャッシュディレクトリ構造
+### Sync Execution and Cache Directory Structure
 
-設定後、`posts sync` または `media sync` を実行すると同期が開始されます。キャッシュディレクトリの基本的な構造は以下の通りです。
+After configuration, running `posts sync` or `media sync` will start the synchronization. The basic structure of the cache directory is as follows:
 
-1.  **接続ごとのサブディレクトリ**: `--cache-path` で指定したルートディレクトリ内に、接続プロファイル名のサブディレクトリが作成されます (例: `wp-cache/my-blog/`)。これにより、複数のブログのキャッシュが互いに干渉することなく管理されます。
-2.  **キャッシュファイルの生成**: 各接続のサブディレクトリ内に、以下のファイルとディレクトリが生成されます。
+1.  **Per-Connection Subdirectory**: A subdirectory named after the connection profile is created within the root directory specified by `--cache-path` (e.g., `wp-cache/my-blog/`). This prevents the caches of multiple blogs from interfering with each other.
+2.  **Cache File Generation**: The following files and directories are generated within each connection's subdirectory:
 
-    -   `wp-ai-cache.db`: コンテンツのメタ情報を管理するSQLiteデータベースファイルです。このファイルはアプリケーションが内部的に使用します。**ユーザーが直接編集しないでください。**
-    -   `categories/` ディレクトリ: **編集可能な**カテゴリのYAMLファイルが個別に保存されます (`[ID]-[名前].yaml`)。ファイル内の `slug` は日本語などを含む読みやすい形式で保存されます。
-    -   `tags/` ディレクトリ: **編集可能な**タグのYAMLファイルが個別に保存されます (`[ID]-[名前].yaml`)。ファイル内の `slug` は日本語などを含む読みやすい形式で保存されます。
-    -   `posts/` ディレクトリ: 投稿のステータス（`publish`, `draft`, `future` など）ごとにサブディレクトリが作成され、その中に投稿ファイルが格納されます。
-        -   `[ID]-[タイトル].md`: 投稿のすべてを格納する単一のファイルです。ファイルの先頭にはYAMLフロントマターとしてメタデータが、その後には本文が記述されます。
-    -   `media/` ディレクトリ:
-        -   `[ID]-[ファイル名].[拡張子]`: メディアファイルの本体です。
-        -   `[ID]-[ファイル名].yaml`: 編集可能なメディアのメタデータです。
+    -   `wp-ai-cache.db`: An SQLite database file that manages content metadata. This file is used internally by the application. **Users should not edit this file directly.**
+    -   `categories/` directory: **Editable** YAML files for categories are stored individually (`[ID]-[Name].yaml`). The `slug` in the file is saved in a human-readable format, including non-ASCII characters.
+    -   `tags/` directory: **Editable** YAML files for tags are stored individually (`[ID]-[Name].yaml`). The `slug` is also saved in a readable format.
+    -   `posts/` directory: Subdirectories are created for each post status (`publish`, `draft`, `future`, etc.), and post files are stored within them.
+        -   `[ID]-[Title].md`: A single file containing all information for a post. Metadata is at the top as YAML front-matter, followed by the body content.
+    -   `media/` directory:
+        -   `[ID]-[Filename].[ext]`: The media file itself.
+        -   `[ID]-[Filename].yaml`: Editable metadata for the media.
 
-### 同期のルール
+### Sync Rules
 
-- **`posts sync`:** 最も安全で包括的な同期コマンドです。以下の順序で実行されます。
-  1.  **分類の双方向同期:** まず `taxonomies sync` と同等の処理が実行され、カテゴリ・タグのローカルでの変更がプッシュされ、サーバーの最新状態がプルされます。このステップでエラーが発生すると、安全のため処理は中断します。
-  2.  **投稿の双方向同期:** 分類の同期が成功した後、投稿ごとにローカルとサーバーの状態が比較され、「プッシュ」「プル」「競合検出」のいずれかが実行されます。
+- **`posts sync`:** The safest and most comprehensive sync command. It executes in the following order:
+  1.  **Two-Way Taxonomy Sync:** First, an equivalent of `taxonomies sync` is performed, pushing local category/tag changes and pulling the latest state from the server. If an error occurs here, the process is aborted for safety.
+  2.  **Two-Way Post Sync:** After taxonomy sync succeeds, local and server states for each post are compared, and one of "push," "pull," or "conflict detection" is executed.
 
-- **`taxonomies sync`:** 分類（カテゴリ・タグ）専用の同期コマンドです。以下の順序で実行されます。
-  1.  **ローカル変更の全件プッシュ:** まず、ローカルにある全ての分類ファイル（`.yaml`）の変更点がサーバーにプッシュされます。
-  2.  **サーバーからの全件プル:** 次に、サーバーから最新の全分類情報がプルされ、ローカルキャッシュが更新されます。
-  （このため、このコマンドは実質的に `taxonomies push --all` の役割を兼ねています）
+- **`taxonomies sync`:** A sync command dedicated to taxonomies (categories/tags). It executes in the following order:
+  1.  **Push All Local Changes:** First, changes from all local taxonomy files (`.yaml`) are pushed to the server.
+  2.  **Pull All Server Changes:** Next, the latest taxonomy information is pulled from the server, updating the local cache.
+  (Therefore, this command effectively also serves the role of `taxonomies push --all`).
 
-- **`media sync`:** メディア専用の同期コマンドです。`taxonomies sync` と同様の順序で実行されます。
-  1.  **ローカル変更の全件プッシュ:** まず、ローカルの全メディアメタデータ（`.yaml`）の変更点がサーバーにプッシュされます。
-  2.  **サーバーからの全件プル:** 次に、サーバーから最新のメディア情報がプルされ、ローカルキャッシュが更新されます。
+- **`media sync`:** A sync command dedicated to media. It follows the same order as `taxonomies sync`.
+  1.  **Push All Local Changes:** First, changes from all local media metadata files (`.yaml`) are pushed.
+  2.  **Pull All Server Changes:** Next, the latest media information is pulled from the server.
 
-- **競合の検出:** ローカルとサーバーの両方で同じ投稿が変更されていた場合、`posts sync` 実行時にコンフリクト（競合）が検出され、安全のためその同期はスキップされます。レポートに表示される案内に従って `resolve` コマンドで手動解決が必要です。
-- **キャッシュの自動クリーンアップ:** `posts sync` や `media sync` を実行した際、同期対象の上限（`--sync-limit`）に含まれない古いキャッシュファイルが、サーバー上で既に削除されており（404 Not Found）、かつローカルでも変更されていない場合、そのローカルキャッシュファイルは自動的に削除されます。
+- **Conflict Detection:** If the same post has been modified both locally and on the server, a conflict is detected during `posts sync`, and the sync for that item is skipped for safety. You must manually resolve it using the `resolve` command as indicated in the report.
+- **Automatic Cache Cleanup:** When `posts sync` or `media sync` is run, if an old cache file is not included in the sync limit (`--sync-limit`), has already been deleted on the server (404 Not Found), and has not been modified locally, that local cache file is automatically deleted.
 
-- **コマンド実行とキャッシュの自動更新:**
-  - `create` (posts, categories, tags) や `upload` (media) を実行すると、成功と同時にローカルキャッシュが **自動的に作成されます**。これにより、作成後すぐにローカルで編集を開始し、`push` コマンドで変更を反映できます。
-  - `delete` (posts, categories, tags, media) を実行すると、サーバーでの削除成功時にローカルキャッシュも **自動的に削除されます**。サーバー上で対象が既に存在しない（404）場合も、ローカルキャッシュはクリーンアップされます。
-  - ローカルファイルの編集内容をサーバーに反映するには `push <id>` を、サーバー側の変更をローカルに取り込むには `sync` を使用します。
+- **Command Execution and Automatic Cache Updates:**
+  - When `create` (posts, categories, tags) or `upload` (media) is executed successfully, the local cache is **automatically created**. This allows you to start editing locally immediately and apply changes with the `push` command.
+  - When `delete` (posts, categories, tags, media) is executed, the local cache is **automatically deleted** upon successful deletion on the server. If the target already doesn't exist on the server (404), the local cache is also cleaned up.
+  - Use `push <id>` to apply local file edits to the server, and `sync` to pull server-side changes locally.
 
-### ローカルで編集可能なファイル
+### Locally Editable Files
 
-ユーザーが直接編集するのは以下のファイルです。
+Users should directly edit the following files:
 
-- `categories/[ID]-[名前].yaml`: カテゴリの `name`, `slug`, `description` を変更できます。参照用として公開URLが `url` に表示されますが、この項目を編集しても反映されません。
-  - **新規作成:** このディレクトリに新しいYAMLファイルを追加し（`id`は`0`か未指定）、`posts sync`を実行すると、サーバーに新しいカテゴリが作成されます。
-  - **削除:** このファイルを削除しても、サーバー上のカテゴリは削除されません。削除は `categories delete <id>` コマンドを使用してください。
-- `tags/[ID]-[名前].yaml`: タグの `name`, `slug`, `description` を変更できます。参照用として公開URLが `url` に表示されますが、この項目を編集しても反映されません。
-  - **新規作成:** `categories` と同様の手順で新しいタグを作成できます。
-  - **削除:** このファイルを削除しても、サーバー上のタグは削除されません。削除は `tags delete <id>` コマンドを使用してください。
-- `media/[ID]-[ファイル名].yaml`: メディアの `title`, `alt_text`, `caption`, `description` を変更できます。参照用として添付ファイルページへのURLが `url` に、メディアファイルへの直接リンクが `source_url` に表示されますが、これらの項目を編集しても反映されません。これらの項目は、値が空であっても常にYAMLファイルに表示されます。
-- `posts/[ID]-[タイトル].md`: 投稿のメタデータと本文を格納する単一のファイルです。このファイルを編集することで、投稿のすべてを変更できます。
-    - **メタデータ:** ファイル先頭の `---` で区切られたYAMLフロントマターブロックを編集します。`title`, `slug`, `status` などの標準的なフィールドに加えて、`meta` ブロックを記述することで、任意のカスタムフィールドを管理できます。参照用として投稿の公開URLが `url` に表示されますが、この項目を編集しても反映されません。
-        - **`meta` ブロックの使用法:**
+- `categories/[ID]-[Name].yaml`: You can change the `name`, `slug`, and `description` of a category. The public URL is displayed as `url` for reference, but editing this field has no effect.
+  - **Creation:** Add a new YAML file to this directory (with `id` as `0` or unspecified) and run `posts sync` to create a new category on the server.
+  - **Deletion:** Deleting this file does not delete the category on the server. Use the `categories delete <id>` command for deletion.
+- `tags/[ID]-[Name].yaml`: You can change the `name`, `slug`, and `description` of a tag. The public URL is displayed as `url` for reference, but editing it has no effect.
+  - **Creation:** Follow the same procedure as for categories to create a new tag.
+  - **Deletion:** Deleting this file does not delete the tag on the server. Use the `tags delete <id>` command.
+- `media/[ID]-[Filename].yaml`: You can change the `title`, `alt_text`, `caption`, and `description` of media. The URL to the attachment page (`url`) and a direct link to the media file (`source_url`) are displayed for reference, but editing them has no effect. These fields will always be present in the YAML file, even if their value is empty.
+- `posts/[ID]-[Title].md`: A single file containing the post's metadata and body. You can change everything about the post by editing this file.
+    - **Metadata:** Edit the YAML front-matter block enclosed by `---`. In addition to standard fields like `title`, `slug`, and `status`, you can manage arbitrary custom fields by writing a `meta` block.
+        - **`meta` Block Usage:**
             ```yaml
             meta:
               my_custom_field: "some value"
               another_field: 123
             ```
-        - **注意:** `meta` ブロックで追加したカスタムフィールドをサーバーに保存するには、あらかじめWordPress側で `register_post_meta` 関数を使い、そのフィールドをREST APIに登録しておく必要があります。
-        - **予約フィールド:** `_md_source` は `editMode: markdown` の際に本文を格納するために内部的に使用されるため、`meta` ブロック内で手動で設定しないでください。
-    - **`date` フィールド:** `yyyy-MM-dd HH:mm:ss` の形式で、**ローカルタイムゾーン**の時刻として指定します。サーバーとの間で日時の同期を行う際、タイムゾーンは自動的に変換されます。不正な形式で指定すると、エラーが検出され処理は中断します。
-    - **本文:** YAMLフロントマターブロック以降の内容が、投稿の本文となります。
-    - **`categories` と `tags` の指定方法:** 投稿にカテゴリーやタグを関連付けるには、以下のいずれかの形式で指定します。
-      - **`ID-Name` 形式 (推奨):** `142-アクションカム` のように、IDと名前をハイフンで繋げた形式です。同期時に `ID-Name` 形式でファイルが生成されるため、この形式をコピーして使うのが最も確実です。
-      - **IDのみ:** `142` のように、数値のIDだけで指定することも可能です。
-    - **入力値の検証:** `push` または `sync` を実行する際、指定されたIDがローカルキャッシュに存在しない場合はエラーとなり、処理は中断されます。これにより、意図しないカテゴリーやタグが設定されるのを防ぎます。名前やスラッグだけでの指定は、曖昧さを排除するためにサポートされなくなりました。
-    - **注意:** ローカルで新しい投稿ファイルを作成して `posts sync` を実行しても、サーバーに新規投稿として作成することはできません。新規投稿は `posts create` コマンドを使用してください。
+        - **Note:** To save custom fields added in the `meta` block to the server, you must first register them for the REST API on the WordPress side using the `register_post_meta` function.
+        - **Reserved Field:** `_md_source` is used internally to store the body content when `editMode: markdown`, so do not set it manually in the `meta` block.
+    - **`date` Field:** Specify the time in `yyyy-MM-dd HH:mm:ss` format in your **local timezone**. The timezone is automatically converted when syncing dates with the server. If specified in an invalid format, an error will be detected and the process will be aborted.
+    - **Body:** The content after the YAML front-matter block becomes the post's body.
+    - **Specifying `categories` and `tags`:** To associate categories or tags with a post, use one of the following formats:
+      - **`ID-Name` Format (Recommended):** A format connecting the ID and name with a hyphen, like `142-Action-Cams`. Since files are generated in this format during sync, copying and using this format is the most reliable method.
+      - **ID only:** You can also specify just the numeric ID, like `142`.
+    - **Input Validation:** When running `push` or `sync`, if a specified ID does not exist in the local cache, an error occurs, and the process is aborted. This prevents unintended categories or tags from being set. Specification by name or slug alone is no longer supported to eliminate ambiguity.
+    - **Note:** Creating a new post file locally and running `posts sync` will not create a new post on the server. Use the `posts create` command for new posts.
 
-**注意:** `_editable.yaml` から項目（例: `slug:` の行）を削除した場合、その項目は**更新対象から外れる**だけで、サーバー上の値が空になるわけではありません。値を空にしたい場合は `slug: ''` のように明示的に空の値を設定してください。
+**Note:** If you delete an item from an editable YAML file (e.g., the `slug:` line), that item is only **excluded from being updated**; it does not clear the value on the server. If you want to clear the value, explicitly set an empty value, like `slug: ''`.
 
-## 出力形式
+## Output Format
 
-`--format table|json|raw` で切り替え可能です。省略時は `table`。
+Can be switched with `--format table|json|raw`. The default is `table`.
 
-## ドキュメント表示
+## Displaying Documentation
 
-`wpai docs` または `wpai --help` で、このREADMEファイルの内容が表示されます。
+`wpai docs` or `wpai --help` will display the contents of this README file.
 
-## トラブルシューティング
+## Troubleshooting
 
-- 「No connections registered」: `wpai connections add` で接続を登録してください。
-- `rest_forbidden_context` などの 401/403 エラー: 認証情報（アプリケーションパスワードやJWTトークン）に誤りがあるか、必要な権限が無い、または期限切れです。新しい認証情報で接続を再登録してください。
-- **アプリケーションパスワードで403エラーが出る場合:** クライアント側の問題ではなく、Webサーバー(Apacheなど)が `Authorization` ヘッダーをWordPressに渡していない可能性があります。WordPressルートにある `.htaccess` ファイルに以下のいずれかの設定を追記して解決するか試してください。
-  - **解決策1:** `CGIPassAuth On`
-  - **解決策2:** `RewriteEngine On`, `RewriteCond %{HTTP:Authorization} ^(.*)`, `RewriteRule .* - [e=HTTP_AUTHORIZATION:%1]`
-- `media upload` で「このファイルタイプをアップロードする権限がありません」エラー: WordPressのセキュリティプラグインやテーマ、マルチサイト設定などで、アップロード可能なファイルの種類が制限されている可能性があります。
-- `posts sync` で「Cache path is not configured」エラー: `wpai connections update <name> --cache-path <PATH>` でキャッシュディレクトリを設定してください。
+- "No connections registered": Register a connection with `wpai connections add`.
+- 401/403 errors like `rest_forbidden_context`: The authentication credentials (Application Password or JWT token) are incorrect, lack necessary permissions, or have expired. Re-register the connection with new credentials.
+- **If you get a 403 error with an Application Password:** This is likely not a client-side issue but a server-side one where the webserver (like Apache) is not passing the `Authorization` header to WordPress. Try adding one of the following settings to the `.htaccess` file in your WordPress root to resolve it.
+  - **Solution 1:** `CGIPassAuth On`
+  - **Solution 2:** `RewriteEngine On`, `RewriteCond %{HTTP:Authorization} ^(.*)`, `RewriteRule .* - [e=HTTP_AUTHORIZATION:%1]`
+- "Sorry, you are not allowed to upload this file type" error on `media upload`: Your ability to upload certain file types may be restricted by a security plugin, theme, or multisite settings in WordPress.
+- "Cache path is not configured" error on `posts sync`: Set a cache directory with `wpai connections update <name> --cache-path <PATH>`.
 
-## 補完スクリプト
+## Completion Scripts
 
 ```
 # PowerShell
@@ -384,4 +386,4 @@ wpai completion --shell bash > /etc/bash_completion.d/wpai
 # Zsh
 wpai completion --shell zsh > ~/.zfunc/_wpai
 ```
-対応シェル: bash / zsh / PowerShell。
+Supported shells: bash / zsh / PowerShell.
