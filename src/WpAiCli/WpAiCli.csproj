@@ -16,7 +16,7 @@
 
     <!-- NuGetパッケージのメタデータ -->
     <PackageId>WpAiCli</PackageId>
-    <Version>1.0.3</Version>
+    <Version>1.0.4</Version>
     <Authors>Hiroaki Hayase</Authors>
     <Description>A CLI tool to manage WordPress posts and media, designed for easy AI assistance.</Description>
     <PackageTags>wordpress;cli;automation;ai</PackageTags>
