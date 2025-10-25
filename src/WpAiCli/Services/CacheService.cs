@@ -122,12 +122,13 @@ public class CacheService
     };
     
     private static readonly ISerializer YamlSerializer = new SerializerBuilder()
-        .WithNamingConvention(CamelCaseNamingConvention.Instance)
+        .WithNamingConvention(NullNamingConvention.Instance)
         .ConfigureDefaultValuesHandling(DefaultValuesHandling.Preserve)
         .Build();
 
     private static readonly IDeserializer YamlDeserializer = new DeserializerBuilder()
-        .WithNamingConvention(CamelCaseNamingConvention.Instance)
+        .WithNamingConvention(NullNamingConvention.Instance)
+        .IgnoreUnmatchedProperties()
         .Build();
 
     // Cache for parsed content (Title, Content) to avoid re-reading files
