@@ -1242,10 +1242,32 @@ public class Program
 
     static int HandleConnectionsUpdate(ParsedOptions parsed)
     {
+        if (parsed.GetBool("help", defaultValue: false) || parsed.GetBool("h", defaultValue: false))
+        {
+            Console.WriteLine("Usage: wpai connections update <name> [options]");
+            Console.WriteLine("\nUpdates an existing connection.");
+            Console.WriteLine("\nArguments:");
+            Console.WriteLine("  <name>             The name of the connection to update.");
+            Console.WriteLine("\nOptions:");
+            Console.WriteLine("  --base-url <url>   Update the WordPress site URL.");
+            Console.WriteLine("  --auth-method <method>");
+            Console.WriteLine("                     Update the authentication method (ApplicationPassword|Jwt).");
+            Console.WriteLine("  --username <user>  Update the username for Application Password auth.");
+            Console.WriteLine("  --password <pass>  Update the Application Password.");
+            Console.WriteLine("  --jwt-token <token>  Update the JWT token.");
+            Console.WriteLine("  --cache-path <path> Update the local cache directory path.");
+            Console.WriteLine("  --sync-limit <num> Update the number of items to fetch during sync.");
+            Console.WriteLine("  --markdown-conversion <mode>");
+            Console.WriteLine("                     Update the Markdown conversion mode (client|server).");
+            Console.WriteLine("  --help, -h         Show this help message.");
+            return (int)ExitCode.Success;
+        }
+
         var name = parsed.Positionals.FirstOrDefault();
         if (string.IsNullOrWhiteSpace(name))
         {
             Console.Error.WriteLine("Specify the name of the connection to update.");
+            Console.Error.WriteLine("Use 'wpai connections update --help' for more information.");
             return (int)ExitCode.InvalidArguments;
         }
 
