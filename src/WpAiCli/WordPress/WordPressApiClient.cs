@@ -13,7 +13,7 @@ namespace WpAiCli.WordPress;
 
 public sealed class WordPressApiClient
 {
-    private const string DefaultBaseUrl = "https://aroooy.net/?rest_route=/wp/v2";
+    private const string DefaultBaseUrl = "https://example.com/?rest_route=/wp/v2";
 
     // Fields constants for reuse
     private const string PostSummaryFields = "id,date,date_gmt,guid,modified,modified_gmt,slug,status,type,link,title";
