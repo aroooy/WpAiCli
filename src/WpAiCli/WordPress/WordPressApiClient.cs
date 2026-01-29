@@ -395,13 +395,22 @@ public sealed class WordPressApiClient
             throw new InvalidOperationException("WordPress API returned an empty response body.");
         }
 
-        var result = JsonSerializer.Deserialize<T>(payload, JsonOptions);
-        if (result is null)
+        try
         {
-            throw new InvalidOperationException("Failed to deserialize WordPress API response.");
+            var result = JsonSerializer.Deserialize<T>(payload, JsonOptions);
+            if (result is null)
+            {
+                throw new InvalidOperationException("Failed to deserialize WordPress API response.");
+            }
+            return result;
         }
-
-        return result;
+        catch (JsonException ex)
+        {
+            // Write the problematic payload to a file for debugging.
+            File.WriteAllText("debug_response.json", payload);
+            // Re-throw the exception with the payload for debugging purposes.
+            throw new JsonException($"Failed to deserialize JSON. The problematic response has been saved to debug_response.json. Payload: {payload}", ex);
+        }
     }
 
     private string BuildUrl(string relativePath)

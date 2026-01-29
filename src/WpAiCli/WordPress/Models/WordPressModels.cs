@@ -104,6 +104,7 @@ public sealed class WordPressPostDetail : WordPressPostBase
     [JsonPropertyName("generated_slug")]
     public string? GeneratedSlug { get; set; }
 
+    [JsonIgnore]
     [JsonPropertyName("class_list")]
     public IReadOnlyList<string>? ClassList { get; set; }
 
