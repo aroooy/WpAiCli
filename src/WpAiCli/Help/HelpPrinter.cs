@@ -1,4 +1,4 @@
-﻿namespace WpAiCli.Help;
+namespace WpAiCli.Help;
 
 public static class HelpPrinter
 {

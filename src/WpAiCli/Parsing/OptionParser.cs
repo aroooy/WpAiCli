@@ -1,4 +1,4 @@
-﻿namespace WpAiCli.Parsing;
+namespace WpAiCli.Parsing;
 
 public sealed class ParsedOptions
 {

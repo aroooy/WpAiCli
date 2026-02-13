@@ -1,4 +1,4 @@
-﻿namespace WpAiCli.Configuration;
+namespace WpAiCli.Configuration;
 
 public enum ExitCode
 {

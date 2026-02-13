@@ -1,4 +1,4 @@
-﻿namespace WpAiCli.Completion;
+namespace WpAiCli.Completion;
 
 public static class CompletionScriptGenerator
 {

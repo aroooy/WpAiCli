@@ -1,4 +1,4 @@
-﻿namespace WpAiCli.Services;
+namespace WpAiCli.Services;
 
 public static class ContentLoader
 {

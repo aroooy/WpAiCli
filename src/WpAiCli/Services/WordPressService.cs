@@ -1,4 +1,4 @@
-﻿using WpAiCli.WordPress;
+using WpAiCli.WordPress;
 using WpAiCli.WordPress.Models;
 
 namespace WpAiCli.Services;
