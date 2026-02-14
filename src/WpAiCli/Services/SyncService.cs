@@ -1,4 +1,3 @@
-
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -407,7 +406,7 @@ public class SyncService
                     {
                         // It's confirmed deleted on the server. Delete locally.
                         _cacheService.DeleteMediaFromCache(id);
-                        report.DeletedMediaFromLocal.Add(id);
+                        report.DeletedFromLocal.Add(id);
                     }
                     catch (Exception ex)
                     {
@@ -655,37 +654,36 @@ public class SyncService
         return true;
     }
 
-    public async Task ResolveConflictAsync(string type, int id, string strategy, ConnectionProfile profile, CancellationToken cancellationToken)
+    public async Task<string> ResolveConflictAsync(string type, int id, string strategy, ConnectionProfile profile, CancellationToken cancellationToken)
     {
         switch (type.ToLowerInvariant())
         {
             case "post":
-                await ResolvePostConflictAsync(id, strategy, profile, cancellationToken);
-                break;
+                return await ResolvePostConflictAsync(id, strategy, profile, cancellationToken);
             case "category":
             case "tag":
                 // TODO: Implement taxonomy conflict resolution
-                await ResolveTaxonomyConflictAsync(type, id, strategy, cancellationToken);
-                break;
+                return await ResolveTaxonomyConflictAsync(type, id, strategy, cancellationToken);
             default:
                 throw new ArgumentException($"Unsupported conflict type: {type}");
         }
     }
 
-    private async Task ResolvePostConflictAsync(int id, string strategy, ConnectionProfile profile, CancellationToken cancellationToken)
+    private async Task<string> ResolvePostConflictAsync(int id, string strategy, ConnectionProfile profile, CancellationToken cancellationToken)
     {
         if (profile is null)
         {
             throw new ArgumentNullException(nameof(profile));
         }
 
-        Console.WriteLine($"Resolving conflict for post {id} with strategy: {strategy}...");
+        var sb = new StringBuilder();
+        sb.AppendLine($"Resolving conflict for post {id} with strategy: {strategy}...");
 
         if (strategy == "server-wins")
         {
             var remotePost = await _wpService.GetPostAsync(id, cancellationToken);
             _cacheService.SavePostToCache(remotePost);
-            Console.WriteLine($"Conflict resolved. Local post {id} was overwritten with the server version.");
+            sb.AppendLine($"Conflict resolved. Local post {id} was overwritten with the server version.");
         }
         else if (strategy == "local-wins")
         {
@@ -693,13 +691,13 @@ public class SyncService
                 ?? throw new InvalidOperationException($"Could not read local post data for {id}. Cannot push local changes.");
 
             var request = new WordPressUpdatePostRequest();
-            var meta = localPost.Metadata;
+            var localEditableMeta = localPost.Metadata;
 
             // Initialize Meta from local file, then add/overwrite internal fields
-            var metaForRequest = meta.Meta ?? new Dictionary<string, object?>();
+            var metaForRequest = localEditableMeta.Meta ?? new Dictionary<string, object?>();
 
             // Handle content based on edit mode
-            var editMode = meta.EditMode ?? "html";
+            var editMode = localEditableMeta.EditMode ?? "html";
             var conversion = profile.MarkdownConversion ?? "client";
 
             if (editMode == "markdown")
@@ -714,27 +712,27 @@ public class SyncService
 
             request.Meta = metaForRequest;
 
-            request.Title = meta.Title;
-            request.Slug = meta.Slug;
-            request.Status = meta.Status;
-            if (DateTime.TryParse(meta.Date, out var localDate))
+            request.Title = localEditableMeta.Title;
+            request.Slug = localEditableMeta.Slug;
+            request.Status = localEditableMeta.Status;
+            if (DateTime.TryParse(localEditableMeta.Date, out var localDate))
             {
                 request.Date = localDate;
             }
-            request.Excerpt = meta.Excerpt;
-            request.FeaturedMedia = meta.FeaturedMedia;
-            request.CommentStatus = meta.CommentStatus;
-            request.PingStatus = meta.PingStatus;
+            request.Excerpt = localEditableMeta.Excerpt;
+            request.FeaturedMedia = localEditableMeta.FeaturedMedia;
+            request.CommentStatus = localEditableMeta.CommentStatus;
+            request.PingStatus = localEditableMeta.PingStatus;
 
             var (allCategories, allTags) = _cacheService.GetTaxonomies();
             var validCategoryIds = new HashSet<int>(allCategories.Select(c => c.Id));
             var validTagIds = new HashSet<int>(allTags.Select(t => t.Id));
 
-            if (!TryResolveTaxonomyIds(id, meta.Categories, validCategoryIds, "Category", out var categoryIds, out var catError))
+            if (!TryResolveTaxonomyIds(id, localEditableMeta.Categories, validCategoryIds, "Category", out var categoryIds, out var catError))
             {
                 throw new InvalidOperationException(catError!);
             }
-            if (!TryResolveTaxonomyIds(id, meta.Tags, validTagIds, "Tag", out var tagIds, out var tagError))
+            if (!TryResolveTaxonomyIds(id, localEditableMeta.Tags, validTagIds, "Tag", out var tagIds, out var tagError))
             {
                 throw new InvalidOperationException(tagError!);
             }
@@ -744,15 +742,17 @@ public class SyncService
 
             var updatedPost = await _wpService.UpdatePostAsync(id, request, cancellationToken);
             _cacheService.SavePostToCache(updatedPost);
-            Console.WriteLine($"Conflict resolved. Server post {id} was overwritten with the local version.");
+            sb.AppendLine($"Conflict resolved. Server post {id} was overwritten with the local version.");
         }
 
         _cacheService.OrganizePostFiles();
+        return sb.ToString();
     }
 
-    private async Task ResolveTaxonomyConflictAsync(string type, int id, string strategy, CancellationToken cancellationToken)
+    private async Task<string> ResolveTaxonomyConflictAsync(string type, int id, string strategy, CancellationToken cancellationToken)
     {
-        Console.WriteLine($"Resolving conflict for {type} {id} with strategy: {strategy}...");
+        var sb = new StringBuilder();
+        sb.AppendLine($"Resolving conflict for {type} {id} with strategy: {strategy}...");
 
         if (strategy == "server-wins")
         {
@@ -766,7 +766,7 @@ public class SyncService
                 var remoteTerm = await _wpService.GetTagAsync(id, cancellationToken);
                 await _cacheService.UpdateLocalTaxonomyTermAsync(remoteTerm);
             }
-            Console.WriteLine($"Conflict resolved. Local {type} {id} was overwritten with the server version.");
+            sb.AppendLine($"Conflict resolved. Local {type} {id} was overwritten with the server version.");
         }
         else if (strategy == "local-wins")
         {
@@ -788,7 +788,8 @@ public class SyncService
                 var updatedTerm = await _wpService.UpdateTagAsync(id, request, cancellationToken);
                 await _cacheService.UpdateLocalTaxonomyTermAsync(updatedTerm, updateHashOnly: true);
             }
-            Console.WriteLine($"Conflict resolved. Server {type} {id} was overwritten with the local version.");
+            sb.AppendLine($"Conflict resolved. Server {type} {id} was overwritten with the local version.");
         }
+        return sb.ToString();
     }
 }

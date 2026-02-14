@@ -1,5 +1,9 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System;
 
 namespace WpAiCli.Configuration;
 
@@ -61,6 +65,15 @@ public sealed class ConnectionStore
 
         using var stream = File.Create(path);
         JsonSerializer.Serialize(stream, model, SerializerOptions);
+    }
+
+    public ConnectionProfile? GetActiveProfile()
+    {
+        if (string.IsNullOrWhiteSpace(ActiveConnection))
+        {
+            return null;
+        }
+        return Profiles.FirstOrDefault(p => string.Equals(p.Name, ActiveConnection, StringComparison.OrdinalIgnoreCase));
     }
 
     private static string GetStorePath()

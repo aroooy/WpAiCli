@@ -1,6 +1,10 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using WpAiCli.WordPress.Models;
+using System.IO;
+using System.Collections.Generic;
+using System.Linq;
+using System;
 
 namespace WpAiCli.Output;
 
@@ -11,7 +15,7 @@ public enum OutputFormat
     Raw
 }
 
-public static class OutputFormatter
+public static partial class OutputFormatter
 {
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
@@ -410,5 +414,85 @@ public static class OutputFormatter
         }
 
         return title;
+    }
+}
+
+public static partial class OutputFormatter
+{
+    public static string FormatPosts(IEnumerable<WordPressPostBase> posts, OutputFormat format)
+    {
+        using var writer = new StringWriter();
+        WritePosts(posts, format, writer);
+        return writer.ToString();
+    }
+
+    public static string FormatPost(WordPressPostDetail post, OutputFormat format)
+    {
+        using var writer = new StringWriter();
+        WritePost(post, format, writer);
+        return writer.ToString();
+    }
+
+    public static string FormatCategories(IEnumerable<WordPressCategory> categories, OutputFormat format)
+    {
+        using var writer = new StringWriter();
+        WriteCategories(categories, format, writer);
+        return writer.ToString();
+    }
+
+    public static string FormatCategory(WordPressCategory category, OutputFormat format)
+    {
+        using var writer = new StringWriter();
+        WriteCategory(category, format, writer);
+        return writer.ToString();
+    }
+
+    public static string FormatTags(IEnumerable<WordPressTag> tags, OutputFormat format)
+    {
+        using var writer = new StringWriter();
+        WriteTags(tags, format, writer);
+        return writer.ToString();
+    }
+
+    public static string FormatTag(WordPressTag tag, OutputFormat format)
+    {
+        using var writer = new StringWriter();
+        WriteTag(tag, format, writer);
+        return writer.ToString();
+    }
+
+    public static string FormatDeleteResponse(WordPressDeleteResponse response, OutputFormat format)
+    {
+        using var writer = new StringWriter();
+        WriteDeleteResponse(response, format, writer);
+        return writer.ToString();
+    }
+
+    public static string FormatRevisions(IReadOnlyList<WordPressRevision> revisions, OutputFormat format)
+    {
+        using var writer = new StringWriter();
+        WriteRevisions(revisions, format, writer);
+        return writer.ToString();
+    }
+
+    public static string FormatRevision(WordPressRevision revision, OutputFormat format)
+    {
+        using var writer = new StringWriter();
+        WriteRevision(revision, format, writer);
+        return writer.ToString();
+    }
+
+    public static string FormatMediaItems(IReadOnlyList<WordPressMedia> mediaItems, OutputFormat format)
+    {
+        using var writer = new StringWriter();
+        WriteMediaItems(mediaItems, format, writer);
+        return writer.ToString();
+    }
+
+    public static string FormatMediaItem(WordPressMedia item, OutputFormat format)
+    {
+        using var writer = new StringWriter();
+        WriteMediaItem(item, format, writer);
+        return writer.ToString();
     }
 }

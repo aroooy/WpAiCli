@@ -9,13 +9,18 @@ using System.Linq;
 using WpAiCli.Output;
 using WpAiCli.Services;
 using WpAiCli.WordPress.Models;
+using Markdig;
+using System;
+using System.Threading.Tasks;
+using System.Threading;
+using System.Collections.Generic;
 
-// クラス自体をツールコンテナとしてマーク
+// Marks the class as a tool container
 [McpServerToolType]
-public static class WordPressMcpTools
+public static partial class WordPressMcpTools
 {
     [McpServerTool]
-    [Description("登録されているWordPressサイトへの接続の一覧を表示します。")]
+    [Description("Displays a list of registered WordPress site connections.")]
     public static Task<string> ListConnections(
         IServiceProvider services
     )
@@ -48,34 +53,23 @@ public static class WordPressMcpTools
     }
 
     [McpServerTool]
-    [Description("操作対象とする接続（アクティブな接続）を、名前または番号で切り替えます。")]
+    [Description("Switches the active connection by name.")]
     public static Task<string> SetActiveConnection(
-        [Description("アクティブに設定する接続の名前または1から始まる番号。")]
-        string nameOrNumber,
+        [Description("The name of the connection to set as active.")]
+        string name,
         IServiceProvider services
     )
     {
         var store = ConnectionStore.Load();
-        if (string.IsNullOrWhiteSpace(nameOrNumber))
+        if (string.IsNullOrWhiteSpace(name))
         {
-            return Task.FromResult("Error: Connection name or number is required. Use ListConnections to see available options.");
+            return Task.FromResult("Error: Connection name is required. Use ListConnections to see available options.");
         }
 
-        ConnectionProfile? profile = null;
-
-        // Try to parse as number first
-        if (int.TryParse(nameOrNumber, out var choice) && choice >= 1 && choice <= store.Profiles.Count)
+        var profile = store.Profiles.FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase));
+        if (profile is null)
         {
-            profile = store.Profiles[choice - 1];
-        }
-        else
-        {
-            // Fallback to parsing as name
-            profile = store.Profiles.FirstOrDefault(p => string.Equals(p.Name, nameOrNumber, StringComparison.OrdinalIgnoreCase));
-            if (profile is null)
-            {
-                return Task.FromResult($"Error: Connection '{nameOrNumber}' not found.");
-            }
+            return Task.FromResult($"Error: Connection '{name}' not found.");
         }
 
         store.ActiveConnection = profile.Name;
@@ -85,17 +79,17 @@ public static class WordPressMcpTools
     }
 
     [McpServerTool]
-    [Description("新しいWordPressサイトへの接続を登録します。")]
+    [Description("Registers a new connection to a WordPress site.")]
     public static Task<string> AddConnection(
-        [Description("接続の任意の名前。")] string name,
-        [Description("WordPress REST APIのベースURL。")] string baseUrl,
-        [Description("認証方法 ('ApplicationPassword' または 'Jwt')。デフォルトは 'ApplicationPassword'。")] string? authMethod,
-        [Description("ApplicationPassword認証用のWordPressユーザー名。")] string? username,
-        [Description("ApplicationPassword認証用のアプリケーションパスワード。")] string? password,
-        [Description("Jwt認証用のJWTトークン。")] string? jwtToken,
-        [Description("ローカルキャッシュのパス。省略時は './wp-cache'。")] string? cachePath,
-        [Description("同期間に取得するアイテム数の上限。")] int? syncLimit,
-        [Description("Markdown変換モード ('client' または 'server')。")] string? markdownConversion,
+        [Description("An arbitrary name for the connection.")] string name,
+        [Description("The base URL of the WordPress REST API.")] string baseUrl,
+        [Description("Authentication method ('ApplicationPassword' or 'Jwt'). Defaults to 'ApplicationPassword'.")] string? authMethod,
+        [Description("WordPress username for ApplicationPassword authentication.")] string? username,
+        [Description("Application password for ApplicationPassword authentication.")] string? password,
+        [Description("JWT token for Jwt authentication.")] string? jwtToken,
+        [Description("Path to the local cache. Defaults to './wp-cache'.")] string? cachePath,
+        [Description("The maximum number of items to fetch during synchronization.")] int? syncLimit,
+        [Description("Markdown conversion mode ('client' or 'server').")] string? markdownConversion,
         IServiceProvider services
     )
     {
@@ -187,17 +181,17 @@ public static class WordPressMcpTools
     }
 
     [McpServerTool]
-    [Description("既存の接続設定を更新します。")]
+    [Description("Updates an existing connection's settings.")]
     public static Task<string> UpdateConnection(
-        [Description("更新する接続の名前。")] string name,
-        [Description("新しいWordPress REST APIのベースURL。")] string? baseUrl,
-        [Description("新しい認証方法 ('ApplicationPassword' または 'Jwt')。")] string? authMethod,
-        [Description("新しいApplicationPassword認証用のWordPressユーザー名。")] string? username,
-        [Description("新しいApplicationPassword認証用のアプリケーションパスワード。")] string? password,
-        [Description("新しいJwt認証用のJWTトークン。")] string? jwtToken,
-        [Description("新しいローカルキャッシュのパス。")] string? cachePath,
-        [Description("新しい同期間に取得するアイテム数の上限。")] string? syncLimitStr,
-        [Description("新しいMarkdown変換モード ('client' または 'server')。")] string? markdownConversion,
+        [Description("The name of the connection to update.")] string name,
+        [Description("The new base URL of the WordPress REST API.")] string? baseUrl,
+        [Description("The new authentication method ('ApplicationPassword' or 'Jwt').")] string? authMethod,
+        [Description("The new WordPress username for ApplicationPassword authentication.")] string? username,
+        [Description("The new application password for ApplicationPassword authentication.")] string? password,
+        [Description("The new JWT token for Jwt authentication.")] string? jwtToken,
+        [Description("The new path to the local cache.")] string? cachePath,
+        [Description("The new maximum number of items to fetch during synchronization.")] string? syncLimitStr,
+        [Description("The new Markdown conversion mode ('client' or 'server').")] string? markdownConversion,
         IServiceProvider services
         )
     {
@@ -315,10 +309,10 @@ public static class WordPressMcpTools
     }
 
     [McpServerTool]
-    [Description("登録済みの接続を、名前または番号で削除します。")]
+    [Description("Deletes a registered connection by name.")]
     public static Task<string> RemoveConnection(
-        [Description("削除する接続の名前または1から始まる番号。")]
-        string nameOrNumber,
+        [Description("The name of the connection to delete.")]
+        string name,
         IServiceProvider services
     )
     {
@@ -328,27 +322,14 @@ public static class WordPressMcpTools
             return Task.FromResult("No connections available to remove.");
         }
 
-        ConnectionProfile? profile = null;
-        int profileIndex = -1;
-
-        // Try to parse as number first
-        if (int.TryParse(nameOrNumber, out var choice) && choice >= 1 && choice <= store.Profiles.Count)
+        var profile = store.Profiles.FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase));
+        if (profile is null)
         {
-            profileIndex = choice - 1;
-            profile = store.Profiles[profileIndex];
-        }
-        else
-        {
-            // Fallback to parsing as name
-            profile = store.Profiles.FirstOrDefault(p => string.Equals(p.Name, nameOrNumber, StringComparison.OrdinalIgnoreCase));
-            if (profile is null)
-            {
-                return Task.FromResult($"Error: Connection '{nameOrNumber}' not found.");
-            }
-            profileIndex = store.Profiles.IndexOf(profile);
+            return Task.FromResult($"Error: Connection '{name}' not found.");
         }
 
         var profileName = profile.Name;
+        int profileIndex = store.Profiles.IndexOf(profile);
 
         CredentialManager.Delete(profile.CredentialKey);
         store.Profiles.RemoveAt(profileIndex);
@@ -363,24 +344,17 @@ public static class WordPressMcpTools
     }
 
     [McpServerTool]
-    [Description("現在アクティブな接続のキャッシュディレクトリのパスを表示します。")]
+    [Description("Displays the path to the cache directory for the currently active connection.")]
     public static Task<string> ShowCachePath(
         IServiceProvider services
     )
     {
         var store = ConnectionStore.Load();
-        var activeConnectionName = store.ActiveConnection;
-
-        if (string.IsNullOrWhiteSpace(activeConnectionName))
-        {
-            return Task.FromResult("Error: No active connection. Use 'connections active' to set one.");
-        }
-
-        var profile = store.Profiles.FirstOrDefault(p => string.Equals(p.Name, activeConnectionName, StringComparison.OrdinalIgnoreCase));
+        var profile = store.GetActiveProfile();
         
         if (profile is null)
         {
-            return Task.FromResult($"Error: Active connection '{activeConnectionName}' not found in registered profiles.");
+            return Task.FromResult("Error: No active connection. Use 'connections active' to set one.");
         }
 
         if (string.IsNullOrWhiteSpace(profile.CachePath) || string.IsNullOrWhiteSpace(profile.Name))
@@ -395,22 +369,16 @@ public static class WordPressMcpTools
     // --- Sync/Fetch Group ---
 
     [McpServerTool]
-    [Description("投稿とタクソノミー（カテゴリ・タグ）の双方向同期を行います。")]
+    [Description("Performs a two-way synchronization for posts and taxonomies (categories and tags).")]
     public static async Task<string> SyncPosts(IServiceProvider services)
     {
         using var scope = services.CreateScope();
         var syncService = scope.ServiceProvider.GetRequiredService<SyncService>();
         var store = ConnectionStore.Load();
-        
-        var activeConnectionName = store.ActiveConnection;
-        if (string.IsNullOrWhiteSpace(activeConnectionName))
-        {
-            return "Error: No active connection.";
-        }
-        var profile = store.Profiles.FirstOrDefault(p => string.Equals(p.Name, activeConnectionName, StringComparison.OrdinalIgnoreCase));
+        var profile = store.GetActiveProfile();
         if (profile is null)
         {
-            return $"Error: Active connection '{activeConnectionName}' not found.";
+            return "Error: No active connection.";
         }
         
         var sb = new StringBuilder();
@@ -422,7 +390,7 @@ public static class WordPressMcpTools
     }
 
     [McpServerTool]
-    [Description("カテゴリとタグの双方向同期を行います。")]
+    [Description("Performs a two-way synchronization for categories and tags.")]
     public static async Task<string> SyncTaxonomies(IServiceProvider services)
     {
         using var scope = services.CreateScope();
@@ -436,22 +404,16 @@ public static class WordPressMcpTools
     }
 
     [McpServerTool]
-    [Description("メディアライブラリの同期を行います。")]
+    [Description("Performs a synchronization for the media library.")]
     public static async Task<string> SyncMedia(IServiceProvider services)
     {
         using var scope = services.CreateScope();
         var syncService = scope.ServiceProvider.GetRequiredService<SyncService>();
         var store = ConnectionStore.Load();
-        
-        var activeConnectionName = store.ActiveConnection;
-        if (string.IsNullOrWhiteSpace(activeConnectionName))
-        {
-            return "Error: No active connection.";
-        }
-        var profile = store.Profiles.FirstOrDefault(p => string.Equals(p.Name, activeConnectionName, StringComparison.OrdinalIgnoreCase));
+        var profile = store.GetActiveProfile();
         if (profile is null)
         {
-            return $"Error: Active connection '{activeConnectionName}' not found.";
+            return "Error: No active connection.";
         }
 
         var sb = new StringBuilder();
@@ -463,9 +425,9 @@ public static class WordPressMcpTools
     }
 
     [McpServerTool]
-    [Description("指定した投稿のリビジョン（履歴）を全てダウンロードし、ローカルキャッシュに保存します。")]
+    [Description("Downloads all revisions (history) for a specified post and saves them to the local cache.")]
     public static async Task<string> FetchRevisions(
-        [Description("リビジョンを取得する投稿のID。")] int postId,
+        [Description("The ID of the post for which to fetch revisions.")] int postId,
         IServiceProvider services)
     {
         using var scope = services.CreateScope();
@@ -539,16 +501,16 @@ public static class WordPressMcpTools
     // --- Create/Edit Group ---
 
     [McpServerTool]
-    [Description("新しい投稿を作成します。")]
+    [Description("Creates a new post.")]
     public static async Task<string> CreatePost(
-        [Description("投稿のタイトル。")] string title,
-        [Description("投稿の本文。")] string? content,
-        [Description("本文が含まれるファイルへのパス。")] string? contentFile,
-        [Description("公開ステータス (例: 'publish', 'draft')。デフォルトは 'draft'。")] string? status,
-        [Description("編集モード ('markdown' または 'html')。デフォルトは 'markdown'。")] string? editMode,
-        [Description("カテゴリーIDの配列。")] int[]? categories,
-        [Description("タグIDの配列。")] int[]? tags,
-        [Description("アイキャッチ画像のID。")] int? featuredMedia,
+        [Description("The title of the post.")] string title,
+        [Description("The content of the post body.")] string? content,
+        [Description("Path to a file containing the content for the body.")] string? contentFile,
+        [Description("The publication status (e.g., 'publish', 'draft'). Defaults to 'draft'.")] string? status,
+        [Description("The editing mode ('markdown' or 'html'). Defaults to 'markdown'.")] string? editMode,
+        [Description("An array of category IDs.")] int[]? categories,
+        [Description("An array of tag IDs.")] int[]? tags,
+        [Description("The ID of the featured image.")] int? featuredMedia,
         IServiceProvider services
     )
     {
@@ -556,15 +518,10 @@ public static class WordPressMcpTools
         var service = scope.ServiceProvider.GetRequiredService<WordPressService>();
         var cacheService = scope.ServiceProvider.GetRequiredService<CacheService>();
         var store = ConnectionStore.Load();
-        var activeConnectionName = store.ActiveConnection;
-        if (string.IsNullOrWhiteSpace(activeConnectionName))
-        {
-            return "Error: No active connection.";
-        }
-        var profile = store.Profiles.FirstOrDefault(p => string.Equals(p.Name, activeConnectionName, StringComparison.OrdinalIgnoreCase));
+        var profile = store.GetActiveProfile();
         if (profile is null)
         {
-            return $"Error: Active connection '{activeConnectionName}' not found.";
+            return "Error: No active connection.";
         }
 
         if (string.IsNullOrWhiteSpace(title)) return "Error: --title is required and cannot be empty.";
@@ -608,19 +565,17 @@ public static class WordPressMcpTools
             {
                 cacheService.SavePostToCache(post);
             }
-            using var writer = new StringWriter();
-            OutputFormatter.WritePost(post, OutputFormat.Table, writer);
-            return writer.ToString();
+            return OutputFormatter.FormatPost(post, OutputFormat.Table);
         }
         return "Error: Failed to create post.";
     }
 
     [McpServerTool]
-    [Description("新しいカテゴリを作成します。")]
+    [Description("Creates a new category.")]
     public static async Task<string> CreateCategory(
-        [Description("カテゴリ名。")] string name,
-        [Description("スラッグ。")] string? slug,
-        [Description("説明。")] string? description,
+        [Description("The name of the category.")] string name,
+        [Description("The slug for the category.")] string? slug,
+        [Description("A description for the category.")] string? description,
         IServiceProvider services
     )
     {
@@ -635,17 +590,15 @@ public static class WordPressMcpTools
         
         try { cacheService.SaveCategoryToCache(category); } catch { /* Ignore cache errors */ }
         
-        using var writer = new StringWriter();
-        OutputFormatter.WriteCategory(category, OutputFormat.Table, writer);
-        return writer.ToString();
+        return OutputFormatter.FormatCategory(category, OutputFormat.Table);
     }
 
     [McpServerTool]
-    [Description("新しいタグを作成します。")]
+    [Description("Creates a new tag.")]
     public static async Task<string> CreateTag(
-        [Description("タグ名。")] string name,
-        [Description("スラッグ。")] string? slug,
-        [Description("説明。")] string? description,
+        [Description("The name of the tag.")] string name,
+        [Description("The slug for the tag.")] string? slug,
+        [Description("A description for the tag.")] string? description,
         IServiceProvider services
     )
     {
@@ -660,17 +613,15 @@ public static class WordPressMcpTools
 
         try { cacheService.SaveTagToCache(tag); } catch { /* Ignore cache errors */ }
 
-        using var writer = new StringWriter();
-        OutputFormatter.WriteTag(tag, OutputFormat.Table, writer);
-        return writer.ToString();
+        return OutputFormatter.FormatTag(tag, OutputFormat.Table);
     }
 
     [McpServerTool]
-    [Description("メディアファイルをアップロードします。")]
+    [Description("Uploads a media file.")]
     public static async Task<string> UploadMedia(
-        [Description("アップロードするファイルへのパス。")] string filePath,
-        [Description("メディアアイテムのタイトル。")] string? title,
-        [Description("メディアアイテムの説明。")] string? description,
+        [Description("Path to the file to upload.")] string filePath,
+        [Description("The title for the media item.")] string? title,
+        [Description("The description for the media item.")] string? description,
         IServiceProvider services
     )
     {
@@ -693,17 +644,15 @@ public static class WordPressMcpTools
         }
         catch { /* Ignore cache errors */ }
         
-        using var writer = new StringWriter();
-        OutputFormatter.WriteMediaItem(mediaItem, OutputFormat.Table, writer);
-        return writer.ToString();
+        return OutputFormatter.FormatMediaItem(mediaItem, OutputFormat.Table);
     }
 
     [McpServerTool]
-    [Description("同期の競合を解決します。")]
+    [Description("Resolves a synchronization conflict.")]
     public static async Task<string> ResolveConflict(
-        [Description("競合のタイプ ('post', 'category', 'tag')。")] string type,
-        [Description("競合したアイテムのID。")] int id,
-        [Description("解決戦略 ('local-wins' または 'server-wins')。")] string strategy,
+        [Description("The type of content that conflicted ('post', 'category', 'tag').")] string type,
+        [Description("The ID of the conflicted item.")] int id,
+        [Description("The resolution strategy ('local-wins' or 'server-wins').")] string strategy,
         IServiceProvider services
     )
     {
@@ -715,38 +664,22 @@ public static class WordPressMcpTools
         using var scope = services.CreateScope();
         var syncService = scope.ServiceProvider.GetRequiredService<SyncService>();
         var store = ConnectionStore.Load();
-        var activeConnectionName = store.ActiveConnection;
-        if (string.IsNullOrWhiteSpace(activeConnectionName))
+        var profile = store.GetActiveProfile();
+        if (profile is null)
         {
             return "Error: No active connection.";
         }
-        var profile = store.Profiles.FirstOrDefault(p => string.Equals(p.Name, activeConnectionName, StringComparison.OrdinalIgnoreCase));
-        if (profile is null)
-        {
-            return $"Error: Active connection '{activeConnectionName}' not found.";
-        }
 
-        var originalOut = Console.Out;
-        using var writer = new StringWriter();
-        Console.SetOut(writer);
-        try
-        {
-            await syncService.ResolveConflictAsync(type, id, strategy, profile, CancellationToken.None);
-        }
-        finally
-        {
-            Console.SetOut(originalOut);
-        }
-        return writer.ToString();
+        return await syncService.ResolveConflictAsync(type, id, strategy, profile, CancellationToken.None);
     }
 
     // --- Delete/Organize Group ---
 
     [McpServerTool]
-    [Description("投稿を削除します。")]
+    [Description("Deletes a post.")]
     public static async Task<string> DeletePost(
-        [Description("削除する投稿のID。")] int id,
-        [Description("完全に削除し、ゴミ箱をスキップします。")] bool force,
+        [Description("The ID of the post to delete.")] int id,
+        [Description("Completely delete, bypassing the trash.")] bool force,
         IServiceProvider services
     )
     {
@@ -761,24 +694,20 @@ public static class WordPressMcpTools
             {
                 cacheService.DeletePostFromCache(id);
             }
-            using var writer = new StringWriter();
-            OutputFormatter.WriteDeleteResponse(response, OutputFormat.Table, writer);
-            return writer.ToString();
+            return OutputFormatter.FormatDeleteResponse(response, OutputFormat.Table);
         }
         catch (WpAiCli.WordPress.WordPressApiException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
         {
             cacheService.DeletePostFromCache(id);
-            using var writer = new StringWriter();
-            OutputFormatter.WriteDeleteResponse(new WordPressDeleteResponse { Deleted = true, Previous = ToJsonElementDict(new { title = new { raw = "Unknown (already deleted)" } }) }, OutputFormat.Table, writer);
-            return writer.ToString();
+            return OutputFormatter.FormatDeleteResponse(new WordPressDeleteResponse { Deleted = true, Previous = ToJsonElementDict(new { title = new { raw = "Unknown (already deleted)" } }) }, OutputFormat.Table);
         }
     }
 
     [McpServerTool]
-    [Description("カテゴリを削除します。")]
+    [Description("Deletes a category.")]
     public static async Task<string> DeleteCategory(
-        [Description("削除するカテゴリのID。")] int id,
-        [Description("完全に削除します。")] bool force,
+        [Description("The ID of the category to delete.")] int id,
+        [Description("Delete completely.")] bool force,
         IServiceProvider services
     )
     {
@@ -793,24 +722,20 @@ public static class WordPressMcpTools
             {
                 cacheService.DeleteCategoryFromCache(id);
             }
-            using var writer = new StringWriter();
-            OutputFormatter.WriteDeleteResponse(response, OutputFormat.Table, writer);
-            return writer.ToString();
+            return OutputFormatter.FormatDeleteResponse(response, OutputFormat.Table);
         }
         catch (WpAiCli.WordPress.WordPressApiException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
         {
             cacheService.DeleteCategoryFromCache(id);
-            using var writer = new StringWriter();
-            OutputFormatter.WriteDeleteResponse(new WordPressDeleteResponse { Deleted = true, Previous = ToJsonElementDict(new { name = "Unknown (already deleted)" }) }, OutputFormat.Table, writer);
-            return writer.ToString();
+            return OutputFormatter.FormatDeleteResponse(new WordPressDeleteResponse { Deleted = true, Previous = ToJsonElementDict(new { name = "Unknown (already deleted)" }) }, OutputFormat.Table);
         }
     }
 
     [McpServerTool]
-    [Description("タグを削除します。")]
+    [Description("Deletes a tag.")]
     public static async Task<string> DeleteTag(
-        [Description("削除するタグのID。")] int id,
-        [Description("完全に削除します。")] bool force,
+        [Description("The ID of the tag to delete.")] int id,
+        [Description("Delete completely.")] bool force,
         IServiceProvider services
     )
     {
@@ -825,24 +750,20 @@ public static class WordPressMcpTools
             {
                 cacheService.DeleteTagFromCache(id);
             }
-            using var writer = new StringWriter();
-            OutputFormatter.WriteDeleteResponse(response, OutputFormat.Table, writer);
-            return writer.ToString();
+            return OutputFormatter.FormatDeleteResponse(response, OutputFormat.Table);
         }
         catch (WpAiCli.WordPress.WordPressApiException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
         {
             cacheService.DeleteTagFromCache(id);
-            using var writer = new StringWriter();
-            OutputFormatter.WriteDeleteResponse(new WordPressDeleteResponse { Deleted = true, Previous = ToJsonElementDict(new { name = "Unknown (already deleted)" }) }, OutputFormat.Table, writer);
-            return writer.ToString();
+            return OutputFormatter.FormatDeleteResponse(new WordPressDeleteResponse { Deleted = true, Previous = ToJsonElementDict(new { name = "Unknown (already deleted)" }) }, OutputFormat.Table);
         }
     }
 
     [McpServerTool]
-    [Description("メディアアイテムを削除します。")]
+    [Description("Deletes a media item.")]
     public static async Task<string> DeleteMedia(
-        [Description("削除するメディアアイテムのID。")] int id,
-        [Description("完全に削除し、ゴミ箱をスキップします。")] bool force,
+        [Description("The ID of the media item to delete.")] int id,
+        [Description("Completely delete, bypassing the trash.")] bool force,
         IServiceProvider services
     )
     {
@@ -856,23 +777,19 @@ public static class WordPressMcpTools
             {
                 cacheService.DeleteMediaFromCache(id);
             }
-            using var writer = new StringWriter();
-            OutputFormatter.WriteDeleteResponse(response, OutputFormat.Table, writer);
-            return writer.ToString();
+            return OutputFormatter.FormatDeleteResponse(response, OutputFormat.Table);
         }
         catch (WpAiCli.WordPress.WordPressApiException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
         {
             cacheService.DeleteMediaFromCache(id);
-            using var writer = new StringWriter();
-            OutputFormatter.WriteDeleteResponse(new WordPressDeleteResponse { Deleted = true, Previous = ToJsonElementDict(new { title = new { raw = "Unknown (already deleted)" } }) }, OutputFormat.Table, writer);
-            return writer.ToString();
+            return OutputFormatter.FormatDeleteResponse(new WordPressDeleteResponse { Deleted = true, Previous = ToJsonElementDict(new { title = new { raw = "Unknown (already deleted)" } }) }, OutputFormat.Table);
         }
     }
 
     [McpServerTool]
-    [Description("ローカルのリビジョンキャッシュを削除します。")]
+    [Description("Deletes the local revision cache.")]
     public static Task<string> CleanRevisions(
-        [Description("特定の投稿IDのキャッシュのみを削除する場合に指定。")] int? postId,
+        [Description("Specify a post ID to delete the cache for that post only.")] int? postId,
         IServiceProvider services
     )
     {
@@ -887,7 +804,7 @@ public static class WordPressMcpTools
     }
     
     [McpServerTool]
-    [Description("ローカルの投稿ファイルをステータスに基づいてサブフォルダに整理します。")]
+    [Description("Organizes local post files into subfolders based on their status.")]
     public static Task<string> OrganizePosts(IServiceProvider services)
     {
         using var scope = services.CreateScope();
