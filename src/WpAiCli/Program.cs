@@ -19,6 +19,8 @@ using System.Net.Http;
 using WpAiCli.WordPress;
 using System.Net;
 using System.Reflection;
+using ModelContextProtocol;
+using ModelContextProtocol.Server;
 
 public class Program
 {
@@ -58,6 +60,8 @@ public class Program
                 return HandleCompletion(commandArgs);
             case "export-plugin":
                 return HandleExportPlugin();
+            case "mcp": // MCPコマンドを追加
+                return await HandleMcpAsync(commandArgs);
         }
 
         try
@@ -1642,5 +1646,62 @@ public class Program
             }
         }
         return password.ToString();
+    }
+
+    static async Task<int> HandleMcpAsync(string[] commandArgs)
+    {
+        try
+        {
+            // 1. DIコンテナ (Host) の作成
+            // コンソールアプリ用のビルダーを作成します
+            var builder = Host.CreateApplicationBuilder(commandArgs);
+
+            // 2. ログ設定
+            // MCPは標準出力(Stdout)を通信に使うため、ログが混ざらないように
+            // 標準エラー出力(Stderr)に出すか、無効化する必要があります。
+            builder.Logging.ClearProviders();
+            builder.Logging.AddConsole(options =>
+            {
+                // エラー以上のログのみを標準エラー出力に出す設定
+                options.LogToStandardErrorThreshold = LogLevel.Error;
+            });
+
+            // 3. 既存のサービスの登録
+            // ツールの中からWordPressServiceを使えるようにDIコンテナに登録します
+            var (store, profile, credential) = ResolveConnection();
+
+            builder.Services.AddSingleton(store);
+            builder.Services.AddSingleton(profile);
+            builder.Services.AddHttpClient<WordPressApiClient>();
+            builder.Services.AddSingleton(sp =>
+                new WordPressApiClient(
+                    sp.GetRequiredService<IHttpClientFactory>().CreateClient(nameof(WordPressApiClient)),
+                    profile,
+                    credential
+                ));
+            builder.Services.AddTransient<WordPressService>();
+            builder.Services.AddTransient<CacheService>(sp => new CacheService(profile.CachePath!, profile.Name));
+            builder.Services.AddTransient<SyncService>();
+
+            // 4. MCPサーバーの登録 (ここが以前と違う重要ポイント)
+            builder.Services.AddMcpServer()
+                .WithStdioServerTransport() // 標準入出力で通信
+                .WithToolsFromAssembly(Assembly.GetExecutingAssembly()); // このアセンブリ内の[McpServerTool]を探して登録
+
+            var app = builder.Build();
+
+            // 5. サーバーの開始
+            // Console.Error.WriteLine は標準エラー出力なので通信を邪魔しません
+            Console.Error.WriteLine("MCP server started on Stdio...");
+
+            await app.RunAsync(); // 終了シグナルが来るまで待機
+
+            return (int)ExitCode.Success;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"MCP server error: {ex}");
+            return (int)ExitCode.UnhandledError;
+        }
     }
 }
