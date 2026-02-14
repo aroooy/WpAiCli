@@ -1660,11 +1660,7 @@ public class Program
             // MCPは標準出力(Stdout)を通信に使うため、ログが混ざらないように
             // 標準エラー出力(Stderr)に出すか、無効化する必要があります。
             builder.Logging.ClearProviders();
-            builder.Logging.AddConsole(options =>
-            {
-                // エラー以上のログのみを標準エラー出力に出す設定
-                options.LogToStandardErrorThreshold = LogLevel.Error;
-            });
+
 
             // 3. 既存のサービスの登録
             // ツールの中からWordPressServiceを使えるようにDIコンテナに登録します
@@ -1691,8 +1687,7 @@ public class Program
             var app = builder.Build();
 
             // 5. サーバーの開始
-            // Console.Error.WriteLine は標準エラー出力なので通信を邪魔しません
-            Console.Error.WriteLine("MCP server started on Stdio...");
+            // ここでは何もコンソールに出力しません
 
             await app.RunAsync(); // 終了シグナルが来るまで待機
 
