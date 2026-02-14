@@ -387,3 +387,66 @@ wpai completion --shell bash > /etc/bash_completion.d/wpai
 wpai completion --shell zsh > ~/.zfunc/_wpai
 ```
 Supported shells: bash / zsh / PowerShell.
+
+## MCP (Model Context Protocol) Support
+
+WpAiCli supports the **Model Context Protocol (MCP)**, allowing AI agents (like Claude Desktop) to directly interact with your WordPress sites using WpAiCli's functionality as a set of "Tools."
+
+### 1. Setup for Claude Desktop
+
+To use WpAiCli with Claude Desktop, add the following to your `claude_desktop_config.json`:
+
+**Windows:**
+```json
+{
+  "mcpServers": {
+    "wpai": {
+      "command": "wpai",
+      "args": ["mcp"]
+    }
+  }
+}
+
+```
+
+**macOS / Linux:**
+
+```json
+{
+  "mcpServers": {
+    "wpai": {
+      "command": "dotnet",
+      "args": ["exec", "/path/to/WpAiCli.dll", "mcp"]
+    }
+  }
+}
+
+```
+
+### 2. Available Tools via MCP
+
+Once connected via MCP, the AI can execute the following tasks:
+
+* **Connection Management**: List, switch (`setActiveConnection`), add, update, and remove WordPress site profiles.
+* **Synchronization**: Sync posts, taxonomies (categories/tags), and media library.
+* **Content CRUD**:
+* **Posts**: Create, delete, and organize posts.
+* **Taxonomies**: Create/delete categories and tags.
+* **Media**: Upload and delete media files.
+
+
+* **Advanced Management**:
+* Fetch and clean post revisions.
+* Resolve sync conflicts (`local-wins` or `server-wins`).
+* View local cache paths.
+
+
+
+### 3. Benefits for AI Agents
+
+* **Standardized Interface**: The AI understands the schema of each tool (parameters, descriptions, and required fields).
+* **Context Awareness**: The AI can read your local cache status and server state to make informed decisions about content updates.
+* **Automated Workflows**: You can ask the AI to "Sync the latest posts, edit the draft about AI, and push it back to the server" in a single natural language request.
+
+> **Note:** The MCP server uses the "Active Connection" set in WpAiCli. You can use the `SetActiveConnection` tool via MCP to switch sites dynamically during a session.
+
