@@ -450,3 +450,8 @@ Once connected via MCP, the AI can execute the following tasks:
 
 > **Note:** The MCP server uses the "Active Connection" set in WpAiCli. You can use the `SetActiveConnection` tool via MCP to switch sites dynamically during a session.
 
+### Design Philosophy & MCP Support
+
+WpAiCli has always been designed with an "AI-First" mindset, prioritizing clear command structures and JSON outputs for LLM parsing. 
+
+This MCP implementation allows AI agents to move beyond "predicting" CLI commands to "executing" tools with explicit confidence. By exposing the tool schema directly, the AI can call WordPress functions (like post creation and synchronization) with a high degree of certainty and reduced error rates.
