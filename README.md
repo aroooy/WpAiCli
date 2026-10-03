@@ -8,7 +8,7 @@ WpAiCli is a .NET-based cross-platform CLI tool designed to interact with the Wo
 
 ### Key Features:
 
-- **Secure Credential Storage**: Saves authentication credentials (Application Passwords or JWT tokens) in the Windows Credential Manager or macOS/Linux Secret-Tool.
+- **Secure Credential Storage**: Saves authentication credentials (Application Passwords or JWT tokens) in the Windows Credential Manager, macOS Keychain, or Linux Secret-Tool.
 - **Connection Management**: Register, list, delete, and update connection profiles directly from the CLI.
 - **Full CRUD Support**: Supports create, read, update, and delete commands for posts, categories, tags, and media.
 - **Two-Way Sync & Local Cache**: Provides two-way synchronization for posts and maintains a local cache.

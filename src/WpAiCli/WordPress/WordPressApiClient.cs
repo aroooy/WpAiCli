@@ -406,10 +406,9 @@ public sealed class WordPressApiClient
         }
         catch (JsonException ex)
         {
-            // Write the problematic payload to a file for debugging.
-            File.WriteAllText("debug_response.json", payload);
-            // Re-throw the exception with the payload for debugging purposes.
-            throw new JsonException($"Failed to deserialize JSON. The problematic response has been saved to debug_response.json. Payload: {payload}", ex);
+            var logPath = TryWriteDebugPayload(payload);
+            var locationNote = logPath != null ? $" The problematic response has been saved to {logPath}." : "";
+            throw new JsonException($"Failed to deserialize JSON.{locationNote} Payload: {payload}", ex);
         }
     }
 
@@ -441,6 +440,34 @@ public sealed class WordPressApiClient
             baseUrl = baseUrl.TrimEnd('/');
         }
         return baseUrl;
+    }
+
+    private static string? TryWriteDebugPayload(string payload)
+    {
+        try
+        {
+            var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            var logDir = Path.Combine(home, ".wpaicli", "logs");
+            Directory.CreateDirectory(logDir);
+            var logPath = Path.Combine(logDir, "debug_response.json");
+            File.WriteAllText(logPath, payload);
+            if (!OperatingSystem.IsWindows())
+            {
+                try
+                {
+                    File.SetUnixFileMode(logPath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+                }
+                catch
+                {
+                    // Ignore
+                }
+            }
+            return logPath;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private sealed class VoidResult { }

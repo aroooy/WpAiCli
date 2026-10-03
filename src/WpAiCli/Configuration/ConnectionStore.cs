@@ -27,9 +27,30 @@ public sealed class ConnectionStore
         var path = GetStorePath();
         if (!File.Exists(path))
         {
+            // Migration: Check legacy path in AppContext.BaseDirectory
+            var legacyPath = GetLegacyStorePath();
+            if (File.Exists(legacyPath))
+            {
+                try
+                {
+                    var legacyStore = LoadFromPath(legacyPath);
+                    legacyStore.Save(); // Migrate to new path (~/.wpaicli/connections.json)
+                    return legacyStore;
+                }
+                catch
+                {
+                    // Fall back to empty store if legacy read fails
+                }
+            }
+
             return new ConnectionStore();
         }
 
+        return LoadFromPath(path);
+    }
+
+    private static ConnectionStore LoadFromPath(string path)
+    {
         using var stream = File.OpenRead(path);
         var model = JsonSerializer.Deserialize<ConnectionStoreModel>(stream, SerializerOptions) ?? new ConnectionStoreModel();
 
@@ -54,6 +75,17 @@ public sealed class ConnectionStore
         if (!string.IsNullOrEmpty(directory))
         {
             Directory.CreateDirectory(directory);
+            if (!OperatingSystem.IsWindows())
+            {
+                try
+                {
+                    File.SetUnixFileMode(directory, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+                }
+                catch
+                {
+                    // Ignore if filesystem does not support POSIX modes
+                }
+            }
         }
 
         var model = new ConnectionStoreModel
@@ -65,6 +97,18 @@ public sealed class ConnectionStore
 
         using var stream = File.Create(path);
         JsonSerializer.Serialize(stream, model, SerializerOptions);
+
+        if (!OperatingSystem.IsWindows())
+        {
+            try
+            {
+                File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            }
+            catch
+            {
+                // Ignore if filesystem does not support POSIX modes
+            }
+        }
     }
 
     public ConnectionProfile? GetActiveProfile()
@@ -76,7 +120,16 @@ public sealed class ConnectionStore
         return Profiles.FirstOrDefault(p => string.Equals(p.Name, ActiveConnection, StringComparison.OrdinalIgnoreCase));
     }
 
+    private static string GetConfigDirectory()
+    {
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        return Path.Combine(home, ".wpaicli");
+    }
+
     private static string GetStorePath()
+        => Path.Combine(GetConfigDirectory(), FileName);
+
+    private static string GetLegacyStorePath()
         => Path.Combine(AppContext.BaseDirectory, FileName);
 
     private sealed class ConnectionStoreModel
