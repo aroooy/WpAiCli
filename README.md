@@ -81,27 +81,63 @@ If posts from your active site are displayed, the initial setup is complete.
 ### 1. Create and Publish a New Post
 
 1. Create a draft post with `wpai posts create --title "New Article" --content "Write the body here" --status draft`.
-   - A local cache file (`.md`) is automatically generated at this point.
-2. Edit the generated `posts/123-new-article.md` in your editor.
+   - A local cache file (`.md`) is automatically generated at this point under `wp-cache/<connection>/posts/draft/`.
+2. Edit the generated `posts/draft/123-new-article.md` in your editor.
 3. Run `wpai posts push 123` to apply your edits to the server.
 4. To publish the article, change the `status` in the YAML front-matter at the top of the file to `publish` and run `wpai posts push 123` again.
+   - **Automatic Folder Relocation:** The CLI will automatically move the file from `posts/draft/` to `posts/publish/`. **DO NOT move or rename the file manually** (see "Critical Rule for AI" below).
 
 ### 2. Edit an Existing Post
 
-1. Run `wpai posts sync` to fetch the latest state from the server.
+1. Run `wpai posts pull` (or `wpai posts sync`) to fetch the latest state from the server.
 2. Edit the local Markdown file (`.md`) for the desired article.
 3. Run `wpai posts push <ID>` to apply the changes to the server.
 
-## Recommended Workflow for AI
+## Recommended Workflow for AI (The Golden Path)
 
-The following patterns are recommended for AI agents executing tasks.
+For AI agents interacting with WordPress via CLI or MCP, follow the standard **4-Step Cycle**:
+
+```
+[1. CHECK]  List/inspect posts     ->  wpai posts list        / ListPosts
+    │
+[2. PULL]   Refresh local cache    ->  wpai posts pull        / PullPosts
+    │
+[3. EDIT]   Modify local cache     ->  Edit wp-cache/.../*.md (front-matter & content)
+    │
+[4. PUSH]   Apply changes          ->  wpai posts push <ID>   / PushPost
+```
+
+### The 4-Step Cycle Explained
+
+1. **CHECK (`posts list` / `ListPosts` / `GetPost`)**: Inspect existing posts, IDs, and statuses before taking action.
+2. **PULL (`posts pull` / `PullPosts`)**: Fetch the latest server state and refresh local Markdown files. (Equivalent to `posts sync`).
+3. **EDIT (Direct File Edit)**: Edit the Markdown file (`posts/[status]/[ID]-[Title].md`) in the local cache. Modify metadata in YAML front-matter or the body content.
+4. **PUSH (`posts push <ID>` / `PushPost`)**: Unilaterally apply your local edits to the WordPress server. The tool automatically moves the cache file if the status changed.
+
+### Command Prioritization for AI
+
+| Role | CLI Commands | MCP Tools | Guidance for AI |
+| :--- | :--- | :--- | :--- |
+| **Primary (Daily Core)** | `posts list`, `posts get`, `posts pull`, `posts push`, `posts create` | `ListPosts`, `GetPost`, `PullPosts`, `PushPost`, `CreatePost` | **Use these for 95% of tasks.** Minimal overhead, clear intent. |
+| **Taxonomies & Media** | `categories list/create/push`, `tags ...`, `media list/upload/pull` | `ListCategories`, `ListTags`, `ListMedia`, `UploadMedia` | Use when managing categories, tags, or uploading images. |
+| **Maintenance** | `posts organize` | `OrganizePosts` | **Normally unnecessary.** `posts push` and `posts pull` automatically organize files. |
+| **Advanced (Exception only)** | `posts sync`, `resolve`, `revisions fetch/clean` | `SyncPosts`, `ResolveConflict`, `FetchRevisions`, `CleanRevisions` | Use only when bidirectional sync conflicts or revision restores are specifically requested. |
+
+### Critical Rule for AI: Never Move or Rename Cache Files Manually
+
+> [!WARNING]
+> **DO NOT manually move, rename, or reorganize cache files** (e.g., via `mv`, `rename`, or file management tools) between status folders (such as `draft/` to `publish/`).
+>
+> - **Automatic Management**: The CLI/MCP tool automatically relocates local post files based on the `status` specified in their YAML front-matter when you run `posts push <id>`, `posts pull`, `posts sync`, or `posts organize`.
+> - **Risk of Data Inconsistency**: Manually moving or renaming files corrupts the internal SQLite cache database (`wp-ai-cache.db`) and hash tracking. This will lead to sync errors, ghost files, or unintended conflicts.
+> - **Correct Action**: Edit only the `status` field inside the Markdown file's YAML front-matter and run `wpai posts push <id>` (or `wpai posts organize` if updating locally without immediately pushing). The tool will output an automatic move confirmation message upon relocating the file.
 
 ### Scenario 1: Pushing Local Edits to the Server
 
 When you have finished editing multiple local post or taxonomy files and want to send the results to the server.
 
 - **Recommended Commands:**
-  - `posts push --all`
+  - `posts push --all` (or `PushPost(all: true)`)
   - `taxonomies sync`
 - **Reasoning:**
   This most clearly expresses the intent to "push local changes." While `posts sync` might achieve a similar result, distinguishing between `push` and `sync` makes the AI's operation logs more understandable for humans.
@@ -111,10 +147,10 @@ When you have finished editing multiple local post or taxonomy files and want to
 When you want to start working with the latest content, pulling in any changes made by other users.
 
 - **Recommended Commands:**
-  - `posts sync`
-  - `media sync`
+  - `posts pull` (or `PullPosts`)
+  - `media pull`
 - **Reasoning:**
-  The `sync` command reliably performs a pull of changes from the server, making it ideal for this purpose.
+  The `pull` command reliably brings in remote changes to local cache, making it the ideal starting point.
 
 ## Command Reference
 
@@ -142,9 +178,11 @@ For machine integration (like with an AI), JSON mode (`--format json`) is recomm
 
 ### Posts (`posts`)
 
+- `pull`: **Pulls and refreshes the local cache with the latest server state.** (Recommended primary command for updating local posts. Alias for `posts sync`). `[Cache Effect: Reflects server changes]`
+  - `wpai posts pull`
 - `sync`: **Performs a two-way sync for posts and taxonomies (categories/tags).** It's a safe process that first syncs taxonomies and proceeds to post synchronization only if successful. `[Cache Effect: Reflects server changes]`
   - `wpai posts sync`
-- `organize`: Organizes local post files (`.md`) into subfolders like `publish`, `draft`, etc., based on the status in each file's YAML header. Does not communicate with the server. `[Cache Effect: Local file move]`
+- `organize`: Organizes local post files (`.md`) into subfolders like `publish`, `draft`, etc., based on the status in each file's YAML header. Does not communicate with the server. Use this command if you updated statuses locally and want them organized before pushing. **Never move files manually.** `[Cache Effect: Local file move]`
   - `wpai posts organize`
 - `list`: Lists posts. `[Cache Effect: None]`
   - `wpai posts list [--status <STATUS>] [--per-page <NUM>] [--page <NUM>]`
@@ -154,7 +192,7 @@ For machine integration (like with an AI), JSON mode (`--format json`) is recomm
   - `wpai posts create --title <TITLE> --content <CONTENT> | --content-file <PATH> [--status <STATUS>] [--edit-mode <markdown|html>] [--categories <IDs>] [--tags <IDs>] [--featured-media <ID>]`
   - **Note:** `--content` or `--content-file` is required, and its content cannot be empty or whitespace.
   - **Hint for AI Usage:** Do not include the article title in the body content. The title is specified separately with the `--title` option, and including it in the body will cause duplication.
-- `push <id> | --all`: Pushes local cache changes to the server. You can push individually by ID or all locally modified posts at once with `--all`. `[Cache Effect: Updated after server reflection]`
+- `push <id> | --all`: Pushes local cache changes to the server. You can push individually by ID or all locally modified posts at once with `--all`. If the post's status changed (e.g. from draft to publish), the cache file is automatically moved to the new status folder and an automatic move message will be displayed. `[Cache Effect: Updated after server reflection]`
   - `wpai posts push 123`
   - `wpai posts push --all`
 - `delete <id>`: Deletes a post. `[Cache Effect: Immediate deletion]`
@@ -204,12 +242,15 @@ For safety, this tool recommends the following manual workflow for restoring fro
 
 ### Taxonomies (`taxonomies`)
 
-- `sync`: Performs a two-way sync for all categories and tags between the local cache and the server. `[Cache Effect: Reflects server changes]`
+- `pull` / `sync`: Performs a two-way sync for all categories and tags between the local cache and the server. `[Cache Effect: Reflects server changes]`
+  - `wpai taxonomies pull`
   - `wpai taxonomies sync`
 
 ### Media (`media`)
 
-- `sync`: Syncs media between the local cache and the server. Media deleted on the server will be removed from the local cache. `[Cache Effect: Reflects server changes]`
+- `pull` / `sync`: Syncs media between the local cache and the server. Media deleted on the server will be removed from the local cache. `[Cache Effect: Reflects server changes]`
+  - `wpai media pull`
+  - `wpai media sync`
 - `list`: Lists items in the media library. `[Cache Effect: None]`
   - `wpai media list [--per-page <NUM>] [--page <NUM>]`
 - `upload <file-path>`: Uploads a file to the media library. `[Cache Effect: Immediate creation]`
@@ -327,7 +368,7 @@ After configuration, running `posts sync` or `media sync` will start the synchro
 
 ### Locally Editable Files
 
-Users should directly edit the following files:
+Users and AI agents should directly edit the content of the following files, **without moving or renaming them**:
 
 - `categories/[ID]-[Name].yaml`: You can change the `name`, `slug`, and `description` of a category. The public URL is displayed as `url` for reference, but editing this field has no effect.
   - **Creation:** Add a new YAML file to this directory (with `id` as `0` or unspecified) and run `posts sync` to create a new category on the server.
@@ -337,6 +378,7 @@ Users should directly edit the following files:
   - **Deletion:** Deleting this file does not delete the tag on the server. Use the `tags delete <id>` command.
 - `media/[ID]-[Filename].yaml`: You can change the `title`, `alt_text`, `caption`, and `description` of media. The URL to the attachment page (`url`) and a direct link to the media file (`source_url`) are displayed for reference, but editing them has no effect. These fields will always be present in the YAML file, even if their value is empty.
 - `posts/[ID]-[Title].md`: A single file containing the post's metadata and body. You can change everything about the post by editing this file.
+    - **Important for AI:** Edit only the content inside this file. If you update the `status` (e.g. `draft` -> `publish`), do not move the file yourself; simply run `wpai posts push <ID>` or `wpai posts organize`, and the tool will automatically move the file to the corresponding status folder.
     - **Metadata:** Edit the YAML front-matter block enclosed by `---`. In addition to standard fields like `title`, `slug`, and `status`, you can manage arbitrary custom fields by writing a `meta` block.
         - **`meta` Block Usage:**
             ```yaml
@@ -425,20 +467,32 @@ To use WpAiCli with Claude Desktop, add the following to your `claude_desktop_co
 
 ### 2. Available Tools via MCP
 
-Once connected via MCP, the AI can execute the following tasks:
+Once connected via MCP, the AI can execute tasks using clearly prioritized tools:
 
-* **Connection Management**: List, switch (`setActiveConnection`), add, update, and remove WordPress site profiles.
-* **Synchronization**: Sync posts, taxonomies (categories/tags), and media library.
-* **Content CRUD**:
-* **Posts**: Create, delete, and organize posts.
-* **Taxonomies**: Create/delete categories and tags.
-* **Media**: Upload and delete media files.
+* **Primary Daily Tools (The Core Workflow)**:
+  * `ListPosts`: Lists posts with optional status filter (`publish`, `draft`, etc.) and pagination.
+  * `GetPost`: Retrieves post details along with the absolute local cache file path (`[Local Cache File]`).
+  * `PullPosts`: Pulls and synchronizes the latest posts from WordPress into the local cache.
+  * `PushPost`: Pushes local cache edits (`.md`) for a specific post ID (or `--all`) back to the server.
+  * `CreatePost`: Creates a new post on WordPress and initializes its local cache file.
 
+* **Content & Taxonomy Management**:
+  * `ListCategories`, `CreateCategory`, `DeleteCategory`: Manage WordPress categories.
+  * `ListTags`, `CreateTag`, `DeleteTag`: Manage WordPress tags.
+  * `ListMedia`, `UploadMedia`, `DeleteMedia`, `PullMedia`: Manage media files.
+  * `DeletePost`: Deletes a post from the server and local cache.
 
-* **Advanced Management**:
-* Fetch and clean post revisions.
-* Resolve sync conflicts (`local-wins` or `server-wins`).
-* View local cache paths.
+* **Connection Management**:
+  * `ListConnections`: View registered profiles.
+  * `SetActiveConnection`: Switch active WordPress site.
+  * `AddConnection`, `UpdateConnection`, `RemoveConnection`: Manage site profiles.
+  * `ShowCachePath`: View the cache root path for the active connection.
+
+* **Advanced & Maintenance Tools**:
+  * `SyncPosts`, `SyncTaxonomies`, `SyncMedia`: Full two-way synchronization.
+  * `ResolveConflict`: Resolves synchronization conflicts (`local-wins` or `server-wins`).
+  * `FetchRevisions`, `CleanRevisions`: Inspect or clear post revision history.
+  * `OrganizePosts`: Reorganizes local post files into status folders (normally handled automatically).
 
 
 

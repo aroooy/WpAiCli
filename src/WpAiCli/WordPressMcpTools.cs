@@ -366,10 +366,103 @@ public static partial class WordPressMcpTools
         return Task.FromResult(cacheRoot);
     }
 
-    // --- Sync/Fetch Group ---
+    // --- Read/Inspect Group ---
 
     [McpServerTool]
-    [Description("Performs a two-way synchronization for posts and taxonomies (categories and tags).")]
+    [Description("[PRIMARY] Lists posts from the WordPress site.")]
+    public static async Task<string> ListPosts(
+        [Description("Filter by post status (e.g. 'publish', 'draft', 'any'). Defaults to null (all).")] string? status,
+        [Description("Number of posts per page (1-100). Defaults to 10.")] int? perPage,
+        [Description("Page number. Defaults to 1.")] int? page,
+        IServiceProvider services
+    )
+    {
+        using var scope = services.CreateScope();
+        var service = scope.ServiceProvider.GetRequiredService<WordPressService>();
+        var pPage = Math.Clamp(perPage ?? 10, 1, 100);
+        var pNum = Math.Max(page ?? 1, 1);
+        var posts = await service.ListPostsAsync(status, pPage, pNum, CancellationToken.None);
+        return OutputFormatter.FormatPosts(posts, OutputFormat.Table);
+    }
+
+    [McpServerTool]
+    [Description("[PRIMARY] Retrieves details of a specific post by ID, including its metadata, content, and the local cache file path.")]
+    public static async Task<string> GetPost(
+        [Description("The ID of the post to retrieve.")] int id,
+        IServiceProvider services
+    )
+    {
+        using var scope = services.CreateScope();
+        var service = scope.ServiceProvider.GetRequiredService<WordPressService>();
+        var cacheService = scope.ServiceProvider.GetRequiredService<CacheService>();
+
+        var post = await service.GetPostAsync(id, CancellationToken.None);
+        var sb = new StringBuilder();
+        sb.Append(OutputFormatter.FormatPost(post, OutputFormat.Table));
+
+        var localFile = cacheService.FindFileByPattern($"{id}-*.md");
+        if (!string.IsNullOrEmpty(localFile) && File.Exists(localFile))
+        {
+            sb.AppendLine();
+            sb.AppendLine($"[Local Cache File]: {localFile}");
+            sb.AppendLine("NOTE: To edit this post, modify the Markdown file above and run PushPost.");
+        }
+
+        return sb.ToString();
+    }
+
+    [McpServerTool]
+    [Description("Lists categories registered on the WordPress site.")]
+    public static async Task<string> ListCategories(IServiceProvider services)
+    {
+        using var scope = services.CreateScope();
+        var service = scope.ServiceProvider.GetRequiredService<WordPressService>();
+        var categories = await service.ListCategoriesAsync(CancellationToken.None);
+        return OutputFormatter.FormatCategories(categories, OutputFormat.Table);
+    }
+
+    [McpServerTool]
+    [Description("Lists tags registered on the WordPress site.")]
+    public static async Task<string> ListTags(IServiceProvider services)
+    {
+        using var scope = services.CreateScope();
+        var service = scope.ServiceProvider.GetRequiredService<WordPressService>();
+        var tags = await service.ListTagsAsync(CancellationToken.None);
+        return OutputFormatter.FormatTags(tags, OutputFormat.Table);
+    }
+
+    [McpServerTool]
+    [Description("Lists items from the WordPress media library.")]
+    public static async Task<string> ListMedia(
+        [Description("Number of media items per page (1-100). Defaults to 10.")] int? perPage,
+        [Description("Page number. Defaults to 1.")] int? page,
+        IServiceProvider services
+    )
+    {
+        using var scope = services.CreateScope();
+        var service = scope.ServiceProvider.GetRequiredService<WordPressService>();
+        var pPage = Math.Clamp(perPage ?? 10, 1, 100);
+        var pNum = Math.Max(page ?? 1, 1);
+        var items = await service.ListMediaAsync(pPage, pNum, CancellationToken.None);
+        return OutputFormatter.FormatMediaItems(items, OutputFormat.Table);
+    }
+
+    // --- Sync/Pull Group ---
+
+    [McpServerTool]
+    [Description("[PRIMARY] Pulls and synchronizes the latest posts and taxonomies from WordPress into the local cache. Equivalent to SyncPosts. NOTE: If there are unsaved local modifications in the cache, they will also be pushed to the server.")]
+    public static Task<string> PullPosts(IServiceProvider services) => SyncPosts(services);
+
+    [McpServerTool]
+    [Description("Pulls and synchronizes categories and tags from WordPress into the local cache. Equivalent to SyncTaxonomies.")]
+    public static Task<string> PullTaxonomies(IServiceProvider services) => SyncTaxonomies(services);
+
+    [McpServerTool]
+    [Description("Pulls and synchronizes media library metadata from WordPress into the local cache. Equivalent to SyncMedia.")]
+    public static Task<string> PullMedia(IServiceProvider services) => SyncMedia(services);
+
+    [McpServerTool]
+    [Description("[PRIMARY] Performs a two-way synchronization for posts and taxonomies (categories and tags). Reorganizes post files into their respective status folders automatically. Do NOT manually move or rename post files in the cache.")]
     public static async Task<string> SyncPosts(IServiceProvider services)
     {
         using var scope = services.CreateScope();
@@ -425,7 +518,7 @@ public static partial class WordPressMcpTools
     }
 
     [McpServerTool]
-    [Description("Downloads all revisions (history) for a specified post and saves them to the local cache.")]
+    [Description("[ADVANCED] Downloads all revisions (history) for a specified post to the local cache for manual inspection or comparison.")]
     public static async Task<string> FetchRevisions(
         [Description("The ID of the post for which to fetch revisions.")] int postId,
         IServiceProvider services)
@@ -494,14 +587,23 @@ public static partial class WordPressMcpTools
             sb.AppendLine("Please resolve them individually using the 'resolve' command.");
             sb.AppendLine("Example: wpai resolve post 123 --strategy [local-wins|server-wins]");
         }
+
+        if (report.MovedPosts.Count > 0)
+        {
+            sb.AppendLine("\nAutomatically reorganized post files based on status change:");
+            foreach (var moved in report.MovedPosts)
+            {
+                sb.AppendLine($"  {moved}");
+            }
+        }
         sb.AppendLine("-------------------");
         return sb.ToString();
     }
 
-    // --- Create/Edit Group ---
+    // --- Create/Push/Edit Group ---
 
     [McpServerTool]
-    [Description("Creates a new post.")]
+    [Description("[PRIMARY] Creates a new post on WordPress and saves it to the local cache under the appropriate status folder (e.g. 'posts/draft/'). Do NOT manually move or rename the generated cache file.")]
     public static async Task<string> CreatePost(
         [Description("The title of the post.")] string title,
         [Description("The content of the post body.")] string? content,
@@ -561,13 +663,60 @@ public static partial class WordPressMcpTools
         var post = await service.CreatePostAsync(request, CancellationToken.None);
         if (post != null)
         {
+            var sb = new StringBuilder();
             if (!string.IsNullOrEmpty(profile.CachePath))
             {
-                cacheService.SavePostToCache(post);
+                var cacheResult = cacheService.SavePostToCache(post);
+                sb.AppendLine($"[Cache] Post created and saved to '{cacheResult.CurrentStatus}' folder ({Path.GetFileName(cacheResult.FilePath)}).");
+                sb.AppendLine("NOTE: Do NOT move or rename cache files manually. Status folder changes are handled automatically by WpAiCli.");
+                sb.AppendLine();
             }
-            return OutputFormatter.FormatPost(post, OutputFormat.Table);
+            sb.Append(OutputFormatter.FormatPost(post, OutputFormat.Table));
+            return sb.ToString();
         }
         return "Error: Failed to create post.";
+    }
+
+    [McpServerTool]
+    [Description("[PRIMARY] Pushes local changes of a post (or all modified posts) from the cache to the WordPress server.")]
+    public static async Task<string> PushPost(
+        [Description("The ID of the specific post to push. Ignored if 'all' is true.")] int? id,
+        [Description("Set to true to push all locally modified posts. If true, 'id' is ignored. Defaults to false.")] bool? all,
+        IServiceProvider services
+    )
+    {
+        using var scope = services.CreateScope();
+        var syncService = scope.ServiceProvider.GetRequiredService<SyncService>();
+        var store = ConnectionStore.Load();
+        var profile = store.GetActiveProfile();
+        if (profile is null)
+        {
+            return "Error: No active connection.";
+        }
+
+        var pushAll = all.GetValueOrDefault(false);
+        if (pushAll)
+        {
+            var report = await syncService.PushAllModifiedPostsAsync(profile, CancellationToken.None);
+            return FormatSyncReport(report);
+        }
+        else
+        {
+            if (!id.HasValue)
+            {
+                return "Error: Provide a post ID, or set 'all' to true to push all modified posts.";
+            }
+
+            var (updated, cacheResult) = await syncService.PushPostAsync(id.Value, profile, CancellationToken.None);
+            var sb = new StringBuilder();
+            if (cacheResult.WasMoved)
+            {
+                sb.AppendLine(cacheResult.MoveMessage);
+                sb.AppendLine();
+            }
+            sb.Append(OutputFormatter.FormatPost(updated, OutputFormat.Table));
+            return sb.ToString();
+        }
     }
 
     [McpServerTool]
@@ -648,7 +797,7 @@ public static partial class WordPressMcpTools
     }
 
     [McpServerTool]
-    [Description("Resolves a synchronization conflict.")]
+    [Description("[ADVANCED] Resolves a sync conflict when a post or taxonomy differs on both server and local. Use only when reported by SyncPosts/PullPosts.")]
     public static async Task<string> ResolveConflict(
         [Description("The type of content that conflicted ('post', 'category', 'tag').")] string type,
         [Description("The ID of the conflicted item.")] int id,
@@ -686,6 +835,7 @@ public static partial class WordPressMcpTools
         using var scope = services.CreateScope();
         var service = scope.ServiceProvider.GetRequiredService<WordPressService>();
         var cacheService = scope.ServiceProvider.GetRequiredService<CacheService>();
+        var cachedTitle = cacheService.GetCachedPostTitle(id);
 
         try
         {
@@ -694,12 +844,15 @@ public static partial class WordPressMcpTools
             {
                 cacheService.DeletePostFromCache(id);
             }
-            return OutputFormatter.FormatDeleteResponse(response, OutputFormat.Table);
+            var result = OutputFormatter.FormatDeleteResponse(response, OutputFormat.Table, id, cachedTitle);
+            return $"Successfully deleted post {id}.\n{result}".TrimEnd();
         }
         catch (WpAiCli.WordPress.WordPressApiException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
         {
+            var title = cachedTitle ?? "Unknown (already deleted)";
             cacheService.DeletePostFromCache(id);
-            return OutputFormatter.FormatDeleteResponse(new WordPressDeleteResponse { Deleted = true, Previous = ToJsonElementDict(new { title = new { raw = "Unknown (already deleted)" } }) }, OutputFormat.Table);
+            var result = OutputFormatter.FormatDeleteResponse(new WordPressDeleteResponse { Deleted = true, Previous = ToJsonElementDict(new { id = id, title = new { raw = title } }) }, OutputFormat.Table, id, title);
+            return $"Post {id} was already deleted on server. Local cache cleared.\n{result}".TrimEnd();
         }
     }
 
@@ -714,6 +867,7 @@ public static partial class WordPressMcpTools
         using var scope = services.CreateScope();
         var service = scope.ServiceProvider.GetRequiredService<WordPressService>();
         var cacheService = scope.ServiceProvider.GetRequiredService<CacheService>();
+        var cachedName = cacheService.GetCachedCategoryName(id);
 
         try
         {
@@ -722,12 +876,15 @@ public static partial class WordPressMcpTools
             {
                 cacheService.DeleteCategoryFromCache(id);
             }
-            return OutputFormatter.FormatDeleteResponse(response, OutputFormat.Table);
+            var result = OutputFormatter.FormatDeleteResponse(response, OutputFormat.Table, id, cachedName);
+            return $"Successfully deleted category {id}.\n{result}".TrimEnd();
         }
         catch (WpAiCli.WordPress.WordPressApiException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
         {
+            var name = cachedName ?? "Unknown (already deleted)";
             cacheService.DeleteCategoryFromCache(id);
-            return OutputFormatter.FormatDeleteResponse(new WordPressDeleteResponse { Deleted = true, Previous = ToJsonElementDict(new { name = "Unknown (already deleted)" }) }, OutputFormat.Table);
+            var result = OutputFormatter.FormatDeleteResponse(new WordPressDeleteResponse { Deleted = true, Previous = ToJsonElementDict(new { id = id, name = name }) }, OutputFormat.Table, id, name);
+            return $"Category {id} was already deleted on server. Local cache cleared.\n{result}".TrimEnd();
         }
     }
 
@@ -742,6 +899,7 @@ public static partial class WordPressMcpTools
         using var scope = services.CreateScope();
         var service = scope.ServiceProvider.GetRequiredService<WordPressService>();
         var cacheService = scope.ServiceProvider.GetRequiredService<CacheService>();
+        var cachedName = cacheService.GetCachedTagName(id);
 
         try
         {
@@ -750,12 +908,15 @@ public static partial class WordPressMcpTools
             {
                 cacheService.DeleteTagFromCache(id);
             }
-            return OutputFormatter.FormatDeleteResponse(response, OutputFormat.Table);
+            var result = OutputFormatter.FormatDeleteResponse(response, OutputFormat.Table, id, cachedName);
+            return $"Successfully deleted tag {id}.\n{result}".TrimEnd();
         }
         catch (WpAiCli.WordPress.WordPressApiException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
         {
+            var name = cachedName ?? "Unknown (already deleted)";
             cacheService.DeleteTagFromCache(id);
-            return OutputFormatter.FormatDeleteResponse(new WordPressDeleteResponse { Deleted = true, Previous = ToJsonElementDict(new { name = "Unknown (already deleted)" }) }, OutputFormat.Table);
+            var result = OutputFormatter.FormatDeleteResponse(new WordPressDeleteResponse { Deleted = true, Previous = ToJsonElementDict(new { id = id, name = name }) }, OutputFormat.Table, id, name);
+            return $"Tag {id} was already deleted on server. Local cache cleared.\n{result}".TrimEnd();
         }
     }
 
@@ -770,6 +931,7 @@ public static partial class WordPressMcpTools
         using var scope = services.CreateScope();
         var service = scope.ServiceProvider.GetRequiredService<WordPressService>();
         var cacheService = scope.ServiceProvider.GetRequiredService<CacheService>();
+        var cachedTitle = cacheService.GetCachedMediaTitle(id);
         try
         {
             var response = await service.DeleteMediaAsync(id, force, CancellationToken.None);
@@ -777,17 +939,20 @@ public static partial class WordPressMcpTools
             {
                 cacheService.DeleteMediaFromCache(id);
             }
-            return OutputFormatter.FormatDeleteResponse(response, OutputFormat.Table);
+            var result = OutputFormatter.FormatDeleteResponse(response, OutputFormat.Table, id, cachedTitle);
+            return $"Successfully deleted media {id}.\n{result}".TrimEnd();
         }
         catch (WpAiCli.WordPress.WordPressApiException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
         {
+            var title = cachedTitle ?? "Unknown (already deleted)";
             cacheService.DeleteMediaFromCache(id);
-            return OutputFormatter.FormatDeleteResponse(new WordPressDeleteResponse { Deleted = true, Previous = ToJsonElementDict(new { title = new { raw = "Unknown (already deleted)" } }) }, OutputFormat.Table);
+            var result = OutputFormatter.FormatDeleteResponse(new WordPressDeleteResponse { Deleted = true, Previous = ToJsonElementDict(new { id = id, title = new { raw = title } }) }, OutputFormat.Table, id, title);
+            return $"Media {id} was already deleted on server. Local cache cleared.\n{result}".TrimEnd();
         }
     }
 
     [McpServerTool]
-    [Description("Deletes the local revision cache.")]
+    [Description("[MAINTENANCE] Deletes the local revision cache for post revisions.")]
     public static Task<string> CleanRevisions(
         [Description("Specify a post ID to delete the cache for that post only.")] int? postId,
         IServiceProvider services
@@ -804,13 +969,23 @@ public static partial class WordPressMcpTools
     }
     
     [McpServerTool]
-    [Description("Organizes local post files into subfolders based on their status.")]
+    [Description("[MAINTENANCE] Organizes local post files into status subfolders (e.g. 'draft', 'publish') based on their YAML front-matter status. NOTE: Normally unnecessary as PushPost and SyncPosts/PullPosts do this automatically.")]
     public static Task<string> OrganizePosts(IServiceProvider services)
     {
         using var scope = services.CreateScope();
         var cacheService = scope.ServiceProvider.GetRequiredService<CacheService>();
-        cacheService.OrganizePostFiles();
-        return Task.FromResult("Local post files organized successfully.");
+        var moved = cacheService.OrganizePostFiles();
+        if (moved.Count == 0)
+        {
+            return Task.FromResult("All local post files are already in their correct status folders. No files were moved.");
+        }
+        var sb = new StringBuilder();
+        sb.AppendLine($"Successfully organized {moved.Count} post file(s):");
+        foreach (var item in moved)
+        {
+            sb.AppendLine($"- {item}");
+        }
+        return Task.FromResult(sb.ToString());
     }
 
     private static Dictionary<string, JsonElement>? ToJsonElementDict(object obj)

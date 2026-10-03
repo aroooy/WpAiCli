@@ -58,6 +58,19 @@ public class EditablePostMetadata
     public Dictionary<string, object?>? Meta { get; set; }
 }
 
+public class PostCacheResult
+{
+    public int PostId { get; set; }
+    public string? PreviousStatus { get; set; }
+    public string CurrentStatus { get; set; } = string.Empty;
+    public string FilePath { get; set; } = string.Empty;
+    public bool WasMoved => !string.IsNullOrEmpty(PreviousStatus) && !string.Equals(PreviousStatus, CurrentStatus, StringComparison.OrdinalIgnoreCase);
+    public string? MoveMessage => WasMoved
+        ? $"[Cache] Automatically moved post {PostId} file from '{PreviousStatus}' to '{CurrentStatus}' folder ({Path.GetFileName(FilePath)})."
+        : null;
+}
+
+
 public class EditableCategory
 {
     [YamlMember(Alias = "url")]
@@ -151,18 +164,23 @@ public class CacheService
             return "untitled";
         }
 
-        var invalidChars = Path.GetInvalidFileNameChars();
-        var sanitizedTitle = new string(title.Select(ch => invalidChars.Contains(ch) ? '-' : ch).ToArray());
+        // Decode HTML entities (e.g. &#8211; -> -, &amp; -> &) before sanitizing
+        title = System.Net.WebUtility.HtmlDecode(title);
 
-        sanitizedTitle = Regex.Replace(sanitizedTitle.Trim(), "-{2,}", "-");
+        var invalidChars = Path.GetInvalidFileNameChars();
+        // Replace whitespace and invalid filename chars with hyphens
+        var sanitizedTitle = new string(title.Select(ch => (char.IsWhiteSpace(ch) || invalidChars.Contains(ch)) ? '-' : ch).ToArray());
+
+        // Collapse multiple hyphens and trim hyphens from ends
+        sanitizedTitle = Regex.Replace(sanitizedTitle.Trim('-'), "-{2,}", "-");
 
         const int maxLen = 100;
         if (sanitizedTitle.Length > maxLen)
         {
-            sanitizedTitle = sanitizedTitle.Substring(0, maxLen);
+            sanitizedTitle = sanitizedTitle.Substring(0, maxLen).TrimEnd('-');
         }
 
-        return sanitizedTitle;
+        return string.IsNullOrEmpty(sanitizedTitle) ? "untitled" : sanitizedTitle;
     }
 
     private object? ConvertJsonElement(JsonElement element)
@@ -189,8 +207,20 @@ public class CacheService
     }
 
 
-    public void SavePostToCache(WordPressPostDetail post)
+    public PostCacheResult SavePostToCache(WordPressPostDetail post)
     {
+        // Check for existing cache file to detect previous status/directory
+        var existingFile = FindFileByPattern($"{post.Id}-*.md");
+        string? previousStatus = null;
+        if (!string.IsNullOrEmpty(existingFile) && File.Exists(existingFile))
+        {
+            var parentDir = Path.GetDirectoryName(existingFile);
+            if (!string.IsNullOrEmpty(parentDir))
+            {
+                previousStatus = Path.GetFileName(parentDir);
+            }
+        }
+
         // Determine the correct directory based on post status
         var status = post.Status ?? "draft";
         var statusDir = Path.Combine(_cachePath, "posts", status);
@@ -223,14 +253,28 @@ public class CacheService
         var tagMap = allTags.ToDictionary(t => t.Id, t => t.Name);
 
         // 2. Populate all metadata into the EditablePostMetadata object
+        string? formattedDate = null;
+        if (post.DateGmt.HasValue)
+        {
+            var utc = DateTime.SpecifyKind(post.DateGmt.Value, DateTimeKind.Utc);
+            formattedDate = utc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
+        }
+        else if (post.Date.HasValue)
+        {
+            formattedDate = post.Date.Value.ToString("yyyy-MM-dd HH:mm:ss");
+        }
+
+        var rawTitle = post.Title?.Raw ?? post.Title?.Rendered;
+        var decodedTitle = rawTitle != null ? System.Net.WebUtility.HtmlDecode(rawTitle) : null;
+
         var editableMeta = new EditablePostMetadata
         {
             Url = post.Link,
-            Title = post.Title?.Raw,
+            Title = decodedTitle,
             EditMode = hasMarkdownMeta ? "markdown" : "html",
             Slug = System.Net.WebUtility.UrlDecode(post.Slug),
             Status = post.Status,
-            Date = post.Date?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss"),
+            Date = formattedDate,
             Excerpt = post.Excerpt?.Raw,
             FeaturedMedia = post.FeaturedMedia,
             CommentStatus = post.CommentStatus,
@@ -280,6 +324,14 @@ public class CacheService
         }
 
         _db.SaveChanges();
+
+        return new PostCacheResult
+        {
+            PostId = post.Id,
+            PreviousStatus = previousStatus,
+            CurrentStatus = status,
+            FilePath = filePath
+        };
     }
 
     public void SaveRevisionToCache(WordPressRevision revision)
@@ -290,11 +342,16 @@ public class CacheService
         var filePath = Path.Combine(revisionDir, $"{revision.Id}.md");
 
         // 2. Populate metadata from the revision object
+        var utcRev = DateTime.SpecifyKind(revision.DateGmt, DateTimeKind.Utc);
+        var revDateStr = utcRev.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
+        var rawRevTitle = revision.Title?.Raw ?? revision.Title?.Rendered;
+        var decodedRevTitle = rawRevTitle != null ? System.Net.WebUtility.HtmlDecode(rawRevTitle) : null;
+
         var editableMeta = new
         {
-            Title = revision.Title?.Raw,
+            Title = decodedRevTitle,
             revision.Slug,
-            Date = revision.DateGmt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss"),
+            Date = revDateStr,
             EditMode = "html"
         };
         var yamlContent = YamlSerializer.Serialize(editableMeta);
@@ -451,10 +508,11 @@ public class CacheService
         // --- End Refactoring ---
     }
 
-    public void OrganizePostFiles()
+    public List<string> OrganizePostFiles()
     {
+        var movedFiles = new List<string>();
         var postsDir = Path.Combine(_cachePath, "posts");
-        if (!Directory.Exists(postsDir)) return;
+        if (!Directory.Exists(postsDir)) return movedFiles;
 
         var allPostFiles = Directory.GetFiles(postsDir, "*.md", SearchOption.AllDirectories);
 
@@ -490,7 +548,8 @@ public class CacheService
                     Directory.CreateDirectory(targetDir);
                     var newFilePath = Path.Combine(targetDir, Path.GetFileName(filePath));
                     File.Move(filePath, newFilePath);
-                    Console.WriteLine($"Organized: Moved '{Path.GetFileName(filePath)}' from '{currentStatus}' to '{targetStatus}' folder.");
+                    var moveMsg = $"Moved '{Path.GetFileName(filePath)}' from '{currentStatus}' to '{targetStatus}' folder.";
+                    movedFiles.Add(moveMsg);
 
                     // BUG FIX: Update the database hash after moving the file
                     var fileName = Path.GetFileNameWithoutExtension(newFilePath);
@@ -513,6 +572,8 @@ public class CacheService
                 Console.Error.WriteLine($"Error organizing file '{Path.GetFileName(filePath)}': {ex.Message}");
             }
         }
+
+        return movedFiles;
     }
 
     public List<CachePostMetadata> ListLocalPostMetadata()
@@ -633,6 +694,58 @@ public class CacheService
     {
         var postFile = FindFileByPattern($"{postId}-*.md");
         return File.Exists(postFile);
+    }
+
+    public string? GetCachedPostTitle(int postId)
+    {
+        try
+        {
+            return ReadLocalPost(postId)?.Metadata?.Title;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public string? GetCachedCategoryName(int categoryId)
+    {
+        try
+        {
+            return _db.Categories.FirstOrDefault(c => c.Id == categoryId)?.Name;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public string? GetCachedTagName(int tagId)
+    {
+        try
+        {
+            return _db.Tags.FirstOrDefault(t => t.Id == tagId)?.Name;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public string? GetCachedMediaTitle(int mediaId)
+    {
+        try
+        {
+            var mediaFile = FindMediaYamlFile(mediaId);
+            if (!string.IsNullOrEmpty(mediaFile) && File.Exists(mediaFile))
+            {
+                var yaml = File.ReadAllText(mediaFile);
+                var meta = DeserializeFromYaml<EditableMediaMetadata>(yaml);
+                if (!string.IsNullOrEmpty(meta.Title)) return meta.Title;
+            }
+        }
+        catch { }
+        return null;
     }
 
     public void DeletePostFromCache(int postId)

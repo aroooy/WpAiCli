@@ -30,6 +30,7 @@ public class SyncReport
     public List<int> NewlyCached { get; } = new();
     public List<string> PushedTaxonomies { get; } = new();
     public List<(int PostId, string ErrorMessage)> LocalValidationErrors { get; } = new();
+    public List<string> MovedPosts { get; } = new();
 
     // Media Sync Properties
     public List<int> PushedMediaToServer { get; } = new();
@@ -58,7 +59,7 @@ public class SyncService
     }
 
     // Push a single post using local cache (content.md + editable.yaml)
-    public async Task<WordPressPostDetail> PushPostAsync(int id, ConnectionProfile profile, CancellationToken cancellationToken)
+    public async Task<(WordPressPostDetail Post, PostCacheResult CacheResult)> PushPostAsync(int id, ConnectionProfile profile, CancellationToken cancellationToken)
     {
         var localPost = _cacheService.ReadLocalPost(id)
             ?? throw new InvalidOperationException($"Could not read local post data for {id}. Cannot push local changes.");
@@ -115,8 +116,8 @@ public class SyncService
         request.Tags = tagIds;
 
         var updatedPost = await _wpService.UpdatePostAsync(id, request, cancellationToken);
-        _cacheService.SavePostToCache(updatedPost);
-        return updatedPost;
+        var cacheResult = _cacheService.SavePostToCache(updatedPost);
+        return (updatedPost, cacheResult);
     }
 
     public async Task<SyncReport> PushAllModifiedPostsAsync(ConnectionProfile profile, CancellationToken cancellationToken)
@@ -144,7 +145,11 @@ public class SyncService
                 if (isLocalChanged)
                 {
                     Console.WriteLine($"Local changes detected for post {id}. Pushing to server...");
-                    await PushPostAsync(id, profile, cancellationToken);
+                    var (updatedPost, cacheResult) = await PushPostAsync(id, profile, cancellationToken);
+                    if (cacheResult.WasMoved)
+                    {
+                        report.MovedPosts.Add(cacheResult.MoveMessage!);
+                    }
                     report.PushedToServer.Add(id);
                 }
             }
@@ -602,12 +607,20 @@ public class SyncService
                 request.Tags = tagIds;
 
                 var updatedPost = await _wpService.UpdatePostAsync(id, request, cancellationToken);
-                _cacheService.SavePostToCache(updatedPost);
+                var pushCacheResult = _cacheService.SavePostToCache(updatedPost);
+                if (pushCacheResult.WasMoved)
+                {
+                    report.MovedPosts.Add(pushCacheResult.MoveMessage!);
+                }
                 report.PushedToServer.Add(id);
             }
             else if (isServerChanged)
             {
-                _cacheService.SavePostToCache(remotePost);
+                var pullCacheResult = _cacheService.SavePostToCache(remotePost);
+                if (pullCacheResult.WasMoved)
+                {
+                    report.MovedPosts.Add(pullCacheResult.MoveMessage!);
+                }
                 report.PulledFromServer.Add(id);
             }
         }
@@ -682,7 +695,11 @@ public class SyncService
         if (strategy == "server-wins")
         {
             var remotePost = await _wpService.GetPostAsync(id, cancellationToken);
-            _cacheService.SavePostToCache(remotePost);
+            var cacheResult = _cacheService.SavePostToCache(remotePost);
+            if (cacheResult.WasMoved)
+            {
+                sb.AppendLine(cacheResult.MoveMessage);
+            }
             sb.AppendLine($"Conflict resolved. Local post {id} was overwritten with the server version.");
         }
         else if (strategy == "local-wins")
@@ -741,11 +758,19 @@ public class SyncService
             request.Tags = tagIds;
 
             var updatedPost = await _wpService.UpdatePostAsync(id, request, cancellationToken);
-            _cacheService.SavePostToCache(updatedPost);
+            var cacheResult = _cacheService.SavePostToCache(updatedPost);
+            if (cacheResult.WasMoved)
+            {
+                sb.AppendLine(cacheResult.MoveMessage);
+            }
             sb.AppendLine($"Conflict resolved. Server post {id} was overwritten with the local version.");
         }
 
-        _cacheService.OrganizePostFiles();
+        var organized = _cacheService.OrganizePostFiles();
+        foreach (var msg in organized)
+        {
+            sb.AppendLine($"[Cache] {msg}");
+        }
         return sb.ToString();
     }
 

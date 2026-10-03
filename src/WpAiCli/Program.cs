@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
@@ -209,10 +210,21 @@ public class Program
     //   or sent as-is for server-side conversion depending on profile settings.
     static async Task<int> HandlePostsAsync(string[] args, WordPressService service, SyncService syncService, ConnectionProfile profile, CacheService cacheService)
     {
-        if (args.Length == 0)
+        if (args.Length == 0 || args[0] == "--help" || args[0] == "-h" || args[0] == "help")
         {
-            Console.Error.WriteLine("Specify posts subcommand (list|get|create|push|delete|sync|organize).");
-            return (int)ExitCode.InvalidArguments;
+            Console.WriteLine("Usage: wpai posts <subcommand> [options]");
+            Console.WriteLine("\nSubcommands:");
+            Console.WriteLine("  list           List posts from the server");
+            Console.WriteLine("  get <id>       Retrieve a single post by ID");
+            Console.WriteLine("  pull           Pull latest posts and refresh local cache (Recommended)");
+            Console.WriteLine("  push <id>      Push local post edits to the server (--all for all modified)");
+            Console.WriteLine("  create         Create a new post");
+            Console.WriteLine("  delete <id>    Delete a post");
+            Console.WriteLine("  sync           Two-way synchronization for posts and taxonomies");
+            Console.WriteLine("  organize       Organize local post files into status folders");
+            Console.WriteLine("\nImportant for AI:");
+            Console.WriteLine("  Do NOT manually move or rename files in the cache. The tool relocates them automatically.");
+            return args.Length == 0 ? (int)ExitCode.InvalidArguments : (int)ExitCode.Success;
         }
 
         var subcommand = args[0].ToLowerInvariant();
@@ -224,10 +236,24 @@ public class Program
         switch (subcommand)
         {
             case "organize":
+            {
                 Console.WriteLine("Organizing local post files by status...");
-                cacheService.OrganizePostFiles();
-                Console.WriteLine("Local post files organized successfully.");
+                var moved = cacheService.OrganizePostFiles();
+                if (moved.Count > 0)
+                {
+                    Console.WriteLine($"Local post files organized successfully ({moved.Count} file(s) moved):");
+                    foreach (var msg in moved)
+                    {
+                        Console.WriteLine($"  - {msg}");
+                    }
+                }
+                else
+                {
+                    Console.WriteLine("Local post files are already in their correct status folders. No files were moved.");
+                }
                 return (int)ExitCode.Success;
+            }
+            case "pull":
             case "sync":
             {
                 Console.WriteLine("Starting posts synchronization...");
@@ -329,7 +355,8 @@ public class Program
                 {
                     if (!string.IsNullOrEmpty(profile.CachePath))
                     {
-                        cacheService.SavePostToCache(post);
+                        var cacheResult = cacheService.SavePostToCache(post);
+                        Console.WriteLine($"[Cache] Post created and saved to '{cacheResult.CurrentStatus}' folder ({Path.GetFileName(cacheResult.FilePath)}).");
                     }
 
                     OutputFormatter.WritePost(post, format, Console.Out);
@@ -355,7 +382,11 @@ public class Program
                         return (int)ExitCode.InvalidArguments;
                     }
 
-                    var updated = await syncService.PushPostAsync(id.Value, profile, ct);
+                    var (updated, cacheResult) = await syncService.PushPostAsync(id.Value, profile, ct);
+                    if (cacheResult.WasMoved)
+                    {
+                        Console.WriteLine(cacheResult.MoveMessage);
+                    }
                     OutputFormatter.WritePost(updated, format, Console.Out);
                     return (int)ExitCode.Success;
                 }
@@ -371,23 +402,42 @@ public class Program
                 }
 
                 var force = parsed.GetBool("force", defaultValue: true);
+                var cachedTitle = cacheService.GetCachedPostTitle(id.Value);
                 try
                 {
                     var response = await service.DeletePostAsync(id.Value, force, ct).ConfigureAwait(false);
-                    OutputFormatter.WriteDeleteResponse(response, format, Console.Out);
+                    OutputFormatter.WriteDeleteResponse(response, format, Console.Out, id.Value, cachedTitle);
 
                     // Also remove local cache files for this post when server deletion succeeds
                     if (response.Deleted)
                     {
                         cacheService.DeletePostFromCache(id.Value);
+                        if (format == OutputFormat.Table)
+                        {
+                            Console.WriteLine($"Successfully deleted post {id.Value}.");
+                        }
                     }
                 }
                 catch (WpAiCli.WordPress.WordPressApiException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
                 {
+                    var title = cachedTitle ?? "Unknown (already deleted)";
                     // If the post is already gone on the server, remove local cache as well
                     cacheService.DeletePostFromCache(id.Value);
                     // Report as deleted for UX consistency
-                    OutputFormatter.WriteDeleteResponse(new WordPressDeleteResponse { Deleted = true }, format, Console.Out);
+                    var fallbackResponse = new WordPressDeleteResponse
+                    {
+                        Deleted = true,
+                        Previous = new Dictionary<string, JsonElement>
+                        {
+                            ["id"] = JsonSerializer.SerializeToElement(id.Value),
+                            ["title"] = JsonSerializer.SerializeToElement(new { raw = title })
+                        }
+                    };
+                    OutputFormatter.WriteDeleteResponse(fallbackResponse, format, Console.Out, id.Value, title);
+                    if (format == OutputFormat.Table)
+                    {
+                        Console.WriteLine($"Post {id.Value} was already deleted on server. Local cache cleared.");
+                    }
                 }
 
                 return (int)ExitCode.Success;
@@ -518,9 +568,9 @@ public class Program
 
     static async Task<int> HandleTaxonomiesAsync(string[] args, SyncService syncService)
     {
-        if (args.Length == 0 || args[0].ToLowerInvariant() != "sync")
+        if (args.Length == 0 || (args[0].ToLowerInvariant() != "sync" && args[0].ToLowerInvariant() != "pull"))
         {
-            Console.Error.WriteLine("Specify taxonomies subcommand (sync).");
+            Console.Error.WriteLine("Specify taxonomies subcommand (sync|pull).");
             return (int)ExitCode.InvalidArguments;
         }
 
@@ -577,6 +627,15 @@ public class Program
             Console.WriteLine($"  {string.Join(", ", report.ConflictDetected)}");
             Console.WriteLine("Please resolve them individually using the 'resolve' command.");
             Console.WriteLine("Example: wpai resolve post 123 --strategy [local-wins|server-wins]");
+        }
+
+        if (report.MovedPosts.Count > 0)
+        {
+            Console.WriteLine("\nAutomatically reorganized post files based on status change:");
+            foreach (var moved in report.MovedPosts)
+            {
+                Console.WriteLine($"  {moved}");
+            }
         }
         Console.WriteLine("-------------------");
     }
@@ -659,19 +718,38 @@ public class Program
                 }
 
                 var force = parsed.GetBool("force", defaultValue: true);
+                var cachedName = cacheService.GetCachedCategoryName(id.Value);
                 try
                 {
                     var response = await service.DeleteCategoryAsync(id.Value, force, ct).ConfigureAwait(false);
-                    OutputFormatter.WriteDeleteResponse(response, format, Console.Out);
+                    OutputFormatter.WriteDeleteResponse(response, format, Console.Out, id.Value, cachedName);
                     if (response.Deleted)
                     {
                         cacheService.DeleteCategoryFromCache(id.Value);
+                        if (format == OutputFormat.Table)
+                        {
+                            Console.WriteLine($"Successfully deleted category {id.Value}.");
+                        }
                     }
                 }
                 catch (WpAiCli.WordPress.WordPressApiException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
                 {
+                    var name = cachedName ?? "Unknown (already deleted)";
                     cacheService.DeleteCategoryFromCache(id.Value);
-                    OutputFormatter.WriteDeleteResponse(new WordPressDeleteResponse { Deleted = true }, format, Console.Out);
+                    var fallbackResponse = new WordPressDeleteResponse
+                    {
+                        Deleted = true,
+                        Previous = new Dictionary<string, JsonElement>
+                        {
+                            ["id"] = JsonSerializer.SerializeToElement(id.Value),
+                            ["name"] = JsonSerializer.SerializeToElement(name)
+                        }
+                    };
+                    OutputFormatter.WriteDeleteResponse(fallbackResponse, format, Console.Out, id.Value, name);
+                    if (format == OutputFormat.Table)
+                    {
+                        Console.WriteLine($"Category {id.Value} was already deleted on server. Local cache cleared.");
+                    }
                 }
 
                 return (int)ExitCode.Success;
@@ -761,19 +839,38 @@ public class Program
                 }
 
                 var force = parsed.GetBool("force", defaultValue: true);
+                var cachedName = cacheService.GetCachedTagName(id.Value);
                 try
                 {
                     var response = await service.DeleteTagAsync(id.Value, force, ct).ConfigureAwait(false);
-                    OutputFormatter.WriteDeleteResponse(response, format, Console.Out);
+                    OutputFormatter.WriteDeleteResponse(response, format, Console.Out, id.Value, cachedName);
                     if (response.Deleted)
                     {
                         cacheService.DeleteTagFromCache(id.Value);
+                        if (format == OutputFormat.Table)
+                        {
+                            Console.WriteLine($"Successfully deleted tag {id.Value}.");
+                        }
                     }
                 }
                 catch (WpAiCli.WordPress.WordPressApiException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
                 {
+                    var name = cachedName ?? "Unknown (already deleted)";
                     cacheService.DeleteTagFromCache(id.Value);
-                    OutputFormatter.WriteDeleteResponse(new WordPressDeleteResponse { Deleted = true }, format, Console.Out);
+                    var fallbackResponse = new WordPressDeleteResponse
+                    {
+                        Deleted = true,
+                        Previous = new Dictionary<string, JsonElement>
+                        {
+                            ["id"] = JsonSerializer.SerializeToElement(id.Value),
+                            ["name"] = JsonSerializer.SerializeToElement(name)
+                        }
+                    };
+                    OutputFormatter.WriteDeleteResponse(fallbackResponse, format, Console.Out, id.Value, name);
+                    if (format == OutputFormat.Table)
+                    {
+                        Console.WriteLine($"Tag {id.Value} was already deleted on server. Local cache cleared.");
+                    }
                 }
 
                 return (int)ExitCode.Success;
@@ -799,6 +896,7 @@ public class Program
 
         switch (subcommand)
         {
+            case "pull":
             case "sync":
                 return await HandleMediaSyncAsync(syncService, profile);
             case "list":
@@ -884,19 +982,38 @@ public class Program
                 }
 
                 var force = parsed.GetBool("force", defaultValue: true);
+                var cachedTitle = cacheService.GetCachedMediaTitle(id.Value);
                 try
                 {
                     var response = await service.DeleteMediaAsync(id.Value, force, ct).ConfigureAwait(false);
-                    OutputFormatter.WriteDeleteResponse(response, format, Console.Out);
+                    OutputFormatter.WriteDeleteResponse(response, format, Console.Out, id.Value, cachedTitle);
                     if (response.Deleted)
                     {
                         cacheService.DeleteMediaFromCache(id.Value);
+                        if (format == OutputFormat.Table)
+                        {
+                            Console.WriteLine($"Successfully deleted media {id.Value}.");
+                        }
                     }
                 }
                 catch (WpAiCli.WordPress.WordPressApiException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
                 {
+                    var title = cachedTitle ?? "Unknown (already deleted)";
                     cacheService.DeleteMediaFromCache(id.Value);
-                    OutputFormatter.WriteDeleteResponse(new WordPressDeleteResponse { Deleted = true }, format, Console.Out);
+                    var fallbackResponse = new WordPressDeleteResponse
+                    {
+                        Deleted = true,
+                        Previous = new Dictionary<string, JsonElement>
+                        {
+                            ["id"] = JsonSerializer.SerializeToElement(id.Value),
+                            ["title"] = JsonSerializer.SerializeToElement(new { raw = title })
+                        }
+                    };
+                    OutputFormatter.WriteDeleteResponse(fallbackResponse, format, Console.Out, id.Value, title);
+                    if (format == OutputFormat.Table)
+                    {
+                        Console.WriteLine($"Media {id.Value} was already deleted on server. Local cache cleared.");
+                    }
                 }
 
                 return (int)ExitCode.Success;

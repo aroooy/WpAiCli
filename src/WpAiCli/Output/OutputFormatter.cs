@@ -124,8 +124,8 @@ public static partial class OutputFormatter
                     list.Select(cat => new[]
                     {
                         cat.Id.ToString(),
-                        Truncate(cat.Name, 40),
-                        Truncate(cat.Slug, 40),
+                        Truncate(System.Net.WebUtility.HtmlDecode(cat.Name ?? string.Empty), 40),
+                        Truncate(System.Net.WebUtility.UrlDecode(cat.Slug ?? string.Empty), 40),
                         cat.Count?.ToString() ?? string.Empty
                     }));
                 break;
@@ -148,8 +148,8 @@ public static partial class OutputFormatter
                     new[]
                     {
                         new[] { "ID", category.Id.ToString() },
-                        new[] { "Name", category.Name ?? string.Empty },
-                        new[] { "Slug", category.Slug ?? string.Empty },
+                        new[] { "Name", System.Net.WebUtility.HtmlDecode(category.Name ?? string.Empty) },
+                        new[] { "Slug", System.Net.WebUtility.UrlDecode(category.Slug ?? string.Empty) },
                         new[] { "Description", category.Description ?? string.Empty },
                         new[] { "Count", category.Count?.ToString() ?? string.Empty },
                         new[] { "Parent", category.Parent?.ToString() ?? string.Empty },
@@ -178,8 +178,8 @@ public static partial class OutputFormatter
                     list.Select(tag => new[]
                     {
                         tag.Id.ToString(),
-                        Truncate(tag.Name, 40),
-                        Truncate(tag.Slug, 40),
+                        Truncate(System.Net.WebUtility.HtmlDecode(tag.Name ?? string.Empty), 40),
+                        Truncate(System.Net.WebUtility.UrlDecode(tag.Slug ?? string.Empty), 40),
                         tag.Count?.ToString() ?? string.Empty
                     }));
                 break;
@@ -202,8 +202,8 @@ public static partial class OutputFormatter
                     new[]
                     {
                         new[] { "ID", tag.Id.ToString() },
-                        new[] { "Name", tag.Name ?? string.Empty },
-                        new[] { "Slug", tag.Slug ?? string.Empty },
+                        new[] { "Name", System.Net.WebUtility.HtmlDecode(tag.Name ?? string.Empty) },
+                        new[] { "Slug", System.Net.WebUtility.UrlDecode(tag.Slug ?? string.Empty) },
                         new[] { "Description", tag.Description ?? string.Empty },
                         new[] { "Count", tag.Count?.ToString() ?? string.Empty },
                     });
@@ -211,15 +211,24 @@ public static partial class OutputFormatter
         }
     }
 
-    public static void WriteDeleteResponse(WordPressDeleteResponse response, OutputFormat format, TextWriter writer)
+    public static void WriteDeleteResponse(WordPressDeleteResponse response, OutputFormat format, TextWriter writer, int? fallbackId = null, string? fallbackTitle = null)
     {
+        var (prevId, prevTitle) = ExtractPreviousInfo(response);
+        if (string.IsNullOrEmpty(prevId) && fallbackId.HasValue)
+        {
+            prevId = fallbackId.Value.ToString();
+        }
+        if (string.IsNullOrEmpty(prevTitle) && !string.IsNullOrEmpty(fallbackTitle))
+        {
+            prevTitle = System.Net.WebUtility.HtmlDecode(fallbackTitle);
+        }
         switch (format)
         {
             case OutputFormat.Json:
                 writer.WriteLine(JsonSerializer.Serialize(response, SerializerOptions));
                 break;
             case OutputFormat.Raw:
-                writer.WriteLine(response.Deleted ? "deleted" : "not deleted");
+                writer.WriteLine(response.Deleted ? $"deleted\t{prevId}\t{prevTitle}" : "not deleted");
                 break;
             default:
                 WriteTable(writer,
@@ -229,14 +238,64 @@ public static partial class OutputFormatter
                         new[]
                         {
                             response.Deleted.ToString(),
-                            response.Previous is { } prev && prev.TryGetValue("id", out var idElement) && idElement.ValueKind == JsonValueKind.Number
-                                ? idElement.GetInt32().ToString()
-                                : string.Empty,
-                            string.Empty
+                            prevId,
+                            Truncate(prevTitle, 60)
                         }
                     });
                 break;
         }
+    }
+
+    private static (string Id, string Title) ExtractPreviousInfo(WordPressDeleteResponse response)
+    {
+        if (response.Previous == null) return (string.Empty, string.Empty);
+
+        string idStr = string.Empty;
+        if (response.Previous.TryGetValue("id", out var idElem))
+        {
+            if (idElem.ValueKind == JsonValueKind.Number) idStr = idElem.GetInt32().ToString();
+            else if (idElem.ValueKind == JsonValueKind.String) idStr = idElem.GetString() ?? string.Empty;
+        }
+
+        string titleStr = string.Empty;
+        if (response.Previous.TryGetValue("title", out var titleElem))
+        {
+            if (titleElem.ValueKind == JsonValueKind.Object)
+            {
+                if (titleElem.TryGetProperty("raw", out var rawElem) && rawElem.ValueKind == JsonValueKind.String)
+                {
+                    titleStr = rawElem.GetString() ?? string.Empty;
+                }
+                else if (titleElem.TryGetProperty("rendered", out var rendElem) && rendElem.ValueKind == JsonValueKind.String)
+                {
+                    titleStr = rendElem.GetString() ?? string.Empty;
+                }
+            }
+            else if (titleElem.ValueKind == JsonValueKind.String)
+            {
+                titleStr = titleElem.GetString() ?? string.Empty;
+            }
+        }
+        else if (response.Previous.TryGetValue("name", out var nameElem))
+        {
+            if (nameElem.ValueKind == JsonValueKind.Object)
+            {
+                if (nameElem.TryGetProperty("raw", out var rawName) && rawName.ValueKind == JsonValueKind.String)
+                {
+                    titleStr = rawName.GetString() ?? string.Empty;
+                }
+                else if (nameElem.TryGetProperty("rendered", out var rendName) && rendName.ValueKind == JsonValueKind.String)
+                {
+                    titleStr = rendName.GetString() ?? string.Empty;
+                }
+            }
+            else if (nameElem.ValueKind == JsonValueKind.String)
+            {
+                titleStr = nameElem.GetString() ?? string.Empty;
+            }
+        }
+
+        return (idStr, System.Net.WebUtility.HtmlDecode(titleStr));
     }
 
     public static void WriteRevisions(IReadOnlyList<WordPressRevision> revisions, OutputFormat format, TextWriter writer)
@@ -408,12 +467,12 @@ public static partial class OutputFormatter
         {
             if (!string.IsNullOrWhiteSpace(post.Slug))
             {
-                return post.Slug;
+                return System.Net.WebUtility.UrlDecode(post.Slug);
             }
             return "(untitled)";
         }
 
-        return title;
+        return System.Net.WebUtility.HtmlDecode(title);
     }
 }
 
@@ -461,10 +520,10 @@ public static partial class OutputFormatter
         return writer.ToString();
     }
 
-    public static string FormatDeleteResponse(WordPressDeleteResponse response, OutputFormat format)
+    public static string FormatDeleteResponse(WordPressDeleteResponse response, OutputFormat format, int? fallbackId = null, string? fallbackTitle = null)
     {
         using var writer = new StringWriter();
-        WriteDeleteResponse(response, format, writer);
+        WriteDeleteResponse(response, format, writer, fallbackId, fallbackTitle);
         return writer.ToString();
     }
 
