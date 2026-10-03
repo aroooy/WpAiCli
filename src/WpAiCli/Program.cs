@@ -90,7 +90,7 @@ public class Program
 
                     services.AddTransient<WordPressService>();
                     services.AddTransient<CacheService>(sp => new CacheService(profile.CachePath!, profile.Name));
-                    services.AddTransient<SyncService>();
+                    services.AddTransient<WorkspaceService>();
                 })
                 .Build();
 
@@ -147,24 +147,24 @@ public class Program
                     return await HandlePostsAsync(
                         commandArgs,
                         services.GetRequiredService<WordPressService>(),
-                        services.GetRequiredService<SyncService>(),
+                        services.GetRequiredService<WorkspaceService>(),
                         services.GetRequiredService<ConnectionProfile>(),
                         services.GetRequiredService<CacheService>()
                     );
                 case "categories":
-                    return await HandleCategoriesAsync(commandArgs, services.GetRequiredService<WordPressService>(), services.GetRequiredService<CacheService>(), services.GetRequiredService<SyncService>());
+                    return await HandleCategoriesAsync(commandArgs, services.GetRequiredService<WordPressService>(), services.GetRequiredService<CacheService>(), services.GetRequiredService<WorkspaceService>());
                 case "tags":
-                    return await HandleTagsAsync(commandArgs, services.GetRequiredService<WordPressService>(), services.GetRequiredService<CacheService>(), services.GetRequiredService<SyncService>());
+                    return await HandleTagsAsync(commandArgs, services.GetRequiredService<WordPressService>(), services.GetRequiredService<CacheService>(), services.GetRequiredService<WorkspaceService>());
                 case "media":
                     return await HandleMediaAsync(
                         commandArgs,
                         services.GetRequiredService<WordPressService>(),
-                        services.GetRequiredService<SyncService>(),
+                        services.GetRequiredService<WorkspaceService>(),
                         services.GetRequiredService<ConnectionProfile>(),
                         services.GetRequiredService<CacheService>()
                         );
                 case "taxonomies":
-                    return await HandleTaxonomiesAsync(commandArgs, services.GetRequiredService<SyncService>());
+                    return await HandleTaxonomiesAsync(commandArgs, services.GetRequiredService<WorkspaceService>());
                 case "revisions":
                     return await HandleRevisionsAsync(
                         commandArgs,
@@ -172,7 +172,7 @@ public class Program
                         services.GetRequiredService<CacheService>()
                     );
                 case "resolve":
-                    return await HandleResolveAsync(commandArgs, services.GetRequiredService<SyncService>(), services.GetRequiredService<ConnectionProfile>());
+                    return await HandleResolveAsync(commandArgs, services.GetRequiredService<WorkspaceService>(), services.GetRequiredService<ConnectionProfile>());
                 default:
                     Console.Error.WriteLine($"Unknown command: {command}");
                     return (int)ExitCode.InvalidArguments;
@@ -208,7 +208,7 @@ public class Program
     // - Validates input for create/push/delete
     // - Supports edit-mode (markdown|html) where markdown can be converted client-side
     //   or sent as-is for server-side conversion depending on profile settings.
-    static async Task<int> HandlePostsAsync(string[] args, WordPressService service, SyncService syncService, ConnectionProfile profile, CacheService cacheService)
+    static async Task<int> HandlePostsAsync(string[] args, WordPressService service, WorkspaceService workspaceService, ConnectionProfile profile, CacheService cacheService)
     {
         if (args.Length == 0 || args[0] == "--help" || args[0] == "-h" || args[0] == "help")
         {
@@ -254,12 +254,19 @@ public class Program
                 return (int)ExitCode.Success;
             }
             case "pull":
+            {
+                Console.WriteLine("Pulling latest posts from server...");
+                var syncLimit = profile.SyncItemsLimit ?? 30;
+                var report = await workspaceService.PullPostsAsync(profile, syncLimit, ct);
+                PrintTransferReport(report);
+                return (int)ExitCode.Success;
+            }
             case "sync":
             {
-                Console.WriteLine("Starting posts synchronization...");
+                Console.WriteLine("Starting two-way posts synchronization...");
                 var syncLimit = profile.SyncItemsLimit ?? 30;
-                var report = await syncService.SynchronizePostsAsync(profile, syncLimit, ct);
-                PrintSyncReport(report);
+                var report = await workspaceService.SyncPostsAsync(profile, syncLimit, ct);
+                PrintTransferReport(report);
                 return (int)ExitCode.Success;
             }
             case "list":
@@ -369,8 +376,8 @@ public class Program
                 if (parsed.GetBool("all", defaultValue: false))
                 {
                     Console.WriteLine("Pushing all modified local posts to the server...");
-                    var report = await syncService.PushAllModifiedPostsAsync(profile, ct);
-                    PrintSyncReport(report);
+                    var report = await workspaceService.PushAllModifiedPostsAsync(profile, ct);
+                    PrintTransferReport(report);
                     return (int)ExitCode.Success;
                 }
                 else
@@ -382,7 +389,7 @@ public class Program
                         return (int)ExitCode.InvalidArguments;
                     }
 
-                    var (updated, cacheResult) = await syncService.PushPostAsync(id.Value, profile, ct);
+                    var (updated, cacheResult) = await workspaceService.PushPostAsync(id.Value, profile, ct);
                     if (cacheResult.WasMoved)
                     {
                         Console.WriteLine(cacheResult.MoveMessage);
@@ -537,7 +544,7 @@ public class Program
     }
 
 
-    static async Task<int> HandleResolveAsync(string[] args, SyncService syncService, ConnectionProfile profile)
+    static async Task<int> HandleResolveAsync(string[] args, WorkspaceService workspaceService, ConnectionProfile profile)
     {
         if (args.Length < 2)
         {
@@ -562,11 +569,11 @@ public class Program
             return (int)ExitCode.InvalidArguments;
         }
 
-        await syncService.ResolveConflictAsync(type, id, strategy, profile, CancellationToken.None);
+        await workspaceService.ResolveConflictAsync(type, id, strategy, profile, CancellationToken.None);
         return (int)ExitCode.Success;
     }
 
-    static async Task<int> HandleTaxonomiesAsync(string[] args, SyncService syncService)
+    static async Task<int> HandleTaxonomiesAsync(string[] args, WorkspaceService workspaceService)
     {
         if (args.Length == 0 || (args[0].ToLowerInvariant() != "sync" && args[0].ToLowerInvariant() != "pull"))
         {
@@ -574,33 +581,47 @@ public class Program
             return (int)ExitCode.InvalidArguments;
         }
 
-        Console.WriteLine("Starting taxonomies synchronization...");
-        var report = await syncService.SynchronizeTaxonomiesAsync(CancellationToken.None);
-        PrintSyncReport(report);
+        var isPull = args[0].ToLowerInvariant() == "pull";
+        Console.WriteLine(isPull ? "Pulling taxonomies from server..." : "Starting two-way taxonomies synchronization...");
+        var report = isPull
+            ? await workspaceService.PullTaxonomiesAsync(CancellationToken.None)
+            : await workspaceService.SyncTaxonomiesAsync(CancellationToken.None);
+        PrintTransferReport(report);
         return (int)ExitCode.Success;
     }
 
-    static async Task<int> HandleMediaSyncAsync(SyncService syncService, ConnectionProfile profile)
+    static async Task<int> HandleMediaSyncAsync(string subcommand, WorkspaceService workspaceService, ConnectionProfile profile)
     {
-        Console.WriteLine("Starting media synchronization...");
+        var isPull = string.Equals(subcommand, "pull", StringComparison.OrdinalIgnoreCase);
+        Console.WriteLine(isPull ? "Pulling media from server..." : "Starting two-way media synchronization...");
         var syncLimit = profile.SyncItemsLimit ?? 30;
-        var report = await syncService.SynchronizeMediaAsync(syncLimit, CancellationToken.None);
-        PrintSyncReport(report);
+        var report = isPull
+            ? await workspaceService.PullMediaAsync(syncLimit, CancellationToken.None)
+            : await workspaceService.SyncMediaAsync(syncLimit, CancellationToken.None);
+        PrintTransferReport(report);
         return (int)ExitCode.Success;
     }
 
-    static void PrintSyncReport(SyncReport report)
+    static void PrintTransferReport(TransferReport report)
     {
-        Console.WriteLine("\n--- Sync Report ---");
+        Console.WriteLine("\n--- Transfer Report ---");
         Console.WriteLine($"Pushed to server: {report.PushedToServer.Count} post(s)");
         Console.WriteLine($"Pulled from server: {report.PulledFromServer.Count} post(s)");
         Console.WriteLine($"Newly cached: {report.NewlyCached.Count} post(s)");
         Console.WriteLine($"Deleted from local: {report.DeletedFromLocal.Count} post(s)");
+        if (report.LocalEditsKept.Count > 0)
+        {
+            Console.WriteLine($"Local edits preserved: {report.LocalEditsKept.Count} post(s)");
+        }
         Console.WriteLine($"Local validation errors (skipped): {report.LocalValidationErrors.Count} post(s)");
         Console.WriteLine($"Conflicts detected (skipped): {report.ConflictDetected.Count} post(s)");
         if (report.PushedTaxonomies.Count > 0)
         {
             Console.WriteLine($"Pushed taxonomies: {report.PushedTaxonomies.Count}");
+        }
+        if (report.PulledTaxonomies.Count > 0)
+        {
+            Console.WriteLine($"Pulled taxonomies: {string.Join(", ", report.PulledTaxonomies)}");
         }
         if (report.PushedMediaToServer.Count > 0 || report.NewlyCachedMedia.Count > 0 || report.MediaConflicts.Count > 0 || report.DeletedMediaFromLocal.Count > 0 || report.PulledMediaFromServer.Count > 0)
         {
@@ -640,7 +661,7 @@ public class Program
         Console.WriteLine("-------------------");
     }
 
-    static async Task<int> HandleCategoriesAsync(string[] args, WordPressService service, CacheService cacheService, SyncService syncService)
+    static async Task<int> HandleCategoriesAsync(string[] args, WordPressService service, CacheService cacheService, WorkspaceService workspaceService)
     {
         if (args.Length == 0)
         {
@@ -704,7 +725,7 @@ public class Program
                     Console.Error.WriteLine("Provide a category ID.");
                     return (int)ExitCode.InvalidArguments;
                 }
-                var updated = await syncService.PushCategoryAsync(id.Value, ct);
+                var updated = await workspaceService.PushCategoryAsync(id.Value, ct);
                 OutputFormatter.WriteCategory(updated, format, Console.Out);
                 return (int)ExitCode.Success;
             }
@@ -760,7 +781,7 @@ public class Program
         }
     }
 
-    static async Task<int> HandleTagsAsync(string[] args, WordPressService service, CacheService cacheService, SyncService syncService)
+    static async Task<int> HandleTagsAsync(string[] args, WordPressService service, CacheService cacheService, WorkspaceService workspaceService)
     {
         if (args.Length == 0)
         {
@@ -811,7 +832,7 @@ public class Program
                     Console.Error.WriteLine("Provide a tag ID.");
                     return (int)ExitCode.InvalidArguments;
                 }
-                var updated = await syncService.PushTagAsync(id.Value, ct);
+                var updated = await workspaceService.PushTagAsync(id.Value, ct);
                 OutputFormatter.WriteTag(updated, format, Console.Out);
                 return (int)ExitCode.Success;
             }
@@ -881,7 +902,7 @@ public class Program
         }
     }
 
-    static async Task<int> HandleMediaAsync(string[] args, WordPressService service, SyncService syncService, ConnectionProfile profile, CacheService cacheService)
+    static async Task<int> HandleMediaAsync(string[] args, WordPressService service, WorkspaceService workspaceService, ConnectionProfile profile, CacheService cacheService)
     {
         if (args.Length == 0)
         {
@@ -898,7 +919,7 @@ public class Program
         {
             case "pull":
             case "sync":
-                return await HandleMediaSyncAsync(syncService, profile);
+                return await HandleMediaSyncAsync(subcommand, workspaceService, profile);
             case "list":
             {
                 var perPage = parsed.GetInt("per-page") ?? 10;
@@ -968,7 +989,7 @@ public class Program
                     Console.Error.WriteLine("Provide a media ID.");
                     return (int)ExitCode.InvalidArguments;
                 }
-                var updated = await syncService.PushMediaAsync(id.Value, ct);
+                var updated = await workspaceService.PushMediaAsync(id.Value, ct);
                 OutputFormatter.WriteMediaItem(updated, format, Console.Out);
                 return (int)ExitCode.Success;
             }
@@ -1794,7 +1815,7 @@ public class Program
                 ));
             builder.Services.AddTransient<WordPressService>();
             builder.Services.AddTransient<CacheService>(sp => new CacheService(profile.CachePath!, profile.Name));
-            builder.Services.AddTransient<SyncService>();
+            builder.Services.AddTransient<WorkspaceService>();
 
             // 4. MCPサーバーの登録 (ここが以前と違う重要ポイント)
             builder.Services.AddMcpServer()

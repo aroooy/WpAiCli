@@ -110,7 +110,7 @@ For AI agents interacting with WordPress via CLI or MCP, follow the standard **4
 ### The 4-Step Cycle Explained
 
 1. **CHECK (`posts list` / `ListPosts` / `GetPost`)**: Inspect existing posts, IDs, and statuses before taking action.
-2. **PULL (`posts pull` / `PullPosts`)**: Fetch the latest server state and refresh local Markdown files. (Equivalent to `posts sync`).
+2. **PULL (`posts pull` / `PullPosts`)**: Fetch the latest server state and refresh local Markdown files. Safe: local modifications are preserved and never pushed automatically.
 3. **EDIT (Direct File Edit)**: Edit the Markdown file (`posts/[status]/[ID]-[Title].md`) in the local cache. Modify metadata in YAML front-matter or the body content.
 4. **PUSH (`posts push <ID>` / `PushPost`)**: Unilaterally apply your local edits to the WordPress server. The tool automatically moves the cache file if the status changed.
 
@@ -119,9 +119,9 @@ For AI agents interacting with WordPress via CLI or MCP, follow the standard **4
 | Role | CLI Commands | MCP Tools | Guidance for AI |
 | :--- | :--- | :--- | :--- |
 | **Primary (Daily Core)** | `posts list`, `posts get`, `posts pull`, `posts push`, `posts create` | `ListPosts`, `GetPost`, `PullPosts`, `PushPost`, `CreatePost` | **Use these for 95% of tasks.** Minimal overhead, clear intent. |
-| **Taxonomies & Media** | `categories list/create/push`, `tags ...`, `media list/upload/pull` | `ListCategories`, `ListTags`, `ListMedia`, `UploadMedia` | Use when managing categories, tags, or uploading images. |
+| **Taxonomies & Media** | `categories list/create/push`, `tags ...`, `media list/upload/pull` | `ListCategories`, `ListTags`, `ListMedia`, `UploadMedia`, `PullTaxonomies`, `PullMedia` | Use when managing categories, tags, or uploading images. |
 | **Maintenance** | `posts organize` | `OrganizePosts` | **Normally unnecessary.** `posts push` and `posts pull` automatically organize files. |
-| **Advanced (Exception only)** | `posts sync`, `resolve`, `revisions fetch/clean` | `SyncPosts`, `ResolveConflict`, `FetchRevisions`, `CleanRevisions` | Use only when bidirectional sync conflicts or revision restores are specifically requested. |
+| **Advanced (Exception only)** | `posts sync`, `resolve`, `revisions fetch/clean` | `ResolveConflict`, `FetchRevisions`, `CleanRevisions` | Use only when transfer conflicts or revision restores are specifically requested. |
 
 ### Critical Rule for AI: Never Move or Rename Cache Files Manually
 
@@ -178,9 +178,9 @@ For machine integration (like with an AI), JSON mode (`--format json`) is recomm
 
 ### Posts (`posts`)
 
-- `pull`: **Pulls and refreshes the local cache with the latest server state.** (Recommended primary command for updating local posts. Alias for `posts sync`). `[Cache Effect: Reflects server changes]`
+- `pull`: **Pulls and refreshes the local cache with the latest server state.** (Recommended primary command for updating local posts. Safe: local edits are preserved and never pushed automatically). `[Cache Effect: Reflects server changes]`
   - `wpai posts pull`
-- `sync`: **Performs a two-way sync for posts and taxonomies (categories/tags).** It's a safe process that first syncs taxonomies and proceeds to post synchronization only if successful. `[Cache Effect: Reflects server changes]`
+- `sync`: **Performs a two-way sync for posts and taxonomies (categories/tags).** Pushes local changes to the server and pulls remote changes. `[Cache Effect: Reflects server changes and pushes local edits]`
   - `wpai posts sync`
 - `organize`: Organizes local post files (`.md`) into subfolders like `publish`, `draft`, etc., based on the status in each file's YAML header. Does not communicate with the server. Use this command if you updated statuses locally and want them organized before pushing. **Never move files manually.** `[Cache Effect: Local file move]`
   - `wpai posts organize`
@@ -489,8 +489,7 @@ Once connected via MCP, the AI can execute tasks using clearly prioritized tools
   * `ShowCachePath`: View the cache root path for the active connection.
 
 * **Advanced & Maintenance Tools**:
-  * `SyncPosts`, `SyncTaxonomies`, `SyncMedia`: Full two-way synchronization.
-  * `ResolveConflict`: Resolves synchronization conflicts (`local-wins` or `server-wins`).
+  * `ResolveConflict`: Resolves transfer conflicts (`local-wins` or `server-wins`).
   * `FetchRevisions`, `CleanRevisions`: Inspect or clear post revision history.
   * `OrganizePosts`: Reorganizes local post files into status folders (normally handled automatically).
 

@@ -558,7 +558,7 @@ public class CacheService
                         var postInDb = _db.Posts.FirstOrDefault(p => p.PostId == postId);
                         if (postInDb != null)
                         {
-                            // FIX: Use the canonical method to calculate the hash, matching the SyncService logic.
+                            // FIX: Use the canonical method to calculate the hash, matching the WorkspaceService logic.
                             var canonicalContent = string.Join("\n", "---", YamlSerializer.Serialize(metadata), "---", "", parts[2].TrimStart());
                             var newHash = ComputeSha256Hash(canonicalContent);
                             postInDb.FileHash = newHash;

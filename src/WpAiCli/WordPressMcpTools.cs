@@ -447,26 +447,14 @@ public static partial class WordPressMcpTools
         return OutputFormatter.FormatMediaItems(items, OutputFormat.Table);
     }
 
-    // --- Sync/Pull Group ---
+    // --- Workspace Pull Group ---
 
     [McpServerTool]
-    [Description("[PRIMARY] Pulls and synchronizes the latest posts and taxonomies from WordPress into the local cache. Equivalent to SyncPosts. NOTE: If there are unsaved local modifications in the cache, they will also be pushed to the server.")]
-    public static Task<string> PullPosts(IServiceProvider services) => SyncPosts(services);
-
-    [McpServerTool]
-    [Description("Pulls and synchronizes categories and tags from WordPress into the local cache. Equivalent to SyncTaxonomies.")]
-    public static Task<string> PullTaxonomies(IServiceProvider services) => SyncTaxonomies(services);
-
-    [McpServerTool]
-    [Description("Pulls and synchronizes media library metadata from WordPress into the local cache. Equivalent to SyncMedia.")]
-    public static Task<string> PullMedia(IServiceProvider services) => SyncMedia(services);
-
-    [McpServerTool]
-    [Description("[PRIMARY] Performs a two-way synchronization for posts and taxonomies (categories and tags). Reorganizes post files into their respective status folders automatically. Do NOT manually move or rename post files in the cache.")]
-    public static async Task<string> SyncPosts(IServiceProvider services)
+    [Description("[PRIMARY] Pulls the latest posts and taxonomies from WordPress into the local cache. Safe: local modifications are preserved and never pushed automatically.")]
+    public static async Task<string> PullPosts(IServiceProvider services)
     {
         using var scope = services.CreateScope();
-        var syncService = scope.ServiceProvider.GetRequiredService<SyncService>();
+        var workspaceService = scope.ServiceProvider.GetRequiredService<WorkspaceService>();
         var store = ConnectionStore.Load();
         var profile = store.GetActiveProfile();
         if (profile is null)
@@ -475,33 +463,33 @@ public static partial class WordPressMcpTools
         }
         
         var sb = new StringBuilder();
-        sb.AppendLine("Starting posts synchronization...");
+        sb.AppendLine("Starting posts pull...");
         var syncLimit = profile.SyncItemsLimit ?? 30;
-        var report = await syncService.SynchronizePostsAsync(profile, syncLimit, CancellationToken.None);
-        sb.Append(FormatSyncReport(report));
+        var report = await workspaceService.PullPostsAsync(profile, syncLimit, CancellationToken.None);
+        sb.Append(FormatTransferReport(report));
         return sb.ToString();
     }
 
     [McpServerTool]
-    [Description("Performs a two-way synchronization for categories and tags.")]
-    public static async Task<string> SyncTaxonomies(IServiceProvider services)
+    [Description("Pulls categories and tags from WordPress into the local cache. Safe: local taxonomy edits are preserved and never pushed automatically.")]
+    public static async Task<string> PullTaxonomies(IServiceProvider services)
     {
         using var scope = services.CreateScope();
-        var syncService = scope.ServiceProvider.GetRequiredService<SyncService>();
+        var workspaceService = scope.ServiceProvider.GetRequiredService<WorkspaceService>();
 
         var sb = new StringBuilder();
-        sb.AppendLine("Starting taxonomies synchronization...");
-        var report = await syncService.SynchronizeTaxonomiesAsync(CancellationToken.None);
-        sb.Append(FormatSyncReport(report));
+        sb.AppendLine("Starting taxonomies pull...");
+        var report = await workspaceService.PullTaxonomiesAsync(CancellationToken.None);
+        sb.Append(FormatTransferReport(report));
         return sb.ToString();
     }
 
     [McpServerTool]
-    [Description("Performs a synchronization for the media library.")]
-    public static async Task<string> SyncMedia(IServiceProvider services)
+    [Description("Pulls media library metadata and files from WordPress into the local cache. Safe: local metadata edits are preserved and never pushed automatically.")]
+    public static async Task<string> PullMedia(IServiceProvider services)
     {
         using var scope = services.CreateScope();
-        var syncService = scope.ServiceProvider.GetRequiredService<SyncService>();
+        var workspaceService = scope.ServiceProvider.GetRequiredService<WorkspaceService>();
         var store = ConnectionStore.Load();
         var profile = store.GetActiveProfile();
         if (profile is null)
@@ -510,10 +498,10 @@ public static partial class WordPressMcpTools
         }
 
         var sb = new StringBuilder();
-        sb.AppendLine("Starting media synchronization...");
+        sb.AppendLine("Starting media pull...");
         var syncLimit = profile.SyncItemsLimit ?? 30;
-        var report = await syncService.SynchronizeMediaAsync(syncLimit, CancellationToken.None);
-        sb.Append(FormatSyncReport(report));
+        var report = await workspaceService.PullMediaAsync(syncLimit, CancellationToken.None);
+        sb.Append(FormatTransferReport(report));
         return sb.ToString();
     }
 
@@ -547,19 +535,27 @@ public static partial class WordPressMcpTools
         return sb.ToString();
     }
 
-    private static string FormatSyncReport(SyncReport report)
+    private static string FormatTransferReport(TransferReport report)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("\n--- Sync Report ---");
+        sb.AppendLine("\n--- Transfer Report ---");
         sb.AppendLine($"Pushed to server: {report.PushedToServer.Count} post(s)");
         sb.AppendLine($"Pulled from server: {report.PulledFromServer.Count} post(s)");
         sb.AppendLine($"Newly cached: {report.NewlyCached.Count} post(s)");
         sb.AppendLine($"Deleted from local: {report.DeletedFromLocal.Count} post(s)");
+        if (report.LocalEditsKept.Count > 0)
+        {
+            sb.AppendLine($"Local edits preserved: {report.LocalEditsKept.Count} post(s)");
+        }
         sb.AppendLine($"Local validation errors (skipped): {report.LocalValidationErrors.Count} post(s)");
         sb.AppendLine($"Conflicts detected (skipped): {report.ConflictDetected.Count} post(s)");
         if (report.PushedTaxonomies.Count > 0)
         {
             sb.AppendLine($"Pushed taxonomies: {report.PushedTaxonomies.Count}");
+        }
+        if (report.PulledTaxonomies.Count > 0)
+        {
+            sb.AppendLine($"Pulled taxonomies: {string.Join(", ", report.PulledTaxonomies)}");
         }
         if (report.PushedMediaToServer.Count > 0 || report.NewlyCachedMedia.Count > 0 || report.MediaConflicts.Count > 0 || report.DeletedMediaFromLocal.Count > 0 || report.PulledMediaFromServer.Count > 0)
         {
@@ -686,7 +682,7 @@ public static partial class WordPressMcpTools
     )
     {
         using var scope = services.CreateScope();
-        var syncService = scope.ServiceProvider.GetRequiredService<SyncService>();
+        var workspaceService = scope.ServiceProvider.GetRequiredService<WorkspaceService>();
         var store = ConnectionStore.Load();
         var profile = store.GetActiveProfile();
         if (profile is null)
@@ -697,8 +693,8 @@ public static partial class WordPressMcpTools
         var pushAll = all.GetValueOrDefault(false);
         if (pushAll)
         {
-            var report = await syncService.PushAllModifiedPostsAsync(profile, CancellationToken.None);
-            return FormatSyncReport(report);
+            var report = await workspaceService.PushAllModifiedPostsAsync(profile, CancellationToken.None);
+            return FormatTransferReport(report);
         }
         else
         {
@@ -707,7 +703,7 @@ public static partial class WordPressMcpTools
                 return "Error: Provide a post ID, or set 'all' to true to push all modified posts.";
             }
 
-            var (updated, cacheResult) = await syncService.PushPostAsync(id.Value, profile, CancellationToken.None);
+            var (updated, cacheResult) = await workspaceService.PushPostAsync(id.Value, profile, CancellationToken.None);
             var sb = new StringBuilder();
             if (cacheResult.WasMoved)
             {
@@ -797,7 +793,7 @@ public static partial class WordPressMcpTools
     }
 
     [McpServerTool]
-    [Description("[ADVANCED] Resolves a sync conflict when a post or taxonomy differs on both server and local. Use only when reported by SyncPosts/PullPosts.")]
+    [Description("[ADVANCED] Resolves a transfer conflict when a post or taxonomy differs on both server and local. Use only when reported by PullPosts or PushPost.")]
     public static async Task<string> ResolveConflict(
         [Description("The type of content that conflicted ('post', 'category', 'tag').")] string type,
         [Description("The ID of the conflicted item.")] int id,
@@ -811,7 +807,7 @@ public static partial class WordPressMcpTools
         }
 
         using var scope = services.CreateScope();
-        var syncService = scope.ServiceProvider.GetRequiredService<SyncService>();
+        var workspaceService = scope.ServiceProvider.GetRequiredService<WorkspaceService>();
         var store = ConnectionStore.Load();
         var profile = store.GetActiveProfile();
         if (profile is null)
@@ -819,7 +815,7 @@ public static partial class WordPressMcpTools
             return "Error: No active connection.";
         }
 
-        return await syncService.ResolveConflictAsync(type, id, strategy, profile, CancellationToken.None);
+        return await workspaceService.ResolveConflictAsync(type, id, strategy, profile, CancellationToken.None);
     }
 
     // --- Delete/Organize Group ---
@@ -969,7 +965,7 @@ public static partial class WordPressMcpTools
     }
     
     [McpServerTool]
-    [Description("[MAINTENANCE] Organizes local post files into status subfolders (e.g. 'draft', 'publish') based on their YAML front-matter status. NOTE: Normally unnecessary as PushPost and SyncPosts/PullPosts do this automatically.")]
+    [Description("[MAINTENANCE] Organizes local post files into status subfolders (e.g. 'draft', 'publish') based on their YAML front-matter status. NOTE: Normally unnecessary as PushPost and PullPosts do this automatically.")]
     public static Task<string> OrganizePosts(IServiceProvider services)
     {
         using var scope = services.CreateScope();

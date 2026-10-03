@@ -18,21 +18,23 @@ using WpAiCli.Configuration;
 namespace WpAiCli.Services;
 
 // NOTE:
-// SyncReport aggregates side effects from sync operations.
+// TransferReport aggregates side effects from transfer operations (pull, push).
 // It is intended for user-friendly reporting rather than strict programmatic consumption.
 
-public class SyncReport
+public class TransferReport
 {
     public List<int> PushedToServer { get; } = new();
     public List<int> PulledFromServer { get; } = new();
     public List<int> DeletedFromLocal { get; } = new();
     public List<int> ConflictDetected { get; } = new();
     public List<int> NewlyCached { get; } = new();
+    public List<int> LocalEditsKept { get; } = new();
     public List<string> PushedTaxonomies { get; } = new();
+    public List<string> PulledTaxonomies { get; } = new();
     public List<(int PostId, string ErrorMessage)> LocalValidationErrors { get; } = new();
     public List<string> MovedPosts { get; } = new();
 
-    // Media Sync Properties
+    // Media Transfer Properties
     public List<int> PushedMediaToServer { get; } = new();
     public List<int> PulledMediaFromServer { get; } = new();
     public List<int> NewlyCachedMedia { get; } = new();
@@ -40,7 +42,7 @@ public class SyncReport
     public List<int> MediaConflicts { get; } = new();
 }
 
-public class SyncService
+public class WorkspaceService
 {
     private readonly WordPressService _wpService;
     private readonly CacheService _cacheService;
@@ -50,9 +52,9 @@ public class SyncService
         .ConfigureDefaultValuesHandling(DefaultValuesHandling.Preserve)
         .Build();
 
-    // Coordinates bidirectional sync between the local cache and WordPress.
-    // Posts, taxonomies, and media are handled with similar compare/push/pull logic.
-    public SyncService(WordPressService wpService, CacheService cacheService)
+    // Coordinates transfer operations between the local workspace cache and WordPress remote.
+    // Posts, taxonomies, and media are handled with pull/push/compare logic.
+    public WorkspaceService(WordPressService wpService, CacheService cacheService)
     {
         _wpService = wpService;
         _cacheService = cacheService;
@@ -120,9 +122,9 @@ public class SyncService
         return (updatedPost, cacheResult);
     }
 
-    public async Task<SyncReport> PushAllModifiedPostsAsync(ConnectionProfile profile, CancellationToken cancellationToken)
+    public async Task<TransferReport> PushAllModifiedPostsAsync(ConnectionProfile profile, CancellationToken cancellationToken)
     {
-        var report = new SyncReport();
+        var report = new TransferReport();
         var localMetas = _cacheService.ListLocalPostMetadata();
 
         foreach (var localMeta in localMetas)
@@ -215,28 +217,68 @@ public class SyncService
         return updated;
     }
 
-    public async Task<SyncReport> SynchronizeTaxonomiesAsync(CancellationToken cancellationToken)
+    // --- Taxonomy Pull & Sync ---
+
+    public async Task<TransferReport> PullTaxonomiesAsync(CancellationToken cancellationToken)
     {
-        var report = new SyncReport();
+        var report = new TransferReport();
+        var allCategories = await _wpService.ListCategoriesAsync(cancellationToken);
+        var allTags = await _wpService.ListTagsAsync(cancellationToken);
+        await _cacheService.UpdateTaxonomiesCacheAsync(allCategories, allTags);
+        report.PulledTaxonomies.Add($"Cached {allCategories.Count} categories and {allTags.Count} tags");
+        return report;
+    }
+
+    public async Task<TransferReport> SyncTaxonomiesAsync(CancellationToken cancellationToken)
+    {
+        var report = new TransferReport();
         // 1. Push local taxonomy changes first
         await SynchronizeLocalTaxonomyChangesAsync(report, cancellationToken);
         // 2. Synchronize taxonomies from server (pull changes and update local state)
         var allCategories = await _wpService.ListCategoriesAsync(cancellationToken);
         var allTags = await _wpService.ListTagsAsync(cancellationToken);
         await _cacheService.UpdateTaxonomiesCacheAsync(allCategories, allTags);
+        report.PulledTaxonomies.Add($"Cached {allCategories.Count} categories and {allTags.Count} tags");
         return report;
     }
 
-    public async Task<SyncReport> SynchronizePostsAsync(ConnectionProfile profile, int syncLimit, CancellationToken cancellationToken)
-    {
-        // Step 1: Perform a full, bidirectional sync for taxonomies.
-        // Any failure here will throw an exception and halt the entire process.
-        Console.WriteLine("Step 1/2: Synchronizing taxonomies (categories and tags)...");
-        var report = await SynchronizeTaxonomiesAsync(cancellationToken);
-        Console.WriteLine("Taxonomy synchronization complete.");
+    // Alias for backward compatibility
+    public Task<TransferReport> SynchronizeTaxonomiesAsync(CancellationToken cancellationToken)
+        => SyncTaxonomiesAsync(cancellationToken);
 
-        // Step 2: Synchronize posts, now that taxonomies are up-to-date.
-        Console.WriteLine("Step 2/2: Synchronizing posts...");
+    // --- Post Pull & Sync ---
+
+    public Task<TransferReport> PullPostsAsync(ConnectionProfile profile, int syncLimit, CancellationToken cancellationToken)
+        => ProcessPostsSyncOrPullAsync(profile, syncLimit, allowPush: false, cancellationToken);
+
+    public Task<TransferReport> SyncPostsAsync(ConnectionProfile profile, int syncLimit, CancellationToken cancellationToken)
+        => ProcessPostsSyncOrPullAsync(profile, syncLimit, allowPush: true, cancellationToken);
+
+    // Alias for backward compatibility
+    public Task<TransferReport> SynchronizePostsAsync(ConnectionProfile profile, int syncLimit, CancellationToken cancellationToken)
+        => SyncPostsAsync(profile, syncLimit, cancellationToken);
+
+    private async Task<TransferReport> ProcessPostsSyncOrPullAsync(ConnectionProfile profile, int syncLimit, bool allowPush, CancellationToken cancellationToken)
+    {
+        var report = new TransferReport();
+
+        if (allowPush)
+        {
+            Console.WriteLine("Step 1/2: Synchronizing taxonomies (categories and tags)...");
+            var taxReport = await SyncTaxonomiesAsync(cancellationToken);
+            report.PushedTaxonomies.AddRange(taxReport.PushedTaxonomies);
+            report.PulledTaxonomies.AddRange(taxReport.PulledTaxonomies);
+            Console.WriteLine("Taxonomy synchronization complete.");
+        }
+        else
+        {
+            Console.WriteLine("Step 1/2: Pulling taxonomies (categories and tags)...");
+            var taxReport = await PullTaxonomiesAsync(cancellationToken);
+            report.PulledTaxonomies.AddRange(taxReport.PulledTaxonomies);
+            Console.WriteLine("Taxonomy pull complete.");
+        }
+
+        Console.WriteLine(allowPush ? "Step 2/2: Synchronizing posts (two-way)..." : "Step 2/2: Pulling posts from server...");
         var localPosts = _cacheService.ListLocalPostMetadata()
             .ToDictionary(meta => meta.Post.Id, meta => meta);
 
@@ -269,7 +311,7 @@ public class SyncService
 
             if (hasLocal && hasRemoteInTopN)
             {
-                await CompareAndSyncAsync(id, localMeta!, remotePostFromTopN!, profile, report, cancellationToken);
+                await CompareAndSyncAsync(id, localMeta!, remotePostFromTopN!, profile, report, allowPush, cancellationToken);
             }
             else if (!hasLocal && hasRemoteInTopN)
             {
@@ -279,7 +321,7 @@ public class SyncService
             else if (hasLocal && !hasRemoteInTopN)
             {
                 var localPost = _cacheService.ReadLocalPost(id);
-                if (localPost == null) continue; // Should not happen if hasLocal is true
+                if (localPost == null) continue;
 
                 var fullLocalContent = string.Join("\n", "---", _cacheService.SerializeToYaml(localPost.Metadata), "---", "", localPost.Content);
                 var currentLocalHash = _cacheService.ComputeSha256Hash(fullLocalContent);
@@ -287,40 +329,52 @@ public class SyncService
 
                 try
                 {
-                    // Check the server for existence regardless of local changes.
-                    // - If it exists and local changed: reconcile via CompareAndSyncAsync
-                    // - If it does not exist (404): delete local cache if local is unchanged
                     var remotePost = await _wpService.GetPostAsync(id, cancellationToken);
-                    if (remotePost != null && isLocalChanged)
+                    if (remotePost != null)
                     {
-                        await CompareAndSyncAsync(id, localMeta!, remotePost, profile, report, cancellationToken);
+                        await CompareAndSyncAsync(id, localMeta!, remotePost, profile, report, allowPush, cancellationToken);
                     }
                 }
                 catch (WordPressApiException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
                 {
-                    // Server-side post no longer exists. Delete local cache only if user hasn't edited locally.
                     if (!isLocalChanged)
                     {
                         _cacheService.DeletePostFromCache(id);
                         report.DeletedFromLocal.Add(id);
                     }
-                    // If there are local edits, keep local to avoid data loss; user can resolve manually.
+                    else
+                    {
+                        // If there are local edits, keep local to avoid data loss
+                        report.LocalEditsKept.Add(id);
+                    }
                 }
             }
         }
 
         _cacheService.OrganizePostFiles();
-        Console.WriteLine("Post synchronization complete.");
+        Console.WriteLine(allowPush ? "Post synchronization complete." : "Post pull complete.");
 
         return report;
     }
 
-        // Synchronize media metadata and files (top-N by server listing).
-        public async Task<SyncReport> SynchronizeMediaAsync(int syncLimit, CancellationToken cancellationToken)
-        {
-            var report = new SyncReport();
+    // --- Media Pull & Sync ---
 
-            // 1. Push local metadata changes first
+    public Task<TransferReport> PullMediaAsync(int syncLimit, CancellationToken cancellationToken)
+        => ProcessMediaSyncOrPullAsync(syncLimit, allowPush: false, cancellationToken);
+
+    public Task<TransferReport> SyncMediaAsync(int syncLimit, CancellationToken cancellationToken)
+        => ProcessMediaSyncOrPullAsync(syncLimit, allowPush: true, cancellationToken);
+
+    public Task<TransferReport> SynchronizeMediaAsync(int syncLimit, CancellationToken cancellationToken)
+        => SyncMediaAsync(syncLimit, cancellationToken);
+
+    private async Task<TransferReport> ProcessMediaSyncOrPullAsync(int syncLimit, bool allowPush, CancellationToken cancellationToken)
+    {
+        var report = new TransferReport();
+
+        // 1. Push local metadata changes first (only in two-way sync mode)
+        if (allowPush)
+        {
             var localMediaIds = _cacheService.ReadLocalMediaMetadata().Select(m => m.MediaId).ToList();
 
             foreach (var mediaId in localMediaIds)
@@ -329,7 +383,6 @@ public class SyncService
                 {
                     try
                     {
-                        // Read metadata again to build the request
                         var metadata = _cacheService.ReadLocalMediaMetadata().FirstOrDefault(m => m.MediaId == mediaId).Metadata;
                         if (metadata == null) continue;
 
@@ -352,79 +405,78 @@ public class SyncService
                     }
                 }
             }
-
-            // 2. Fetch remote and local states
-            var remoteMedia = (await _wpService.ListMediaAsync(perPage: syncLimit, page: 1, cancellationToken))
-                .ToDictionary(m => m.Id, m => m);
-            
-            // Re-read local metadata in case it was updated by a push
-            var localMediaMetadata = _cacheService.ReadLocalMediaMetadata().ToDictionary(m => m.MediaId, m => m.Metadata);
-
-            var allIds = localMediaMetadata.Keys.Union(remoteMedia.Keys).ToList();
-
-            // 3. Compare and sync each item
-            foreach (var id in allIds)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                var hasLocal = localMediaMetadata.TryGetValue(id, out var localMeta);
-                var hasRemote = remoteMedia.TryGetValue(id, out var remoteMeta);
-
-                if (hasLocal && hasRemote)
-                {
-                    // Exists in both places, check for changes
-                    var isLocalChanged = _cacheService.IsLocalMediaChanged(id);
-                    var isRemoteChanged = (remoteMeta!.ModifiedGmt.GetValueOrDefault() - localMeta!.ModifiedGmt.GetValueOrDefault()).TotalSeconds > 1;
-
-                    if (isLocalChanged && isRemoteChanged)
-                    {
-                        report.MediaConflicts.Add(id);
-                    }
-                    else if (isRemoteChanged)
-                    {
-                        // Pull remote changes
-                        await PullMediaItemAsync(remoteMeta, report, cancellationToken);
-                    }
-                    // If only local changed, it was handled in the push step. No action needed here.
-                }
-                else if (!hasLocal && hasRemote)
-                {
-                    // New on server, pull it
-                    await PullMediaItemAsync(remoteMeta, report, cancellationToken);
-                }
-                else if (hasLocal && !hasRemote)
-                {
-                    // Potentially deleted on server
-                    if (_cacheService.IsLocalMediaChanged(id))
-                    {
-                        report.MediaConflicts.Add(id);
-                        continue;
-                    }
-
-                    try
-                    {
-                        // Verify it's truly deleted on the server
-                        await _wpService.GetMediaAsync(id, cancellationToken);
-                        // If it's found, it's just an old item not in the top N. Do nothing.
-                    }
-                    catch (WordPressApiException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
-                    {
-                        // It's confirmed deleted on the server. Delete locally.
-                        _cacheService.DeleteMediaFromCache(id);
-                        report.DeletedFromLocal.Add(id);
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.Error.WriteLine($"Error probing media item {id}: {ex.Message}");
-                        report.MediaConflicts.Add(id);
-                    }
-                }
-            }
-
-            return report;
         }
 
-        private async Task PullMediaItemAsync(WordPressMedia? media, SyncReport report, CancellationToken cancellationToken)
+        // 2. Fetch remote and local states
+        var remoteMedia = (await _wpService.ListMediaAsync(perPage: syncLimit, page: 1, cancellationToken))
+            .ToDictionary(m => m.Id, m => m);
+        
+        var localMediaMetadata = _cacheService.ReadLocalMediaMetadata().ToDictionary(m => m.MediaId, m => m.Metadata);
+
+        var allIds = localMediaMetadata.Keys.Union(remoteMedia.Keys).ToList();
+
+        // 3. Compare and sync each item
+        foreach (var id in allIds)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var hasLocal = localMediaMetadata.TryGetValue(id, out var localMeta);
+            var hasRemote = remoteMedia.TryGetValue(id, out var remoteMeta);
+
+            if (hasLocal && hasRemote)
+            {
+                var isLocalChanged = _cacheService.IsLocalMediaChanged(id);
+                var isRemoteChanged = (remoteMeta!.ModifiedGmt.GetValueOrDefault() - localMeta!.ModifiedGmt.GetValueOrDefault()).TotalSeconds > 1;
+
+                if (isLocalChanged && isRemoteChanged)
+                {
+                    report.MediaConflicts.Add(id);
+                }
+                else if (isRemoteChanged)
+                {
+                    await PullMediaItemAsync(remoteMeta, report, cancellationToken);
+                }
+            }
+            else if (!hasLocal && hasRemote)
+            {
+                await PullMediaItemAsync(remoteMeta, report, cancellationToken);
+            }
+            else if (hasLocal && !hasRemote)
+            {
+                if (_cacheService.IsLocalMediaChanged(id))
+                {
+                    if (allowPush)
+                    {
+                        report.MediaConflicts.Add(id);
+                    }
+                    else
+                    {
+                        report.LocalEditsKept.Add(id);
+                    }
+                    continue;
+                }
+
+                try
+                {
+                    await _wpService.GetMediaAsync(id, cancellationToken);
+                }
+                catch (WordPressApiException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+                {
+                    _cacheService.DeleteMediaFromCache(id);
+                    report.DeletedFromLocal.Add(id);
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"Error probing media item {id}: {ex.Message}");
+                    report.MediaConflicts.Add(id);
+                }
+            }
+        }
+
+        return report;
+    }
+
+        private async Task PullMediaItemAsync(WordPressMedia? media, TransferReport report, CancellationToken cancellationToken)
         {
             if (media == null) return;
 
@@ -456,7 +508,7 @@ public class SyncService
             }
         }
 
-    private async Task SynchronizeLocalTaxonomyChangesAsync(SyncReport report, CancellationToken cancellationToken)
+    private async Task SynchronizeLocalTaxonomyChangesAsync(TransferReport report, CancellationToken cancellationToken)
     {
         // 1. Read local taxonomy files
         var (localCategories, localTags) = _cacheService.ReadLocalTaxonomies();
@@ -512,7 +564,7 @@ public class SyncService
         }
     }
 
-    private async Task CompareAndSyncAsync(int id, CachePostMetadata localMeta, WordPressPostDetail remotePost, ConnectionProfile profile, SyncReport report, CancellationToken cancellationToken)
+    private async Task CompareAndSyncAsync(int id, CachePostMetadata localMeta, WordPressPostDetail remotePost, ConnectionProfile profile, TransferReport report, bool allowPush, CancellationToken cancellationToken)
     {
         var cacheFileExists = _cacheService.IsPostCacheFilePresent(id);
 
@@ -550,6 +602,13 @@ public class SyncService
             }
             else if (isLocalChanged)
             {
+                if (!allowPush)
+                {
+                    // Pure pull: protect local edits from being overwritten or pushed
+                    report.LocalEditsKept.Add(id);
+                    return;
+                }
+
                 var request = new WordPressUpdatePostRequest();
                 var localEditableMeta = localPost.Metadata;
 
