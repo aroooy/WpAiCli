@@ -62,6 +62,8 @@ public class CacheDbContext : DbContext
 {
     private readonly string _dbPath;
 
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> InitializedDbs = new(StringComparer.OrdinalIgnoreCase);
+
     public DbSet<CachedPost> Posts { get; set; }
     public DbSet<CachedCategory> Categories { get; set; }
     public DbSet<CachedTag> Tags { get; set; }
@@ -71,11 +73,44 @@ public class CacheDbContext : DbContext
     public CacheDbContext(string dbPath)
     {
         _dbPath = dbPath;
-        Database.EnsureCreated();
+        EnsureInitialized();
+    }
+
+    public CacheDbContext(DbContextOptions<CacheDbContext> options) : base(options)
+    {
+        _dbPath = string.Empty;
+    }
+
+    internal static void ResetInitializationCache()
+    {
+        InitializedDbs.Clear();
+    }
+
+    private void EnsureInitialized()
+    {
+        if (string.IsNullOrEmpty(_dbPath)) return;
+
+        InitializedDbs.GetOrAdd(_dbPath, _ =>
+        {
+            Database.EnsureCreated();
+            try
+            {
+                Database.ExecuteSqlRaw("PRAGMA journal_mode = WAL;");
+                Database.ExecuteSqlRaw("PRAGMA busy_timeout = 5000;");
+            }
+            catch
+            {
+                // Ignore if pragma is unsupported in the current SQLite environment
+            }
+            return true;
+        });
     }
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
-        optionsBuilder.UseSqlite($"Data Source={_dbPath}");
+        if (!optionsBuilder.IsConfigured && !string.IsNullOrEmpty(_dbPath))
+        {
+            optionsBuilder.UseSqlite($"Data Source={_dbPath}");
+        }
     }
 }

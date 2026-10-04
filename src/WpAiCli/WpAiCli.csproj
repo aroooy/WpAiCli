@@ -51,6 +51,10 @@
     <EmbeddedResource Include="Resources\mu-plugins.zip" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="WpAiCli.Tests" />
+  </ItemGroup>
+
 </Project>
 
 

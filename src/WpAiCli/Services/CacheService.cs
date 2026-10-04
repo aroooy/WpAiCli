@@ -123,10 +123,11 @@ public class EditableMediaMetadata
     public string? Description { get; set; }
 }
 
-public class CacheService
+public class CacheService : IDisposable, IAsyncDisposable
 {
     private readonly CacheDbContext _db;
     private readonly string _cachePath;
+    private bool _disposed;
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
         WriteIndented = true,
@@ -147,8 +148,6 @@ public class CacheService
     // Cache for parsed content (Title, Content) to avoid re-reading files
     private readonly Dictionary<int, (string? Title, string Content)> _postContentCache = new();
 
-
-
     public CacheService(string rootCachePath, string connectionName)
     {
         _cachePath = Path.Combine(rootCachePath, connectionName);
@@ -157,7 +156,18 @@ public class CacheService
         _db = new CacheDbContext(dbPath);
     }
 
-    private static string SanitizeTitleForFilename(string title)
+    internal CacheService(CacheDbContext db, string cachePath)
+    {
+        _db = db;
+        _cachePath = cachePath;
+        Directory.CreateDirectory(_cachePath);
+    }
+
+    private static readonly HashSet<char> CrossPlatformInvalidFileNameChars = new(
+        Path.GetInvalidFileNameChars().Concat(new[] { '/', '\\', ':', '*', '?', '"', '<', '>', '|' })
+    );
+
+    public static string SanitizeTitleForFilename(string title)
     {
         if (string.IsNullOrWhiteSpace(title))
         {
@@ -167,9 +177,8 @@ public class CacheService
         // Decode HTML entities (e.g. &#8211; -> -, &amp; -> &) before sanitizing
         title = System.Net.WebUtility.HtmlDecode(title);
 
-        var invalidChars = Path.GetInvalidFileNameChars();
         // Replace whitespace and invalid filename chars with hyphens
-        var sanitizedTitle = new string(title.Select(ch => (char.IsWhiteSpace(ch) || invalidChars.Contains(ch)) ? '-' : ch).ToArray());
+        var sanitizedTitle = new string(title.Select(ch => (char.IsWhiteSpace(ch) || CrossPlatformInvalidFileNameChars.Contains(ch)) ? '-' : ch).ToArray());
 
         // Collapse multiple hyphens and trim hyphens from ends
         sanitizedTitle = Regex.Replace(sanitizedTitle.Trim('-'), "-{2,}", "-");
@@ -180,7 +189,7 @@ public class CacheService
             sanitizedTitle = sanitizedTitle.Substring(0, maxLen).TrimEnd('-');
         }
 
-        return string.IsNullOrEmpty(sanitizedTitle) ? "untitled" : sanitizedTitle;
+        return string.IsNullOrWhiteSpace(sanitizedTitle) ? "untitled" : sanitizedTitle;
     }
 
     private object? ConvertJsonElement(JsonElement element)
@@ -394,7 +403,7 @@ public class CacheService
         };
     }
 
-    private void ValidatePostMetadata(EditablePostMetadata metadata, string filePath)
+    internal static void ValidatePostMetadata(EditablePostMetadata metadata, string filePath)
     {
         if (metadata.Date != null && !DateTime.TryParse(metadata.Date, out _))
         {
@@ -1231,5 +1240,21 @@ public class CacheService
         var hash = ComputeSha256Hash(yamlContent);
         SetState($"{type}_{term.Id}_hash", hash);
         await _db.SaveChangesAsync();
+    }
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _db.Dispose();
+        _disposed = true;
+        GC.SuppressFinalize(this);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_disposed) return;
+        await _db.DisposeAsync();
+        _disposed = true;
+        GC.SuppressFinalize(this);
     }
 }
