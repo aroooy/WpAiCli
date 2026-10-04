@@ -123,6 +123,21 @@ For AI agents interacting with WordPress via CLI or MCP, follow the standard **4
 | **Maintenance** | `posts organize` | `OrganizePosts` | **Normally unnecessary.** `posts push` and `posts pull` automatically organize files. |
 | **Advanced (Exception only)** | `posts sync`, `resolve`, `revisions fetch/clean` | `ResolveConflict`, `FetchRevisions`, `CleanRevisions` | Use only when transfer conflicts or revision restores are specifically requested. |
 
+### Workflow for Creating New Posts (AI Golden Rule)
+
+When an AI agent is asked to write and publish a new post, follow this pattern:
+
+1. **If MCP is Available (Preferred)**:
+   - Call `CreatePost(title, content, status="draft", ...)` directly.
+   - MCP sends the body content safely via structured JSON, avoiding shell quoting and temporary files entirely.
+2. **If Using CLI**:
+   - **Step 1 (Create Frame)**: Run `wpai posts create --title "Title" --status draft` (include `--categories` if applicable).
+     This assigns a WordPress ID and generates the canonical file at `wp-cache/<connection>/posts/draft/<ID>-<title>.md`.
+   - **Step 2 (Edit Local Cache)**: Write or update the Markdown body and YAML front-matter **directly inside that generated cache file**.
+   - **Step 3 (Push)**: Run `wpai posts push <ID>` to sync your edits to the WordPress server.
+3. **Strict Prohibition**:
+   - **DO NOT create temporary/throwaway markdown files** (e.g., `draft.md`, `temp.md` in the workspace root) to pass to `--content-file`. Always edit the canonical cache file or use MCP.
+
 ### Critical Rule for AI: Never Move or Rename Cache Files Manually
 
 > [!WARNING]

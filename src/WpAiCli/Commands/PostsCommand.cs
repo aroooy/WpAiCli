@@ -122,6 +122,7 @@ public static class PostsCommand
                     if (cacheResult != null)
                     {
                         Console.WriteLine($"[Cache] Post created and saved to '{cacheResult.CurrentStatus}' folder ({Path.GetFileName(cacheResult.FilePath)}).");
+                        Console.WriteLine($"[Next Step] Edit this file directly in the cache, then run 'wpai posts push {post.Id}' to sync changes.");
                     }
 
                     OutputFormatter.WritePost(post, format, Console.Out);
@@ -206,6 +207,11 @@ public static class PostsCommand
         Console.WriteLine("  sync           Two-way synchronization for posts and taxonomies");
         Console.WriteLine("  organize       Organize local post files into status folders");
         Console.WriteLine("\nImportant for AI:");
-        Console.WriteLine("  Do NOT manually move or rename files in the cache. The tool relocates them automatically.");
+        Console.WriteLine("  - Do NOT manually move or rename files in the cache. The tool relocates them automatically.");
+        Console.WriteLine("  - When creating a new post:");
+        Console.WriteLine("    * Preferred: If MCP tools are available, use 'CreatePost' to supply title and content directly.");
+        Console.WriteLine("    * Via CLI: Run 'wpai posts create --title \"...\" --status draft' to create the post frame,");
+        Console.WriteLine("      edit the generated file in 'wp-cache/.../posts/draft/', then run 'wpai posts push <id>'.");
+        Console.WriteLine("    * Do NOT create temporary/throwaway markdown files outside the cache directory.");
     }
 }
