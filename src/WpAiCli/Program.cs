@@ -58,7 +58,7 @@ public class Program
         {
             var (store, profile, credential) = CommandHelpers.ResolveConnection();
 
-            var host = Host.CreateDefaultBuilder(args)
+            using var host = Host.CreateDefaultBuilder(args)
                 .ConfigureLogging(logging =>
                 {
                     logging.ClearProviders();

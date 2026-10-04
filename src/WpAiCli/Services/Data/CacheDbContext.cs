@@ -1,8 +1,31 @@
+using System.Data.Common;
+using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace WpAiCli.Services.Data;
+
+public class BusyTimeoutInterceptor : DbConnectionInterceptor
+{
+    private const int TimeoutMilliseconds = 5000;
+
+    public override void ConnectionOpened(DbConnection connection, ConnectionEndEventData eventData)
+    {
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = $"PRAGMA busy_timeout = {TimeoutMilliseconds};";
+        cmd.ExecuteNonQuery();
+    }
+
+    public override async Task ConnectionOpenedAsync(DbConnection connection, ConnectionEndEventData eventData, CancellationToken cancellationToken = default)
+    {
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = $"PRAGMA busy_timeout = {TimeoutMilliseconds};";
+        await cmd.ExecuteNonQueryAsync(cancellationToken);
+    }
+}
 
 public class CachedPost
 {
@@ -60,9 +83,10 @@ public class CachedMedia
 
 public class CacheDbContext : DbContext
 {
-    private readonly string _dbPath;
-
+    private static readonly BusyTimeoutInterceptor TimeoutInterceptor = new();
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> InitializedDbs = new(StringComparer.OrdinalIgnoreCase);
+
+    private readonly string _dbPath;
 
     public DbSet<CachedPost> Posts { get; set; }
     public DbSet<CachedCategory> Categories { get; set; }
@@ -96,7 +120,6 @@ public class CacheDbContext : DbContext
             try
             {
                 Database.ExecuteSqlRaw("PRAGMA journal_mode = WAL;");
-                Database.ExecuteSqlRaw("PRAGMA busy_timeout = 5000;");
             }
             catch
             {
@@ -110,7 +133,8 @@ public class CacheDbContext : DbContext
     {
         if (!optionsBuilder.IsConfigured && !string.IsNullOrEmpty(_dbPath))
         {
-            optionsBuilder.UseSqlite($"Data Source={_dbPath}");
+            optionsBuilder.UseSqlite($"Data Source={_dbPath}")
+                          .AddInterceptors(TimeoutInterceptor);
         }
     }
 }

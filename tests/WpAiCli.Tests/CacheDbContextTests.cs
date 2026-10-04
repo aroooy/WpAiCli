@@ -144,4 +144,40 @@ public class CacheDbContextTests : IDisposable
         await cacheService.DisposeAsync();
         await cacheService.DisposeAsync();
     }
+
+    [Fact]
+    public void Pragma_BusyTimeout_IsAppliedToNewConnectionsEvenAfterPoolClear()
+    {
+        // 1. Establish an initial connection
+        using (var initialDb = new CacheDbContext(_dbPath))
+        {
+            initialDb.Database.OpenConnection();
+        }
+
+        // 2. Clear all connection pools (simulating a separate process or clean connection)
+        SqliteConnection.ClearAllPools();
+
+        // 3. Open a brand new connection - Interceptor must ensure busy_timeout = 5000
+        using var newDb = new CacheDbContext(_dbPath);
+        using var command = newDb.Database.GetDbConnection().CreateCommand();
+        newDb.Database.OpenConnection();
+        command.CommandText = "PRAGMA busy_timeout;";
+        var result = Convert.ToInt32(command.ExecuteScalar());
+
+        Assert.Equal(5000, result);
+    }
+
+    [Fact]
+    public async Task Pragma_BusyTimeout_IsAppliedToAsyncConnections()
+    {
+        SqliteConnection.ClearAllPools();
+
+        await using var db = new CacheDbContext(_dbPath);
+        await db.Database.OpenConnectionAsync();
+        await using var command = db.Database.GetDbConnection().CreateCommand();
+        command.CommandText = "PRAGMA busy_timeout;";
+        var result = Convert.ToInt32(await command.ExecuteScalarAsync());
+
+        Assert.Equal(5000, result);
+    }
 }
