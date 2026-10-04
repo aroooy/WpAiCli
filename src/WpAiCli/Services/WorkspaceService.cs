@@ -217,6 +217,261 @@ public class WorkspaceService
         return updated;
     }
 
+    // --- Shared Operations for CLI and MCP ---
+
+    public async Task<(WordPressPostDetail Post, PostCacheResult? CacheResult)> CreatePostAsync(
+        string title,
+        string? content,
+        string? contentFilePath,
+        string? status,
+        string? editMode,
+        int[]? categories,
+        int[]? tags,
+        int? featuredMedia,
+        ConnectionProfile profile,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            throw new ArgumentException("Title is required and cannot be empty.", nameof(title));
+        }
+
+        var bodyContent = content;
+        if (string.IsNullOrWhiteSpace(bodyContent) && !string.IsNullOrWhiteSpace(contentFilePath) && File.Exists(contentFilePath))
+        {
+            bodyContent = await File.ReadAllTextAsync(contentFilePath, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (string.IsNullOrWhiteSpace(bodyContent))
+        {
+            throw new ArgumentException("Either content or a valid content file is required.", nameof(content));
+        }
+
+        var resolvedStatus = string.IsNullOrWhiteSpace(status) ? "draft" : status;
+        var resolvedEditMode = string.IsNullOrWhiteSpace(editMode) ? "markdown" : editMode.ToLowerInvariant();
+        if (resolvedEditMode != "markdown" && resolvedEditMode != "html")
+        {
+            throw new ArgumentException("Invalid value for edit-mode. Must be 'markdown' or 'html'.", nameof(editMode));
+        }
+
+        var request = new WordPressCreatePostRequest
+        {
+            Title = title,
+            Status = resolvedStatus,
+            Categories = categories,
+            Tags = tags,
+            FeaturedMedia = featuredMedia
+        };
+
+        var conversion = profile.MarkdownConversion ?? "client";
+        if (resolvedEditMode == "markdown")
+        {
+            request.Meta = new Dictionary<string, object?> { { "_md_source", bodyContent ?? string.Empty } };
+            request.Content = conversion == "client" ? Markdown.ToHtml(bodyContent ?? string.Empty) : bodyContent;
+        }
+        else
+        {
+            request.Content = bodyContent;
+        }
+
+        var post = await _wpService.CreatePostAsync(request, cancellationToken).ConfigureAwait(false);
+        PostCacheResult? cacheResult = null;
+        if (!string.IsNullOrEmpty(profile.CachePath))
+        {
+            cacheResult = _cacheService.SavePostToCache(post);
+            _cacheService.OrganizePostFiles();
+        }
+        return (post, cacheResult);
+    }
+
+    public async Task<(WordPressDeleteResponse Response, string? CachedTitle, bool AlreadyDeleted)> DeletePostAsync(
+        int id,
+        bool force,
+        CancellationToken cancellationToken)
+    {
+        var cachedTitle = _cacheService.GetCachedPostTitle(id);
+        try
+        {
+            var response = await _wpService.DeletePostAsync(id, force, cancellationToken).ConfigureAwait(false);
+            if (response.Deleted)
+            {
+                _cacheService.DeletePostFromCache(id);
+            }
+            return (response, cachedTitle, false);
+        }
+        catch (WordPressApiException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+        {
+            var title = cachedTitle ?? "Unknown (already deleted)";
+            _cacheService.DeletePostFromCache(id);
+            var fallbackResponse = new WordPressDeleteResponse
+            {
+                Deleted = true,
+                Previous = new Dictionary<string, JsonElement>
+                {
+                    ["id"] = JsonSerializer.SerializeToElement(id),
+                    ["title"] = JsonSerializer.SerializeToElement(new { raw = title })
+                }
+            };
+            return (fallbackResponse, title, true);
+        }
+    }
+
+    public async Task<WordPressCategory> CreateCategoryAsync(
+        string name,
+        string? slug,
+        string? description,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            throw new ArgumentException("Category name is required.", nameof(name));
+        }
+
+        var request = new WordPressCreateCategoryRequest
+        {
+            Name = name,
+            Slug = slug,
+            Description = description
+        };
+
+        var category = await _wpService.CreateCategoryAsync(request, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            _cacheService.SaveCategoryToCache(category);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Warning: Failed to write category cache: {ex.Message}");
+        }
+        return category;
+    }
+
+    public async Task<(WordPressDeleteResponse Response, string? CachedName, bool AlreadyDeleted)> DeleteCategoryAsync(
+        int id,
+        bool force,
+        CancellationToken cancellationToken)
+    {
+        var cachedName = _cacheService.GetCachedCategoryName(id);
+        try
+        {
+            var response = await _wpService.DeleteCategoryAsync(id, force, cancellationToken).ConfigureAwait(false);
+            if (response.Deleted)
+            {
+                _cacheService.DeleteCategoryFromCache(id);
+            }
+            return (response, cachedName, false);
+        }
+        catch (WordPressApiException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+        {
+            var name = cachedName ?? "Unknown (already deleted)";
+            _cacheService.DeleteCategoryFromCache(id);
+            var fallbackResponse = new WordPressDeleteResponse
+            {
+                Deleted = true,
+                Previous = new Dictionary<string, JsonElement>
+                {
+                    ["id"] = JsonSerializer.SerializeToElement(id),
+                    ["name"] = JsonSerializer.SerializeToElement(name)
+                }
+            };
+            return (fallbackResponse, name, true);
+        }
+    }
+
+    public async Task<WordPressTag> CreateTagAsync(
+        string name,
+        string? slug,
+        string? description,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            throw new ArgumentException("Tag name is required.", nameof(name));
+        }
+
+        var request = new WordPressCreateTagRequest
+        {
+            Name = name,
+            Slug = slug,
+            Description = description
+        };
+
+        var tag = await _wpService.CreateTagAsync(request, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            _cacheService.SaveTagToCache(tag);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Warning: Failed to write tag cache: {ex.Message}");
+        }
+        return tag;
+    }
+
+    public async Task<(WordPressDeleteResponse Response, string? CachedName, bool AlreadyDeleted)> DeleteTagAsync(
+        int id,
+        bool force,
+        CancellationToken cancellationToken)
+    {
+        var cachedName = _cacheService.GetCachedTagName(id);
+        try
+        {
+            var response = await _wpService.DeleteTagAsync(id, force, cancellationToken).ConfigureAwait(false);
+            if (response.Deleted)
+            {
+                _cacheService.DeleteTagFromCache(id);
+            }
+            return (response, cachedName, false);
+        }
+        catch (WordPressApiException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+        {
+            var name = cachedName ?? "Unknown (already deleted)";
+            _cacheService.DeleteTagFromCache(id);
+            var fallbackResponse = new WordPressDeleteResponse
+            {
+                Deleted = true,
+                Previous = new Dictionary<string, JsonElement>
+                {
+                    ["id"] = JsonSerializer.SerializeToElement(id),
+                    ["name"] = JsonSerializer.SerializeToElement(name)
+                }
+            };
+            return (fallbackResponse, name, true);
+        }
+    }
+
+    public async Task<(WordPressDeleteResponse Response, string? CachedTitle, bool AlreadyDeleted)> DeleteMediaAsync(
+        int id,
+        bool force,
+        CancellationToken cancellationToken)
+    {
+        var cachedTitle = _cacheService.GetCachedMediaTitle(id);
+        try
+        {
+            var response = await _wpService.DeleteMediaAsync(id, force, cancellationToken).ConfigureAwait(false);
+            if (response.Deleted)
+            {
+                _cacheService.DeleteMediaFromCache(id);
+            }
+            return (response, cachedTitle, false);
+        }
+        catch (WordPressApiException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+        {
+            var title = cachedTitle ?? "Unknown (already deleted)";
+            _cacheService.DeleteMediaFromCache(id);
+            var fallbackResponse = new WordPressDeleteResponse
+            {
+                Deleted = true,
+                Previous = new Dictionary<string, JsonElement>
+                {
+                    ["id"] = JsonSerializer.SerializeToElement(id),
+                    ["title"] = JsonSerializer.SerializeToElement(new { raw = title })
+                }
+            };
+            return (fallbackResponse, title, true);
+        }
+    }
+
     // --- Taxonomy Pull & Sync ---
 
     public async Task<TransferReport> PullTaxonomiesAsync(CancellationToken cancellationToken)

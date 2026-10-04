@@ -466,7 +466,7 @@ public static partial class WordPressMcpTools
         sb.AppendLine("Starting posts pull...");
         var syncLimit = profile.SyncItemsLimit ?? 30;
         var report = await workspaceService.PullPostsAsync(profile, syncLimit, CancellationToken.None);
-        sb.Append(FormatTransferReport(report));
+        sb.Append(OutputFormatter.FormatTransferReport(report));
         return sb.ToString();
     }
 
@@ -480,7 +480,7 @@ public static partial class WordPressMcpTools
         var sb = new StringBuilder();
         sb.AppendLine("Starting taxonomies pull...");
         var report = await workspaceService.PullTaxonomiesAsync(CancellationToken.None);
-        sb.Append(FormatTransferReport(report));
+        sb.Append(OutputFormatter.FormatTransferReport(report));
         return sb.ToString();
     }
 
@@ -501,7 +501,7 @@ public static partial class WordPressMcpTools
         sb.AppendLine("Starting media pull...");
         var syncLimit = profile.SyncItemsLimit ?? 30;
         var report = await workspaceService.PullMediaAsync(syncLimit, CancellationToken.None);
-        sb.Append(FormatTransferReport(report));
+        sb.Append(OutputFormatter.FormatTransferReport(report));
         return sb.ToString();
     }
 
@@ -535,67 +535,6 @@ public static partial class WordPressMcpTools
         return sb.ToString();
     }
 
-    private static string FormatTransferReport(TransferReport report)
-    {
-        var sb = new StringBuilder();
-        sb.AppendLine("\n--- Transfer Report ---");
-        sb.AppendLine($"Pushed to server: {report.PushedToServer.Count} post(s)");
-        sb.AppendLine($"Pulled from server: {report.PulledFromServer.Count} post(s)");
-        sb.AppendLine($"Newly cached: {report.NewlyCached.Count} post(s)");
-        sb.AppendLine($"Deleted from local: {report.DeletedFromLocal.Count} post(s)");
-        if (report.LocalEditsKept.Count > 0)
-        {
-            sb.AppendLine($"Local edits preserved: {report.LocalEditsKept.Count} post(s)");
-        }
-        sb.AppendLine($"Local validation errors (skipped): {report.LocalValidationErrors.Count} post(s)");
-        sb.AppendLine($"Conflicts detected (skipped): {report.ConflictDetected.Count} post(s)");
-        if (report.PushedTaxonomies.Count > 0)
-        {
-            sb.AppendLine($"Pushed taxonomies: {report.PushedTaxonomies.Count}");
-        }
-        if (report.PulledTaxonomies.Count > 0)
-        {
-            sb.AppendLine($"Pulled taxonomies: {string.Join(", ", report.PulledTaxonomies)}");
-        }
-        if (report.PushedMediaToServer.Count > 0 || report.NewlyCachedMedia.Count > 0 || report.MediaConflicts.Count > 0 || report.DeletedMediaFromLocal.Count > 0 || report.PulledMediaFromServer.Count > 0)
-        {
-            sb.AppendLine("--- Media ---");
-            sb.AppendLine($"Pushed metadata to server: {report.PushedMediaToServer.Count} item(s)");
-            sb.AppendLine($"Pulled from server: {report.PulledMediaFromServer.Count} item(s)");
-            sb.AppendLine($"Newly cached from server: {report.NewlyCachedMedia.Count} item(s)");
-            sb.AppendLine($"Deleted from local: {report.DeletedMediaFromLocal.Count} item(s)");
-            sb.AppendLine($"Conflicts/Errors: {report.MediaConflicts.Count} item(s)");
-        }
-
-        if (report.LocalValidationErrors.Count > 0)
-        {
-            sb.AppendLine("\nLocal validation errors detected:");
-            foreach (var (postId, errorMessage) in report.LocalValidationErrors)
-            {
-                sb.AppendLine($"- {errorMessage}");
-            }
-        }
-
-        if (report.ConflictDetected.Count > 0)
-        {
-            sb.AppendLine("\nConflicts detected for the following Post IDs:");
-            sb.AppendLine($"  {string.Join(", ", report.ConflictDetected)}");
-            sb.AppendLine("Please resolve them individually using the 'resolve' command.");
-            sb.AppendLine("Example: wpai resolve post 123 --strategy [local-wins|server-wins]");
-        }
-
-        if (report.MovedPosts.Count > 0)
-        {
-            sb.AppendLine("\nAutomatically reorganized post files based on status change:");
-            foreach (var moved in report.MovedPosts)
-            {
-                sb.AppendLine($"  {moved}");
-            }
-        }
-        sb.AppendLine("-------------------");
-        return sb.ToString();
-    }
-
     // --- Create/Push/Edit Group ---
 
     [McpServerTool]
@@ -613,8 +552,7 @@ public static partial class WordPressMcpTools
     )
     {
         using var scope = services.CreateScope();
-        var service = scope.ServiceProvider.GetRequiredService<WordPressService>();
-        var cacheService = scope.ServiceProvider.GetRequiredService<CacheService>();
+        var workspaceService = scope.ServiceProvider.GetRequiredService<WorkspaceService>();
         var store = ConnectionStore.Load();
         var profile = store.GetActiveProfile();
         if (profile is null)
@@ -622,47 +560,23 @@ public static partial class WordPressMcpTools
             return "Error: No active connection.";
         }
 
-        if (string.IsNullOrWhiteSpace(title)) return "Error: --title is required and cannot be empty.";
-
-        var bodyContent = content;
-        if (string.IsNullOrWhiteSpace(bodyContent) && !string.IsNullOrWhiteSpace(contentFile) && File.Exists(contentFile))
+        try
         {
-            bodyContent = await File.ReadAllTextAsync(contentFile);
-        }
+            var (post, cacheResult) = await workspaceService.CreatePostAsync(
+                title,
+                content,
+                contentFile,
+                status,
+                editMode,
+                categories,
+                tags,
+                featuredMedia,
+                profile,
+                CancellationToken.None);
 
-        if (string.IsNullOrWhiteSpace(bodyContent)) return "Error: Either content or a valid contentFile is required.";
-
-        var resolvedStatus = status ?? "draft";
-        var resolvedEditMode = editMode ?? "markdown";
-        if (resolvedEditMode != "markdown" && resolvedEditMode != "html") return "Error: Invalid value for --edit-mode. Must be 'markdown' or 'html'.";
-
-        var request = new WordPressCreatePostRequest
-        {
-            Title = title,
-            Status = resolvedStatus,
-            Categories = categories,
-            Tags = tags,
-            FeaturedMedia = featuredMedia
-        };
-
-        var conversion = profile.MarkdownConversion ?? "client";
-        if (resolvedEditMode == "markdown")
-        {
-            request.Meta = new Dictionary<string, object?> { { "_md_source", bodyContent ?? string.Empty } };
-            request.Content = conversion == "client" ? Markdig.Markdown.ToHtml(bodyContent ?? string.Empty) : bodyContent;
-        }
-        else
-        {
-            request.Content = bodyContent;
-        }
-
-        var post = await service.CreatePostAsync(request, CancellationToken.None);
-        if (post != null)
-        {
             var sb = new StringBuilder();
-            if (!string.IsNullOrEmpty(profile.CachePath))
+            if (cacheResult != null)
             {
-                var cacheResult = cacheService.SavePostToCache(post);
                 sb.AppendLine($"[Cache] Post created and saved to '{cacheResult.CurrentStatus}' folder ({Path.GetFileName(cacheResult.FilePath)}).");
                 sb.AppendLine("NOTE: Do NOT move or rename cache files manually. Status folder changes are handled automatically by WpAiCli.");
                 sb.AppendLine();
@@ -670,7 +584,14 @@ public static partial class WordPressMcpTools
             sb.Append(OutputFormatter.FormatPost(post, OutputFormat.Table));
             return sb.ToString();
         }
-        return "Error: Failed to create post.";
+        catch (ArgumentException ex)
+        {
+            return $"Error: {ex.Message}";
+        }
+        catch (Exception ex)
+        {
+            return $"Error: Failed to create post: {ex.Message}";
+        }
     }
 
     [McpServerTool]
@@ -694,7 +615,7 @@ public static partial class WordPressMcpTools
         if (pushAll)
         {
             var report = await workspaceService.PushAllModifiedPostsAsync(profile, CancellationToken.None);
-            return FormatTransferReport(report);
+            return OutputFormatter.FormatTransferReport(report);
         }
         else
         {
@@ -727,15 +648,21 @@ public static partial class WordPressMcpTools
         if (string.IsNullOrWhiteSpace(name)) return "Error: --name is required.";
         
         using var scope = services.CreateScope();
-        var service = scope.ServiceProvider.GetRequiredService<WordPressService>();
-        var cacheService = scope.ServiceProvider.GetRequiredService<CacheService>();
+        var workspaceService = scope.ServiceProvider.GetRequiredService<WorkspaceService>();
 
-        var request = new WordPressCreateCategoryRequest { Name = name, Slug = slug, Description = description };
-        var category = await service.CreateCategoryAsync(request, CancellationToken.None);
-        
-        try { cacheService.SaveCategoryToCache(category); } catch { /* Ignore cache errors */ }
-        
-        return OutputFormatter.FormatCategory(category, OutputFormat.Table);
+        try
+        {
+            var category = await workspaceService.CreateCategoryAsync(name, slug, description, CancellationToken.None);
+            return OutputFormatter.FormatCategory(category, OutputFormat.Table);
+        }
+        catch (ArgumentException ex)
+        {
+            return $"Error: {ex.Message}";
+        }
+        catch (Exception ex)
+        {
+            return $"Error: Failed to create category: {ex.Message}";
+        }
     }
 
     [McpServerTool]
@@ -750,15 +677,21 @@ public static partial class WordPressMcpTools
         if (string.IsNullOrWhiteSpace(name)) return "Error: --name is required.";
 
         using var scope = services.CreateScope();
-        var service = scope.ServiceProvider.GetRequiredService<WordPressService>();
-        var cacheService = scope.ServiceProvider.GetRequiredService<CacheService>();
+        var workspaceService = scope.ServiceProvider.GetRequiredService<WorkspaceService>();
 
-        var request = new WordPressCreateTagRequest { Name = name, Slug = slug, Description = description };
-        var tag = await service.CreateTagAsync(request, CancellationToken.None);
-
-        try { cacheService.SaveTagToCache(tag); } catch { /* Ignore cache errors */ }
-
-        return OutputFormatter.FormatTag(tag, OutputFormat.Table);
+        try
+        {
+            var tag = await workspaceService.CreateTagAsync(name, slug, description, CancellationToken.None);
+            return OutputFormatter.FormatTag(tag, OutputFormat.Table);
+        }
+        catch (ArgumentException ex)
+        {
+            return $"Error: {ex.Message}";
+        }
+        catch (Exception ex)
+        {
+            return $"Error: Failed to create tag: {ex.Message}";
+        }
     }
 
     [McpServerTool]
@@ -829,26 +762,21 @@ public static partial class WordPressMcpTools
     )
     {
         using var scope = services.CreateScope();
-        var service = scope.ServiceProvider.GetRequiredService<WordPressService>();
-        var cacheService = scope.ServiceProvider.GetRequiredService<CacheService>();
-        var cachedTitle = cacheService.GetCachedPostTitle(id);
+        var workspaceService = scope.ServiceProvider.GetRequiredService<WorkspaceService>();
 
         try
         {
-            var response = await service.DeletePostAsync(id, force, CancellationToken.None);
-            if (response.Deleted)
-            {
-                cacheService.DeletePostFromCache(id);
-            }
+            var (response, cachedTitle, alreadyDeleted) = await workspaceService.DeletePostAsync(id, force, CancellationToken.None);
             var result = OutputFormatter.FormatDeleteResponse(response, OutputFormat.Table, id, cachedTitle);
+            if (alreadyDeleted)
+            {
+                return $"Post {id} was already deleted on server. Local cache cleared.\n{result}".TrimEnd();
+            }
             return $"Successfully deleted post {id}.\n{result}".TrimEnd();
         }
-        catch (WpAiCli.WordPress.WordPressApiException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+        catch (Exception ex)
         {
-            var title = cachedTitle ?? "Unknown (already deleted)";
-            cacheService.DeletePostFromCache(id);
-            var result = OutputFormatter.FormatDeleteResponse(new WordPressDeleteResponse { Deleted = true, Previous = ToJsonElementDict(new { id = id, title = new { raw = title } }) }, OutputFormat.Table, id, title);
-            return $"Post {id} was already deleted on server. Local cache cleared.\n{result}".TrimEnd();
+            return $"Error deleting post {id}: {ex.Message}";
         }
     }
 
@@ -861,26 +789,21 @@ public static partial class WordPressMcpTools
     )
     {
         using var scope = services.CreateScope();
-        var service = scope.ServiceProvider.GetRequiredService<WordPressService>();
-        var cacheService = scope.ServiceProvider.GetRequiredService<CacheService>();
-        var cachedName = cacheService.GetCachedCategoryName(id);
+        var workspaceService = scope.ServiceProvider.GetRequiredService<WorkspaceService>();
 
         try
         {
-            var response = await service.DeleteCategoryAsync(id, force, CancellationToken.None);
-            if (response.Deleted)
-            {
-                cacheService.DeleteCategoryFromCache(id);
-            }
+            var (response, cachedName, alreadyDeleted) = await workspaceService.DeleteCategoryAsync(id, force, CancellationToken.None);
             var result = OutputFormatter.FormatDeleteResponse(response, OutputFormat.Table, id, cachedName);
+            if (alreadyDeleted)
+            {
+                return $"Category {id} was already deleted on server. Local cache cleared.\n{result}".TrimEnd();
+            }
             return $"Successfully deleted category {id}.\n{result}".TrimEnd();
         }
-        catch (WpAiCli.WordPress.WordPressApiException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+        catch (Exception ex)
         {
-            var name = cachedName ?? "Unknown (already deleted)";
-            cacheService.DeleteCategoryFromCache(id);
-            var result = OutputFormatter.FormatDeleteResponse(new WordPressDeleteResponse { Deleted = true, Previous = ToJsonElementDict(new { id = id, name = name }) }, OutputFormat.Table, id, name);
-            return $"Category {id} was already deleted on server. Local cache cleared.\n{result}".TrimEnd();
+            return $"Error deleting category {id}: {ex.Message}";
         }
     }
 
@@ -893,26 +816,21 @@ public static partial class WordPressMcpTools
     )
     {
         using var scope = services.CreateScope();
-        var service = scope.ServiceProvider.GetRequiredService<WordPressService>();
-        var cacheService = scope.ServiceProvider.GetRequiredService<CacheService>();
-        var cachedName = cacheService.GetCachedTagName(id);
+        var workspaceService = scope.ServiceProvider.GetRequiredService<WorkspaceService>();
 
         try
         {
-            var response = await service.DeleteTagAsync(id, force, CancellationToken.None);
-            if (response.Deleted)
-            {
-                cacheService.DeleteTagFromCache(id);
-            }
+            var (response, cachedName, alreadyDeleted) = await workspaceService.DeleteTagAsync(id, force, CancellationToken.None);
             var result = OutputFormatter.FormatDeleteResponse(response, OutputFormat.Table, id, cachedName);
+            if (alreadyDeleted)
+            {
+                return $"Tag {id} was already deleted on server. Local cache cleared.\n{result}".TrimEnd();
+            }
             return $"Successfully deleted tag {id}.\n{result}".TrimEnd();
         }
-        catch (WpAiCli.WordPress.WordPressApiException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+        catch (Exception ex)
         {
-            var name = cachedName ?? "Unknown (already deleted)";
-            cacheService.DeleteTagFromCache(id);
-            var result = OutputFormatter.FormatDeleteResponse(new WordPressDeleteResponse { Deleted = true, Previous = ToJsonElementDict(new { id = id, name = name }) }, OutputFormat.Table, id, name);
-            return $"Tag {id} was already deleted on server. Local cache cleared.\n{result}".TrimEnd();
+            return $"Error deleting tag {id}: {ex.Message}";
         }
     }
 
@@ -925,25 +843,21 @@ public static partial class WordPressMcpTools
     )
     {
         using var scope = services.CreateScope();
-        var service = scope.ServiceProvider.GetRequiredService<WordPressService>();
-        var cacheService = scope.ServiceProvider.GetRequiredService<CacheService>();
-        var cachedTitle = cacheService.GetCachedMediaTitle(id);
+        var workspaceService = scope.ServiceProvider.GetRequiredService<WorkspaceService>();
+
         try
         {
-            var response = await service.DeleteMediaAsync(id, force, CancellationToken.None);
-            if (response.Deleted)
-            {
-                cacheService.DeleteMediaFromCache(id);
-            }
+            var (response, cachedTitle, alreadyDeleted) = await workspaceService.DeleteMediaAsync(id, force, CancellationToken.None);
             var result = OutputFormatter.FormatDeleteResponse(response, OutputFormat.Table, id, cachedTitle);
+            if (alreadyDeleted)
+            {
+                return $"Media {id} was already deleted on server. Local cache cleared.\n{result}".TrimEnd();
+            }
             return $"Successfully deleted media {id}.\n{result}".TrimEnd();
         }
-        catch (WpAiCli.WordPress.WordPressApiException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+        catch (Exception ex)
         {
-            var title = cachedTitle ?? "Unknown (already deleted)";
-            cacheService.DeleteMediaFromCache(id);
-            var result = OutputFormatter.FormatDeleteResponse(new WordPressDeleteResponse { Deleted = true, Previous = ToJsonElementDict(new { id = id, title = new { raw = title } }) }, OutputFormat.Table, id, title);
-            return $"Media {id} was already deleted on server. Local cache cleared.\n{result}".TrimEnd();
+            return $"Error deleting media {id}: {ex.Message}";
         }
     }
 
@@ -982,11 +896,5 @@ public static partial class WordPressMcpTools
             sb.AppendLine($"- {item}");
         }
         return Task.FromResult(sb.ToString());
-    }
-
-    private static Dictionary<string, JsonElement>? ToJsonElementDict(object obj)
-    {
-        var json = JsonSerializer.Serialize(obj);
-        return JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json);
     }
 }
