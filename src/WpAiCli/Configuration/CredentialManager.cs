@@ -12,8 +12,8 @@ namespace WpAiCli.Configuration;
 // NOTE:
 // Cross-platform credential storage helper.
 // - On Windows, uses native Credential Manager (Advapi32.dll).
-// - On macOS, uses native Keychain Services via security CLI.
-// - On Linux, uses secret-tool (libsecret) when available.
+// - On macOS, uses native Keychain Services via security CLI (-i interactive stdin shell, preventing command-line arg exposure).
+// - On Linux, uses secret-tool (libsecret) via stdin.
 // - Falls back to a permission-restricted file (chmod 600) under ~/.wpaicli/credentials.json if native store is unavailable.
 // Automatically migrates existing credentials from fallback file into the native OS store.
 
@@ -27,14 +27,6 @@ internal static class CredentialManager
     // Windows-specific constants
     private const int CredTypeGeneric = 1;
     private const int CredPersistLocalMachine = 2;
-
-    private static readonly string ConfigDirectory = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-        ".wpaicli");
-
-    private static readonly string CredentialFilePath = Path.Combine(
-        ConfigDirectory,
-        "credentials.json");
 
     public static void Save(string targetName, string secret)
     {
@@ -117,7 +109,7 @@ internal static class CredentialManager
             else
             {
                 // Ensure existing fallback file permissions are restricted to owner only (chmod 600)
-                EnsureSecureFilePermissions(CredentialFilePath);
+                WpAiCliPaths.EnsureSecureFilePermissions(WpAiCliPaths.CredentialsFilePath);
             }
             return fallbackSecret;
         }
@@ -150,29 +142,31 @@ internal static class CredentialManager
         DeleteFromFile(targetName);
     }
 
-    // --- macOS Keychain (security CLI) ---
+    // --- macOS Keychain (security CLI via interactive stdin shell) ---
 
     private static bool TrySaveForMacOS(string targetName, string secret)
     {
         try
         {
+            // Use 'security -i' interactive shell over stdin to avoid exposing secret in process command-line arguments.
+            // Using -X <hex> ensures that special characters, quotes, or spaces in secrets do not break syntax.
             var psi = new ProcessStartInfo("security")
             {
+                RedirectStandardInput = true,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false
             };
-            psi.ArgumentList.Add("add-generic-password");
-            psi.ArgumentList.Add("-a");
-            psi.ArgumentList.Add(targetName);
-            psi.ArgumentList.Add("-s");
-            psi.ArgumentList.Add(ServiceName);
-            psi.ArgumentList.Add("-w");
-            psi.ArgumentList.Add(secret);
-            psi.ArgumentList.Add("-U"); // Update if exists
+            psi.ArgumentList.Add("-i");
 
             using var process = Process.Start(psi);
             if (process == null) return false;
+
+            var hexSecret = Convert.ToHexString(Encoding.UTF8.GetBytes(secret));
+            var sanitizedTarget = targetName.Replace("\"", "\\\"");
+            process.StandardInput.WriteLine($"add-generic-password -a \"{sanitizedTarget}\" -s \"{ServiceName}\" -U -X {hexSecret}");
+            process.StandardInput.Close();
+
             process.WaitForExit();
             return process.ExitCode == 0;
         }
@@ -217,18 +211,21 @@ internal static class CredentialManager
         {
             var psi = new ProcessStartInfo("security")
             {
+                RedirectStandardInput = true,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false
             };
-            psi.ArgumentList.Add("delete-generic-password");
-            psi.ArgumentList.Add("-a");
-            psi.ArgumentList.Add(targetName);
-            psi.ArgumentList.Add("-s");
-            psi.ArgumentList.Add(ServiceName);
+            psi.ArgumentList.Add("-i");
 
             using var process = Process.Start(psi);
-            process?.WaitForExit();
+            if (process == null) return;
+
+            var sanitizedTarget = targetName.Replace("\"", "\\\"");
+            process.StandardInput.WriteLine($"delete-generic-password -a \"{sanitizedTarget}\" -s \"{ServiceName}\"");
+            process.StandardInput.Close();
+
+            process.WaitForExit();
         }
         catch
         {
@@ -236,7 +233,7 @@ internal static class CredentialManager
         }
     }
 
-    // --- Linux secret-tool ---
+    // --- Linux secret-tool (via stdin) ---
 
     private static bool TrySaveForLinux(string targetName, string secret)
     {
@@ -324,49 +321,16 @@ internal static class CredentialManager
 
     // --- File Fallback with Restricted Permissions (chmod 600) ---
 
-    private static void EnsureSecureFilePermissions(string filePath)
-    {
-        if (OperatingSystem.IsWindows()) return;
-
-        try
-        {
-            if (File.Exists(filePath))
-            {
-                File.SetUnixFileMode(filePath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
-            }
-        }
-        catch
-        {
-            // Ignore on non-POSIX filesystems
-        }
-    }
-
-    private static void EnsureSecureDirectoryPermissions(string dirPath)
-    {
-        if (OperatingSystem.IsWindows()) return;
-
-        try
-        {
-            if (Directory.Exists(dirPath))
-            {
-                File.SetUnixFileMode(dirPath, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
-            }
-        }
-        catch
-        {
-            // Ignore
-        }
-    }
-
     private static Dictionary<string, string> ReadCredentialFile()
     {
-        if (!File.Exists(CredentialFilePath))
+        var filePath = WpAiCliPaths.CredentialsFilePath;
+        if (!File.Exists(filePath))
         {
             return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         }
         try
         {
-            var json = File.ReadAllText(CredentialFilePath);
+            var json = File.ReadAllText(filePath);
             return JsonSerializer.Deserialize<Dictionary<string, string>>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) 
                    ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         }
@@ -378,15 +342,15 @@ internal static class CredentialManager
 
     private static void WriteCredentialFile(Dictionary<string, string> credentials)
     {
-        var directory = Path.GetDirectoryName(CredentialFilePath);
-        if (directory != null && !Directory.Exists(directory))
+        var filePath = WpAiCliPaths.CredentialsFilePath;
+        var directory = Path.GetDirectoryName(filePath);
+        if (directory != null)
         {
-            Directory.CreateDirectory(directory);
-            EnsureSecureDirectoryPermissions(directory);
+            WpAiCliPaths.EnsureDirectoryExists(directory, securePermissions: true);
         }
         var json = JsonSerializer.Serialize(credentials, new JsonSerializerOptions { WriteIndented = true });
-        File.WriteAllText(CredentialFilePath, json);
-        EnsureSecureFilePermissions(CredentialFilePath);
+        File.WriteAllText(filePath, json);
+        WpAiCliPaths.EnsureSecureFilePermissions(filePath);
     }
 
     private static void SaveToFile(string targetName, string secret)
@@ -404,13 +368,14 @@ internal static class CredentialManager
 
     private static void DeleteFromFile(string targetName)
     {
-        if (!File.Exists(CredentialFilePath)) return;
+        var filePath = WpAiCliPaths.CredentialsFilePath;
+        if (!File.Exists(filePath)) return;
         var credentials = ReadCredentialFile();
         if (credentials.Remove(targetName))
         {
             if (credentials.Count == 0)
             {
-                try { File.Delete(CredentialFilePath); } catch { }
+                try { File.Delete(filePath); } catch { }
             }
             else
             {

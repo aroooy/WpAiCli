@@ -1,15 +1,15 @@
-using System.Text.Json;
-using System.Text.Json.Serialization;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace WpAiCli.Configuration;
 
 public sealed class ConnectionStore
 {
-    private const string FileName = "connections.json";
+    private const string LegacyFileName = "connections.json";
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
         WriteIndented = true,
@@ -24,7 +24,7 @@ public sealed class ConnectionStore
 
     public static ConnectionStore Load()
     {
-        var path = GetStorePath();
+        var path = WpAiCliPaths.ConnectionsFilePath;
         if (!File.Exists(path))
         {
             // Migration: Check legacy path in AppContext.BaseDirectory
@@ -35,11 +35,19 @@ public sealed class ConnectionStore
                 {
                     var legacyStore = LoadFromPath(legacyPath);
                     legacyStore.Save(); // Migrate to new path (~/.wpaicli/connections.json)
+                    try
+                    {
+                        File.Delete(legacyPath); // Remove old copy so it doesn't linger
+                    }
+                    catch
+                    {
+                        // Ignore delete errors if in read-only location
+                    }
                     return legacyStore;
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // Fall back to empty store if legacy read fails
+                    Console.Error.WriteLine($"Warning: Failed to migrate legacy connections from '{legacyPath}': {ex.Message}");
                 }
             }
 
@@ -70,22 +78,11 @@ public sealed class ConnectionStore
 
     public void Save()
     {
-        var path = GetStorePath();
+        var path = WpAiCliPaths.ConnectionsFilePath;
         var directory = Path.GetDirectoryName(path);
         if (!string.IsNullOrEmpty(directory))
         {
-            Directory.CreateDirectory(directory);
-            if (!OperatingSystem.IsWindows())
-            {
-                try
-                {
-                    File.SetUnixFileMode(directory, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
-                }
-                catch
-                {
-                    // Ignore if filesystem does not support POSIX modes
-                }
-            }
+            WpAiCliPaths.EnsureDirectoryExists(directory, securePermissions: true);
         }
 
         var model = new ConnectionStoreModel
@@ -98,17 +95,7 @@ public sealed class ConnectionStore
         using var stream = File.Create(path);
         JsonSerializer.Serialize(stream, model, SerializerOptions);
 
-        if (!OperatingSystem.IsWindows())
-        {
-            try
-            {
-                File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
-            }
-            catch
-            {
-                // Ignore if filesystem does not support POSIX modes
-            }
-        }
+        WpAiCliPaths.EnsureSecureFilePermissions(path);
     }
 
     public ConnectionProfile? GetActiveProfile()
@@ -120,17 +107,8 @@ public sealed class ConnectionStore
         return Profiles.FirstOrDefault(p => string.Equals(p.Name, ActiveConnection, StringComparison.OrdinalIgnoreCase));
     }
 
-    private static string GetConfigDirectory()
-    {
-        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        return Path.Combine(home, ".wpaicli");
-    }
-
-    private static string GetStorePath()
-        => Path.Combine(GetConfigDirectory(), FileName);
-
     private static string GetLegacyStorePath()
-        => Path.Combine(AppContext.BaseDirectory, FileName);
+        => Path.Combine(AppContext.BaseDirectory, LegacyFileName);
 
     private sealed class ConnectionStoreModel
     {

@@ -407,8 +407,8 @@ public sealed class WordPressApiClient
         catch (JsonException ex)
         {
             var logPath = TryWriteDebugPayload(payload);
-            var locationNote = logPath != null ? $" The problematic response has been saved to {logPath}." : "";
-            throw new JsonException($"Failed to deserialize JSON.{locationNote} Payload: {payload}", ex);
+            var locationNote = logPath != null ? $" The problematic response has been saved to '{logPath}'." : "";
+            throw new JsonException($"Failed to deserialize JSON response from WordPress API.{locationNote}", ex);
         }
     }
 
@@ -446,22 +446,10 @@ public sealed class WordPressApiClient
     {
         try
         {
-            var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-            var logDir = Path.Combine(home, ".wpaicli", "logs");
-            Directory.CreateDirectory(logDir);
+            var logDir = WpAiCliPaths.EnsureDirectoryExists(WpAiCliPaths.LogsDirectory, securePermissions: true);
             var logPath = Path.Combine(logDir, "debug_response.json");
             File.WriteAllText(logPath, payload);
-            if (!OperatingSystem.IsWindows())
-            {
-                try
-                {
-                    File.SetUnixFileMode(logPath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
-                }
-                catch
-                {
-                    // Ignore
-                }
-            }
+            WpAiCliPaths.EnsureSecureFilePermissions(logPath);
             return logPath;
         }
         catch
