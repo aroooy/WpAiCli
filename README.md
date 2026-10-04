@@ -89,7 +89,7 @@ If posts from your active site are displayed, the initial setup is complete.
 
 ### 2. Edit an Existing Post
 
-1. Run `wpai posts pull` (or `wpai posts sync`) to fetch the latest state from the server.
+1. Run `wpai posts pull` to safely fetch the latest state from the server.
 2. Edit the local Markdown file (`.md`) for the desired article.
 3. Run `wpai posts push <ID>` to apply the changes to the server.
 
@@ -121,7 +121,7 @@ For AI agents interacting with WordPress via CLI or MCP, follow the standard **4
 | **Primary (Daily Core)** | `posts list`, `posts get`, `posts pull`, `posts push`, `posts create` | `ListPosts`, `GetPost`, `PullPosts`, `PushPost`, `CreatePost` | **Use these for 95% of tasks.** Minimal overhead, clear intent. |
 | **Taxonomies & Media** | `categories list/create/push`, `tags ...`, `media list/upload/pull` | `ListCategories`, `ListTags`, `ListMedia`, `UploadMedia`, `PullTaxonomies`, `PullMedia` | Use when managing categories, tags, or uploading images. |
 | **Maintenance** | `posts organize` | `OrganizePosts` | **Normally unnecessary.** `posts push` and `posts pull` automatically organize files. |
-| **Advanced (Exception only)** | `posts sync`, `resolve`, `revisions fetch/clean` | `ResolveConflict`, `FetchRevisions`, `CleanRevisions` | Use only when transfer conflicts or revision restores are specifically requested. |
+| **Advanced (Exception only)** | `resolve`, `revisions fetch/clean` | `ResolveConflict`, `FetchRevisions`, `CleanRevisions` | Use only when transfer conflicts or revision restores are specifically requested. (`posts sync` is deprecated). |
 
 ### Workflow for Creating New Posts (AI Golden Rule)
 
@@ -195,8 +195,8 @@ For machine integration (like with an AI), JSON mode (`--format json`) is recomm
 
 - `pull`: **Pulls and refreshes the local cache with the latest server state.** (Recommended primary command for updating local posts. Safe: local edits are preserved and never pushed automatically). `[Cache Effect: Reflects server changes]`
   - `wpai posts pull`
-- `sync`: **Performs a two-way sync for posts and taxonomies (categories/tags).** Pushes local changes to the server and pulls remote changes. `[Cache Effect: Reflects server changes and pushes local edits]`
-  - `wpai posts sync`
+- `sync`: **Deprecated.** Two-way synchronization for posts has been deprecated in favor of explicit Git-like workflows. Use `wpai posts pull` to safely refresh the local cache and `wpai posts push` to apply edits.
+  - `wpai posts sync` (shows deprecation guidance)
 - `organize`: Organizes local post files (`.md`) into subfolders like `publish`, `draft`, etc., based on the status in each file's YAML header. Does not communicate with the server. Use this command if you updated statuses locally and want them organized before pushing. **Never move files manually.** `[Cache Effect: Local file move]`
   - `wpai posts organize`
 - `list`: Lists posts. `[Cache Effect: None]`

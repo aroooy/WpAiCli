@@ -506,10 +506,12 @@ public class WorkspaceService
     public Task<TransferReport> PullPostsAsync(ConnectionProfile profile, int syncLimit, CancellationToken cancellationToken)
         => ProcessPostsSyncOrPullAsync(profile, syncLimit, allowPush: false, cancellationToken);
 
+    [Obsolete("Use PullPostsAsync and PushPostAsync instead.")]
     public Task<TransferReport> SyncPostsAsync(ConnectionProfile profile, int syncLimit, CancellationToken cancellationToken)
         => ProcessPostsSyncOrPullAsync(profile, syncLimit, allowPush: true, cancellationToken);
 
     // Alias for backward compatibility
+    [Obsolete("Use PullPostsAsync and PushPostAsync instead.")]
     public Task<TransferReport> SynchronizePostsAsync(ConnectionProfile profile, int syncLimit, CancellationToken cancellationToken)
         => SyncPostsAsync(profile, syncLimit, cancellationToken);
 

@@ -61,11 +61,10 @@ public static class PostsCommand
             }
             case "sync":
             {
-                Console.WriteLine("Starting two-way posts synchronization...");
-                var syncLimit = profile.SyncItemsLimit ?? 30;
-                var report = await workspaceService.SyncPostsAsync(profile, syncLimit, ct);
-                OutputFormatter.WriteTransferReport(report, Console.Out);
-                return (int)ExitCode.Success;
+                Console.Error.WriteLine("'posts sync' has been deprecated in favor of explicit Git-like workflows.");
+                Console.Error.WriteLine("Use 'wpai posts pull' to safely refresh local cache from the server,");
+                Console.Error.WriteLine("and 'wpai posts push <id>' (or 'posts push --all') to push your local edits.");
+                return (int)ExitCode.InvalidArguments;
             }
             case "list":
             {
@@ -204,7 +203,6 @@ public static class PostsCommand
         Console.WriteLine("  push <id>      Push local post edits to the server (--all for all modified)");
         Console.WriteLine("  create         Create a new post");
         Console.WriteLine("  delete <id>    Delete a post");
-        Console.WriteLine("  sync           Two-way synchronization for posts and taxonomies");
         Console.WriteLine("  organize       Organize local post files into status folders");
         Console.WriteLine("\nImportant for AI:");
         Console.WriteLine("  - Do NOT manually move or rename files in the cache. The tool relocates them automatically.");
